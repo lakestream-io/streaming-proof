@@ -77,9 +77,7 @@ mvn clean install -DskipTests
 mvn clean install -DskipTests -Pdocker
 ```
 
-## Deployment
-
-### Deploy with Docker Compose
+## Try with docker-compose
 
 1. Start docker compose:
 
@@ -90,7 +88,7 @@ docker-compose up -d
 This will start:
 
 - Proof Coordinator service (port 8080)
-- Proof Worker service (ports 80889)
+- Proof Worker service (ports 8088)
 - Kafka (port 9092)
 - ZooKeeper (port 2181)
 
@@ -99,6 +97,53 @@ This will start:
 ```bash
 docker-compose ps
 ```
+3. Init configurations:
+
+```bash
+curl -X PUT http://localhost:8080/configs \
+  -H "Content-Type: application/json" \
+  -d '{
+  "workers" : {
+    "worker.1" : "http://worker:8088"
+  },
+  "drivers" : {
+    "ursa" : {
+      "driverType" : "kafka",
+      "driverConfigs" : {
+        "acks" : "1",
+        "bootstrap.servers" : "kafka:9092",
+        "session.timeout.ms" : "45000"
+      }
+    }
+  }
+}'
+```
+4. Create first proof:
+
+```bash
+curl -X POST http://localhost:8080/proofs \
+  -H "Content-Type: application/json" \
+  -d '{
+  "name" : "Ursa: at_least_once + ordering",
+  "driver" : "ursa",
+  "features" : [ "at_least_once", "ordering" ],
+  "partitions" : 10,
+  "producers" : 4,
+  "consumers" : 4,
+  "msgRate" : 1000,
+  "keys" : 40,
+  "checkPointInterval" : 5,
+  "timeout" : 180
+}'
+```
+
+5. Stop all the components:
+
+```bash
+docker-compose down
+```
+
+## Deployment
 
 ### Deploy with Kubernetes
 
@@ -253,7 +298,7 @@ kubectl apply -f <worker.yaml>
 kubectl get pods | grep "streaming-proof"
 ```
 
-## Create first proof
+## Create proof
 
 1. Create workers and drivers configuration:
 

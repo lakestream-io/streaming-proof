@@ -33,6 +33,7 @@ import io.streamnative.streaming.proof.common.Util;
 import io.streamnative.streaming.proof.common.records.Configs;
 import io.streamnative.streaming.proof.common.records.Proof;
 import io.streamnative.streaming.proof.common.records.ProofDetails;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -82,6 +83,9 @@ public class CoordinatorHandler {
     private void handleCreateProof(Context ctx) throws Exception {
         log.info("New create proof request: {}", ctx.body());
         Proof proof = Util.JSON_MAPPER.readValue(ctx.body(), Proof.class);
+        if (proof.getTopic() == null || proof.getTopic().isEmpty()) {
+            proof.setTopic(UUID.randomUUID().toString());
+        }
         coordinator.createProof(proof);
         ctx.result(Util.JSON_WRITER.writeValueAsString(proof));
     }
