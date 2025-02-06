@@ -48,7 +48,7 @@
         <slf4j.version>2.0.9</slf4j.version>
         <jackson.version>2.13.2</jackson.version>
         <testng.version>7.7.1</testng.version>
-        <http.client.version>2.12.3</http.client.version>
+        <http.client.version>2.12.4</http.client.version>
         <kafka.client.version>3.7.1</kafka.client.version>
         <maven-checkstyle-plugin.version>3.1.2</maven-checkstyle-plugin.version>
         <puppycrawl.checkstyle.version>8.37</puppycrawl.checkstyle.version>
