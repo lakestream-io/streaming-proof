@@ -338,6 +338,7 @@ public class ProofTask {
         clients.forEach(client -> {
             try {
                 client.stopProducers(proof.getId()).join();
+                client.stopConsumers(proof.getId()).join();
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }

@@ -72,8 +72,8 @@ public class WorkerHandler {
      *
      * @param app The Javalin application instance to register endpoints with
      */
-    public WorkerHandler(Javalin app) {
-        this.worker = new Worker();
+    public WorkerHandler(Javalin app, Worker worker) {
+        this.worker = worker;
         app.post(Util.START_PRODUCER, this::handleStartProducer);
         app.post(Util.START_CONSUMER, this::handleStartConsumer);
         app.get(Util.PRODUCER_CHECKPOINTS, this::handleProducerCheckpoints);

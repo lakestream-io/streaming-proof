@@ -158,9 +158,15 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
      */
     @Override
     public void close() throws Exception {
-        closing = true;
-        executor.shutdown();
-        consumerTask.get();
-        consumer.close();
+        this.executor.execute(() -> {
+            closing = true;
+            executor.shutdown();
+            try {
+                consumerTask.get();
+            } catch (Exception e) {
+                log.error("Error while waiting for consumer task to complete", e);
+            }
+            consumer.close();
+        });
     }
 }

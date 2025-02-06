@@ -23,6 +23,7 @@ import static java.net.HttpURLConnection.HTTP_OK;
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.streamnative.streaming.proof.common.records.Configs;
 import io.streamnative.streaming.proof.common.records.Proof;
+import io.streamnative.streaming.proof.common.records.ProofDetails;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import org.asynchttpclient.AsyncHttpClient;
@@ -156,7 +157,7 @@ public class CoordinatorHttpClient {
      * @param id The ID of the proof test to retrieve
      * @return A CompletableFuture that completes with the requested proof test
      */
-    public CompletableFuture<Proof> getProof(String id) {
+    public CompletableFuture<ProofDetails> getProof(String id) {
         return client.prepareGet(baseUrl + Util.GET_PROOF.replace("{id}", id))
                 .execute()
                 .toCompletableFuture()
@@ -165,7 +166,7 @@ public class CoordinatorHttpClient {
                         throw new RuntimeException("Failed to get proof: " + response.getResponseBody());
                     }
                     try {
-                        return Util.JSON_MAPPER.readValue(response.getResponseBody(), Proof.class);
+                        return Util.JSON_MAPPER.readValue(response.getResponseBody(), ProofDetails.class);
                     } catch (Exception e) {
                         throw new RuntimeException(e);
                     }

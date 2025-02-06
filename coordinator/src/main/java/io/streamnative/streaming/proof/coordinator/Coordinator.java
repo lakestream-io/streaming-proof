@@ -89,7 +89,7 @@ public class Coordinator {
             this.configs = configs;
         } else {
             this.configs.workers().putAll(configs.workers());
-            configs.drivers().putAll(configs.drivers());
+            this.configs.drivers().putAll(configs.drivers());
         }
     }
 

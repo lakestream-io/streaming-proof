@@ -65,6 +65,19 @@ public class WorkerStarter implements Callable<Integer> {
     @Option(names = {"-p", "--port"}, description = "HTTP port to listen on.")
     private int httpPort = 8088;
 
+    /** Javalin HTTP server instance */
+    private Javalin app;
+
+    /** Worker instance that manages producer and consumer operations.
+     * This field maintains the core worker functionality for handling streaming proof tests.
+     * It is initialized during startup and passed to {@link WorkerHandler} for REST endpoint handling.
+     * The worker instance is closed during service shutdown to ensure proper resource cleanup.
+     *
+     * @see Worker
+     * @see WorkerHandler
+     */
+    Worker worker;
+
     /**
      * Executes the worker service startup.
      * This method is called by the picocli framework when the command is run.
@@ -85,10 +98,22 @@ public class WorkerStarter implements Callable<Integer> {
      */
     public void start(int port) {
         log.info("Starting worker on port {}", port);
-        Javalin app = Javalin.create();
-        new WorkerHandler(app);
+        app = Javalin.create();
+        worker = new Worker();
+        new WorkerHandler(app, worker);
         app.start(port);
         log.info("port started successfully");
+    }
+
+    /**
+     * Gracefully stops the coordinator service.
+     * Shuts down the HTTP server and cleans up resources.
+     */
+    public void stop() {
+        log.info("Stopping coordinator");
+        app.stop();
+        worker.close();
+        log.info("Stopped coordinator");
     }
 
     /**

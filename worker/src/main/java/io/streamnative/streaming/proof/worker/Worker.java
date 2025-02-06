@@ -148,4 +148,17 @@ public class Worker {
         ProofConsumers consumer = consumers.get(id);
         return consumer.checkPoint();
     }
+
+    /**
+     * Performs cleanup by stopping all producer and consumer groups managed by this worker.
+     * This method ensures proper shutdown by iterating through all registered producers
+     * and consumers and stopping them.
+     *
+     * <p>This method should be called when shutting down the worker node to ensure
+     * all resources are properly released and all message processing is stopped.
+     */
+    public void close() {
+        producers.values().forEach(ProofProducers::stop);
+        consumers.values().forEach(ProofConsumers::stop);
+    }
 }
