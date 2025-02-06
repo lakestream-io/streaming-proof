@@ -1,0 +1,145 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+package io.streamnative.streaming.proof.worker;
+
+import io.streamnative.streaming.proof.common.ProofProducer;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import lombok.Getter;
+
+/**
+ * A task that manages message production for streaming proof tests. This class handles
+ * the generation and sending of messages with sequential values for a set of unique keys.
+ * It implements {@link AutoCloseable} for proper resource cleanup.
+ *
+ * <p>Key features:
+ * <ul>
+ *   <li>Round-robin message distribution across keys</li>
+ *   <li>Sequential value tracking per key</li>
+ *   <li>Asynchronous message production</li>
+ *   <li>Error tracking and failed sequence recording</li>
+ * </ul>
+ *
+ * <p>The task maintains:
+ * <ul>
+ *   <li>A fixed set of unique message keys</li>
+ *   <li>Sequence counters for each key</li>
+ *   <li>Error counts for failed sends</li>
+ *   <li>List of sequence numbers that failed to send</li>
+ * </ul>
+ *
+ * <p>Example usage:
+ * <pre>{@code
+ * ProofProducer producer = driver.createProducer("test-topic", configs);
+ * ProofProducerTask task = new ProofProducerTask(producer, 10); // 10 unique keys
+ *
+ * // Send messages asynchronously
+ * task.sendAsync()
+ *     .thenAccept(v -> System.out.println("Message sent successfully"))
+ *     .exceptionally(e -> {
+ *         System.err.println("Send failed: " + e);
+ *         return null;
+ *     });
+ *
+ * // Later, check the metrics
+ * System.out.println("Errors: " + task.getErrors().get());
+ * System.out.println("Failed sequences: " + task.getFailedSeqs());
+ * }</pre>
+ *
+ * @see ProofProducer
+ * @see ProofProducers
+ */
+@Getter
+public class ProofProducerTask implements AutoCloseable {
+
+    /** The underlying producer for sending messages */
+    private final ProofProducer producer;
+
+    /** Number of unique keys managed by this task */
+    private final int keys;
+
+    /** Array of unique keys for round-robin message distribution */
+    private final String[] keyArray;
+
+    /** Maps each key to its current sequence number */
+    private final Map<String, AtomicLong> keySeq;
+
+    /** Counter for failed message sends */
+    private final AtomicInteger errors = new AtomicInteger(0);
+
+    /** Counter for round-robin key selection */
+    private final AtomicLong index = new AtomicLong(0);
+
+    /** Thread-safe list of sequence numbers that failed to send */
+    private final List<Long> failedSeqs = Collections.synchronizedList(new ArrayList<>());
+
+    /**
+     * Creates a new producer task with the specified number of unique keys.
+     *
+     * @param producer The underlying producer to use for sending messages
+     * @param keys The number of unique keys to manage
+     */
+    public ProofProducerTask(ProofProducer producer, int keys) {
+        this.producer = producer;
+        this.keys = keys;
+        this.keyArray = new String[keys];
+        Map<String, AtomicLong> map = new HashMap<>();
+        for (int i = 0; i < keys; i++) {
+            String key = UUID.randomUUID().toString();
+            map.put(key, new AtomicLong(0));
+            keyArray[i] = key;
+        }
+        this.keySeq = Collections.unmodifiableMap(map);
+    }
+
+    /**
+     * Asynchronously sends a message with the next sequence number for a key.
+     * Keys are selected in round-robin fashion, and sequence numbers are
+     * incremented atomically for each key.
+     *
+     * @return A future that completes when the send operation is done
+     */
+    public CompletableFuture<Void> sendAsync() {
+        String key = keyArray[(int) (index.getAndIncrement() % keys)];
+        long seq = keySeq.get(key).getAndIncrement();
+        return producer.sendAsync(key, seq).whenComplete((__, e) -> {
+            if (e != null) {
+                errors.incrementAndGet();
+                failedSeqs.add(seq);
+            }
+        });
+    }
+
+    /**
+     * Closes the underlying producer and releases associated resources.
+     *
+     * @throws Exception if an error occurs while closing the producer
+     */
+    @Override
+    public void close() throws Exception {
+        producer.close();
+    }
+}

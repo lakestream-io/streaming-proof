@@ -1,0 +1,59 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+package io.streamnative.streaming.proof.common.records;
+
+import io.streamnative.streaming.proof.common.ProofDriver;
+import java.util.Map;
+
+/**
+ * Configuration record that holds the settings for workers and drivers in the streaming proof system.
+ * This immutable record provides a structured way to manage distributed system configurations
+ * across multiple workers and messaging system drivers.
+ *
+ * <p>The configuration consists of two main components:
+ * <ul>
+ *   <li>Worker configurations: Defines the network endpoints and settings for distributed workers</li>
+ *   <li>Driver configurations: Specifies the messaging system drivers and their configurations</li>
+ * </ul>
+ *
+ * <p>Example usage:
+ * <pre>{@code
+ * Map<String, String> workers = Map.of(
+ *     "worker1", "http://worker1:8080",
+ *     "worker2", "http://worker2:8080"
+ * );
+ * Map<String, Driver> drivers = Map.of(
+ *     "ursa", new Driver("kafka", kafkaConfigs)
+ * );
+ * Configs configs = new Configs(workers, drivers);
+ * }</pre>
+ *
+ * @param workers A map of worker configurations where the key is the worker identifier
+ *               (e.g., "worker1") and the value contains the worker's HTTP endpoint URL.
+ *               These workers are responsible for executing the streaming proof tasks.
+ * @param drivers A map of driver configurations where the key is the driver identifier
+ *               (e.g., "ursa") and the value is a {@link Driver} instance containing
+ *               the driver type and its specific configurations. The driver provides the
+ *               interface to interact with the underlying messaging system.
+ *
+ * @see Driver
+ * @see ProofDriver
+ */
+public record Configs(Map<String, String> workers, Map<String, Driver> drivers) {
+}
