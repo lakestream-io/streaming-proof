@@ -18,6 +18,7 @@
  */
 package io.streamnative.streaming.proof.worker;
 
+import io.streamnative.streaming.proof.common.LongSeq;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.records.CheckPoint;
@@ -133,19 +134,19 @@ public class ProofConsumers {
      * @return A checkpoint containing aggregated consumer statistics
      */
     public CheckPoint checkPoint() {
-        Map<String, Long> keySeqs = new HashMap<>();
+        Map<String, LongSeq> keySeqs = new HashMap<>();
         int dups = 0;
         int outOfOrders = 0;
         int missed = 0;
-        List<Long> missedSeqs = new ArrayList<>();
-        List<Long> outOfOrderSeqs = new ArrayList<>();
+        Map<String, List<Long>> missedSeqs = new HashMap<>();
+        Map<String, List<List<LongSeq>>> outOfOrderSeqs = new HashMap<>();
         for (ProofConsumerTask task : tasks) {
             keySeqs.putAll(task.getKeySeq());
             dups += task.getDups().get();
             outOfOrders += task.getOutOfOrders().get();
             missed += task.getMissedSeqs().size();
-            missedSeqs.addAll(task.getMissedSeqs());
-            outOfOrderSeqs.addAll(task.getOutOfOrderSeqs());
+            missedSeqs.putAll(task.getMissedSeqs());
+            outOfOrderSeqs.putAll(task.getOutOfOrderSeqs());
         }
         return new CheckPoint(keySeqs, dups, 0, outOfOrders, missed, missedSeqs, null, outOfOrderSeqs);
     }

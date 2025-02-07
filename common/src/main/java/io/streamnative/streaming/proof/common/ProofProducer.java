@@ -68,10 +68,12 @@ public interface ProofProducer extends AutoCloseable {
      * @param value A sequential value representing the message's position in its
      *              key's sequence. Used to verify message ordering and detect
      *              duplicates or missing messages.
-     * @return A CompletableFuture that completes when the send operation is
-     *         acknowledged by the messaging system. The future completes
+     * @return A CompletableFuture that completes with the message metadata when the
+     *         send operation is acknowledged by the messaging system. The metadata
+     *         includes information such as the message offset. The future completes
      *         exceptionally if the send operation fails.
+     * @see MessageMetadata
      */
-    CompletableFuture<Void> sendAsync(String key, long value);
+    CompletableFuture<MessageMetadata> sendAsync(String key, long value);
 
 }

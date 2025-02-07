@@ -18,6 +18,7 @@
  */
 package io.streamnative.streaming.proof.worker;
 
+import io.streamnative.streaming.proof.common.LongSeq;
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.ProofProducer;
 import io.streamnative.streaming.proof.common.records.CheckPoint;
@@ -153,14 +154,14 @@ public class ProofProducers {
      * @return A checkpoint containing aggregated producer statistics
      */
     public CheckPoint checkPoint() {
-        Map<String, Long> keySeqs = new HashMap<>();
+        Map<String, LongSeq> keySeqs = new HashMap<>();
         AtomicInteger errors = new AtomicInteger(0);
-        List<Long> failedSeqs = new ArrayList<>();
+        Map<String, List<Long>> failedSeqs = new HashMap<>();
         for (ProofProducerTask task : tasks) {
-            task.getKeySeq().forEach((k, v) -> {
-                keySeqs.put(k, v.get());
+            task.getLastPublished().forEach((k, v) -> {
+                keySeqs.put(k, v);
                 errors.addAndGet(task.getErrors().get());
-                failedSeqs.addAll(task.getFailedSeqs());
+                failedSeqs.putAll(task.getFailedSeqs());
             });
         }
         return new CheckPoint(keySeqs, null, errors.get(), null, null, null, failedSeqs, null);

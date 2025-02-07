@@ -18,14 +18,14 @@
  */
 package io.streamnative.streaming.proof.worker;
 
+import io.streamnative.streaming.proof.common.LongSeq;
 import io.streamnative.streaming.proof.common.MessageListener;
+import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Getter;
 import lombok.Setter;
@@ -76,7 +76,30 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
     private ProofConsumer consumer;
 
     /** Maps message keys to their latest sequence numbers */
-    private final Map<String, Long> keySeq;
+    /** 
+     * Maps message keys to their latest received message information.
+     * Each entry contains both the sequence number and metadata for the most recently
+     * processed message for a given key.
+     *
+     * <p>Key: The message key used for grouping related messages
+     * <p>Value: A {@link LongSeq} containing:
+     * <ul>
+     *   <li>The sequence number of the latest message</li>
+     *   <li>Associated metadata (e.g., message offset)</li>
+     * </ul>
+     *
+     * <p>This map is used to:
+     * <ul>
+     *   <li>Track message ordering within each key's sequence</li>
+     *   <li>Detect duplicate messages (when new sequence ≤ stored sequence)</li>
+     *   <li>Identify gaps in message sequences (missing messages)</li>
+     *   <li>Maintain message metadata for checkpointing</li>
+     * </ul>
+     *
+     * @see LongSeq
+     * @see MessageMetadata
+     */
+    private final Map<String, LongSeq> keySeq;
 
     /** Counter for duplicate messages detected */
     private final AtomicInteger dups = new AtomicInteger(0);
@@ -84,11 +107,40 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
     /** Counter for out-of-order messages detected */
     private final AtomicInteger outOfOrders = new AtomicInteger(0);
 
-    /** Set of sequence numbers that were skipped (indicating missing messages) */
-    private final Set<Long> missedSeqs = new HashSet<>();
+    /** 
+     * Tracks missing sequence numbers per message key.
+     * Key: Message key
+     * Value: List of sequence numbers that were skipped in the sequence.
+     * For example, if messages arrive with sequence numbers [1,2,5], then [3,4] will be
+     * recorded as missed sequences for that key.
+     */
+    private final Map<String, List<Long>> missedSeqs = new HashMap<>();
 
-    /** List of sequence number pairs that were received out of order */
-    private final List<Long> outOfOrderSeqs = new ArrayList<>();
+    /** 
+     * Records out-of-order message sequences per message key.
+     * Each entry tracks the message pairs that violate sequential ordering.
+     *
+     * <p>Key: The message key used for grouping related messages
+     * <p>Value: List of message pairs, where each pair contains:
+     * <ul>
+     *   <li>First element: The last correctly sequenced message ({@link LongSeq})</li>
+     *   <li>Second element: The out-of-order message that followed it ({@link LongSeq})</li>
+     * </ul>
+     *
+     * <p>For example, if messages should arrive in sequence [1,2,3,4,5] but we receive
+     * [1,2,5], then a pair containing messages [2,5] will be added to the list,
+     * indicating that message 5 arrived immediately after 2, skipping 3 and 4.
+     *
+     * <p>Each {@link LongSeq} in the pair contains:
+     * <ul>
+     *   <li>The sequence number of the message</li>
+     *   <li>Associated metadata (e.g., message offset)</li>
+     * </ul>
+     *
+     * @see LongSeq
+     * @see MessageMetadata
+     */
+    private final Map<String, List<List<LongSeq>>> outOfOrderSeqs = new HashMap<>();
 
     /**
      * Creates a new ProofConsumerTask with an empty sequence tracking map.
@@ -98,36 +150,54 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
     }
 
     /**
-     * Processes a received message and validates its sequence number.
+     * Processes a received message and validates its sequence number against the expected order.
      * This method is synchronized to ensure thread-safe updates to the sequence tracking maps.
      *
-     * <p>The method performs the following validations:
+     * <p>The method handles three scenarios:
      * <ul>
-     *   <li>Checks if the message is in sequence (value = previous + 1)</li>
-     *   <li>Detects duplicate messages (value ≤ previous)</li>
-     *   <li>Identifies missing sequences (gaps between previous and value)</li>
-     *   <li>Tracks out-of-order message pairs</li>
+     *   <li><b>In-sequence message:</b> When value = previous + 1
+     *       <br>Updates the latest sequence number and metadata for the key</li>
+     *   <li><b>Duplicate message:</b> When value ≤ previous
+     *       <br>Increments the duplicate counter without updating the sequence</li>
+     *   <li><b>Out-of-order message:</b> When value > previous + 1
+     *       <br>Records missing sequences in the gap
+     *       <br>Tracks the out-of-order pair [previous message, current message]
+     *       <br>Updates the latest sequence number and metadata
+     *       <br>Increments the out-of-order counter</li>
      * </ul>
      *
-     * @param key The message key used for sequence tracking
-     * @param value The sequence number of the message
+     * <p>For each message, the method also checks if its sequence number matches any
+     * previously recorded missing sequences and removes it from the missing sequences
+     * list if found.
+     *
+     * @param key The message key used for sequence tracking and message grouping
+     * @param value The sequence number of the message, used to verify ordering
+     * @param metadata Additional message information such as offset or timestamp
+     * @see LongSeq
+     * @see MessageMetadata
      */
     @Override
-    public synchronized void onMessage(String key, long value) {
-        long seq = keySeq.getOrDefault(key, -1L);
-        missedSeqs.remove(value);
+    public synchronized void onMessage(String key, long value, MessageMetadata metadata) {
+        LongSeq newMsg = new LongSeq(value, metadata);
+        LongSeq lastMsg = keySeq.getOrDefault(key, LongSeq.empty());
+        long seq = lastMsg.seq();
+        missedSeqs.computeIfPresent(key, (k, list) -> {
+            list.remove(value);
+            return list.isEmpty() ? null : list;
+        });
         if (value - seq == 1) {
-            keySeq.put(key, value);
+            keySeq.put(key, newMsg);
         } else if (value <= seq) {
             dups.incrementAndGet();
         } else {
             for (long i = seq + 1; i < value; i++) {
-                missedSeqs.add(i);
+                missedSeqs.computeIfAbsent(key, k -> new ArrayList<>()).add(i);
             }
             outOfOrders.incrementAndGet();
-            outOfOrderSeqs.add(seq);
-            outOfOrderSeqs.add(value);
-            keySeq.put(key, value);
+            List<List<LongSeq>> outOfOrder = outOfOrderSeqs.computeIfAbsent(key, k -> new ArrayList<>());
+            List<LongSeq> pair = List.of(lastMsg, newMsg);
+            outOfOrder.add(pair);
+            keySeq.put(key, newMsg);
         }
     }
 

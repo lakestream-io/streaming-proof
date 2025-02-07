@@ -18,6 +18,7 @@
  */
 package io.streamnative.streaming.proof.coordinator;
 
+import io.streamnative.streaming.proof.common.LongSeq;
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.WorkerHttpClient;
 import io.streamnative.streaming.proof.common.records.CheckPoint;
@@ -274,9 +275,9 @@ public class ProofTask {
                 }
 
                 boolean fulfilled = true;
-                for (Map.Entry<String, Long> entry : ProofTask.this.inCheck.getKeySeq().entrySet()) {
-                    Long expectedSeq = entry.getValue();
-                    Long actualSeq = aggregatedConsumerCheckpoint.getKeySeq().get(entry.getKey());
+                for (Map.Entry<String, LongSeq> entry : ProofTask.this.inCheck.getKeys().entrySet()) {
+                    LongSeq expectedSeq = entry.getValue();
+                    LongSeq actualSeq = aggregatedConsumerCheckpoint.getKeys().get(entry.getKey());
                     if (actualSeq == null || actualSeq.compareTo(expectedSeq) < 0) {
                         fulfilled = false;
                         break;
@@ -310,8 +311,8 @@ public class ProofTask {
      * @return A ProofSummary containing verification statistics
      */
     public ProofSummary getSummary() {
-        long verified = this.getLastVerifiedProducerCheckPoint().getKeySeq().values().stream()
-                .mapToLong(Long::longValue).sum();
+        long verified = this.getLastVerifiedProducerCheckPoint().getKeys().values().stream()
+                .mapToLong(LongSeq::seq).sum();
         return new ProofSummary(
                 verified,
                 this.getLastVerifiedProducerCheckPoint().getErrors(),

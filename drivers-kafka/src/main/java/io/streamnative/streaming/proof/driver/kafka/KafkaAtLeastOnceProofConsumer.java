@@ -19,6 +19,7 @@
 package io.streamnative.streaming.proof.driver.kafka;
 
 import io.streamnative.streaming.proof.common.MessageListener;
+import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import java.time.Duration;
 import java.util.HashMap;
@@ -113,7 +114,8 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
                                             consumer.poll(Duration.ofSeconds(30));
                                     Map<TopicPartition, OffsetAndMetadata> offsetMap = new HashMap<>();
                                     for (ConsumerRecord<String, Long> record : records) {
-                                        callback.onMessage(record.key(), record.value());
+                                        callback.onMessage(record.key(), record.value(),
+                                                new MessageMetadata(record.offset()));
 
                                         offsetMap.put(
                                                 new TopicPartition(record.topic(), record.partition()),

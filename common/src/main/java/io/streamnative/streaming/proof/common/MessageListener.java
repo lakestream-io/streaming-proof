@@ -29,6 +29,7 @@ package io.streamnative.streaming.proof.common;
  *
  * @see ProofConsumer
  * @see ProofConsumerTask
+ * @see MessageMetadata
  */
 public interface MessageListener {
 
@@ -38,7 +39,9 @@ public interface MessageListener {
      * @param key The message key, used for message grouping and partition assignment
      * @param value A sequential value that can be used to verify message ordering
      *              and detect duplicates or missing messages within a key's sequence
+     * @param metadata Additional message information including offset and other
+     *                system-specific details
+     * @see MessageMetadata
      */
-    void onMessage(String key, long value);
-
+    void onMessage(String key, long value, MessageMetadata metadata);
 }

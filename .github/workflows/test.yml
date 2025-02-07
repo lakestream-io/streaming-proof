@@ -20,14 +20,14 @@ jobs:
         distribution: 'temurin'
         cache: maven
 
-    - name: Run Build
-      run: mvn clean install -DskipTests
+    - name: License Check
+      run: mvn license:check
 
-    - name: Test docker build
+    - name: Run Build
       run: mvn clean install -DskipTests -Pdocker
 
     - name: Run Tests
-      run: mvn -B test
+      run: mvn -B test -Dtest="**/*Test" -Dsurefire.failIfNoSpecifiedTests=false
 
     - name: Upload Test Results
       if: always()

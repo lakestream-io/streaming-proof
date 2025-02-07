@@ -18,6 +18,7 @@
  */
 package io.streamnative.streaming.proof.driver.kafka;
 
+import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofProducer;
 import java.util.concurrent.CompletableFuture;
 import org.apache.kafka.clients.producer.Producer;
@@ -89,14 +90,23 @@ public class KafkaAtLeastOnceProofProducer implements ProofProducer {
      * The method wraps the Kafka producer's send operation in a CompletableFuture
      * for better asynchronous operation handling.
      *
-     * @param key The message key used for partitioning and sequence identification
-     * @param value A sequential value representing the message's position in its key's sequence
-     * @return A CompletableFuture that completes when the send operation is acknowledged
+     * @param key The message key used for partitioning and sequence identification.
+     *            Keys are used to group related messages and ensure they are sent
+     *            to the same partition.
+     * @param value A sequential value representing the message's position in its
+     *              key's sequence. Used to verify message ordering and detect
+     *              duplicates or missing messages.
+     * @return A CompletableFuture that completes with the message metadata when
+     *         the send operation is acknowledged by Kafka. The metadata includes
+     *         the message offset in the partition. The future completes
+     *         exceptionally if the send operation fails.
+     * @see MessageMetadata
+     * @see org.apache.kafka.clients.producer.RecordMetadata
      */
     @Override
-    public CompletableFuture<Void> sendAsync(String key, long value) {
+    public CompletableFuture<MessageMetadata> sendAsync(String key, long value) {
         ProducerRecord<String, Long> record = new ProducerRecord<>(topic, key, value);
-        CompletableFuture<Void> future = new CompletableFuture<>();
+        CompletableFuture<MessageMetadata> future = new CompletableFuture<>();
 
         producer.send(
                 record,
@@ -104,7 +114,7 @@ public class KafkaAtLeastOnceProofProducer implements ProofProducer {
                     if (exception != null) {
                         future.completeExceptionally(exception);
                     } else {
-                        future.complete(null);
+                        future.complete(new MessageMetadata(metadata.offset()));
                     }
                 });
 

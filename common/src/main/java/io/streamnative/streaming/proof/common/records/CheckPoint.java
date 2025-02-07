@@ -19,7 +19,7 @@
 package io.streamnative.streaming.proof.common.records;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import java.util.ArrayList;
+import io.streamnative.streaming.proof.common.LongSeq;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -56,7 +56,7 @@ public class CheckPoint implements Cloneable {
      * Map storing the sequence number for each key.
      * The key represents a message key, and the value represents the latest sequence number processed for that key.
      */
-    private Map<String, Long> keySeq;
+    private Map<String, LongSeq> keys;
 
     /** 
      * Number of duplicate messages detected.
@@ -89,23 +89,33 @@ public class CheckPoint implements Cloneable {
      * List of sequence numbers for missed messages.
      * Contains the specific sequence numbers of messages that were expected but not received.
      */
-    private List<Long> missedSeqs;
+    /** 
+     * Tracks missed messages per key in the message sequence.
+     * Key: Message key
+     * Value: List of sequence numbers that were expected but not received in the sequence.
+     * For example, if we expect messages 1,2,3,4,5 but receive 1,2,4,5, then 3 will be in this list.
+     */
+    private Map<String, List<Long>> missedSeqs;
 
     /** 
-     * List of sequence numbers for messages that failed processing.
-     * Tracks the sequence numbers of messages that encountered errors during processing.
+     * Records publishing failures per key in the message sequence.
+     * Key: Message key
+     * Value: List of sequence numbers for which message publishing failed.
      */
-    private List<Long> failedSeqs;
+    private Map<String, List<Long>> failedSeqs;
 
     /** 
-     * List of sequence numbers for messages received out of order.
-     * Contains pairs of sequence numbers where each pair represents [expected_seq, received_seq].
+     * Stores out-of-order message sequences per key.
+     * Key: Message key
+     * Value: List of sequence number pairs where each consecutive pair represents
+     * [expected_seq, actual_received_seq]. For example, if we expect sequence 5
+     * but receive 7, the pair will be [5,7].
      */
-    private List<Long> outOfOrderSeqs;
+    private Map<String, List<List<LongSeq>>> outOfOrderSeqs;
 
     public void add(CheckPoint checkPoint) {
-        if (checkPoint.keySeq != null) {
-            keySeq.putAll(checkPoint.keySeq);
+        if (checkPoint.keys != null) {
+            keys.putAll(checkPoint.keys);
         }
         if (checkPoint.duplicates != null) {
             duplicates += checkPoint.duplicates;
@@ -120,13 +130,13 @@ public class CheckPoint implements Cloneable {
             missed += checkPoint.missed;
         }
         if (checkPoint.failedSeqs != null) {
-            failedSeqs.addAll(checkPoint.failedSeqs);
+            failedSeqs.putAll(checkPoint.failedSeqs);
         }
         if (checkPoint.outOfOrderSeqs != null) {
-            outOfOrderSeqs.addAll(checkPoint.outOfOrderSeqs);
+            outOfOrderSeqs.putAll(checkPoint.outOfOrderSeqs);
         }
         if (checkPoint.missedSeqs != null) {
-            missedSeqs.addAll(checkPoint.missedSeqs);
+            missedSeqs.putAll(checkPoint.missedSeqs);
         }
     }
 
@@ -136,21 +146,21 @@ public class CheckPoint implements Cloneable {
         0,
         0,
         0,
-        new ArrayList<>(),
-        new ArrayList<>(),
-        new ArrayList<>());
+        new HashMap<>(),
+        new HashMap<>(),
+        new HashMap<>());
     }
 
     @Override
     public CheckPoint clone() {
-        return new CheckPoint(new HashMap<>(keySeq),
+        return new CheckPoint(new HashMap<>(keys),
         duplicates,
         errors,
         outOfOrders,
         missed,
-        new ArrayList<>(missedSeqs),
-        new ArrayList<>(failedSeqs),
-        new ArrayList<>(outOfOrderSeqs));
+        new HashMap<>(missedSeqs),
+        new HashMap<>(failedSeqs),
+        new HashMap<>(outOfOrderSeqs));
     }
 
     public CheckPoint trim() {
@@ -175,8 +185,8 @@ public class CheckPoint implements Cloneable {
         if (this.missedSeqs.isEmpty()) {
             this.missedSeqs = null;
         }
-        if (this.keySeq.isEmpty()) {
-            this.keySeq = null;
+        if (this.keys.isEmpty()) {
+            this.keys = null;
         }
         return this;
     }

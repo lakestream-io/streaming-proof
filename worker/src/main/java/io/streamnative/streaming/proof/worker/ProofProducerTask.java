@@ -18,6 +18,8 @@
  */
 package io.streamnative.streaming.proof.worker;
 
+import io.streamnative.streaming.proof.common.LongSeq;
+import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofProducer;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -87,14 +89,24 @@ public class ProofProducerTask implements AutoCloseable {
     /** Maps each key to its current sequence number */
     private final Map<String, AtomicLong> keySeq;
 
+    /** 
+     * Maps keys to their most recently published messages. Each key maps to a LongMessage 
+     * containing the sequence number and metadata of the last successfully published message.
+     * This map is updated whenever a message is successfully sent.
+     */
+    private final Map<String, LongSeq> lastPublished;
+
     /** Counter for failed message sends */
     private final AtomicInteger errors = new AtomicInteger(0);
 
     /** Counter for round-robin key selection */
     private final AtomicLong index = new AtomicLong(0);
 
-    /** Thread-safe list of sequence numbers that failed to send */
-    private final List<Long> failedSeqs = Collections.synchronizedList(new ArrayList<>());
+    /** 
+     * Maps keys to their failed sequence numbers. Each key maps to a list of sequence 
+     * numbers that failed during message sending.
+     */
+    private final Map<String, List<Long>> failedSeqs = new HashMap<>();
 
     /**
      * Creates a new producer task with the specified number of unique keys.
@@ -107,12 +119,15 @@ public class ProofProducerTask implements AutoCloseable {
         this.keys = keys;
         this.keyArray = new String[keys];
         Map<String, AtomicLong> map = new HashMap<>();
+        Map<String, LongSeq> last = new HashMap<>();
         for (int i = 0; i < keys; i++) {
             String key = UUID.randomUUID().toString();
             map.put(key, new AtomicLong(0));
+            last.put(key, LongSeq.empty());
             keyArray[i] = key;
         }
         this.keySeq = Collections.unmodifiableMap(map);
+        this.lastPublished = last;
     }
 
     /**
@@ -122,13 +137,19 @@ public class ProofProducerTask implements AutoCloseable {
      *
      * @return A future that completes when the send operation is done
      */
-    public CompletableFuture<Void> sendAsync() {
+    public CompletableFuture<MessageMetadata> sendAsync() {
         String key = keyArray[(int) (index.getAndIncrement() % keys)];
         long seq = keySeq.get(key).getAndIncrement();
-        return producer.sendAsync(key, seq).whenComplete((__, e) -> {
+        return producer.sendAsync(key, seq).whenComplete((metadata, e) -> {
             if (e != null) {
                 errors.incrementAndGet();
-                failedSeqs.add(seq);
+                synchronized (failedSeqs) {
+                    failedSeqs.computeIfAbsent(key, k -> new ArrayList<>()).add(seq);
+                }
+            } else {
+                synchronized (lastPublished) {
+                    lastPublished.put(key, new LongSeq(seq, metadata));
+                }
             }
         });
     }
