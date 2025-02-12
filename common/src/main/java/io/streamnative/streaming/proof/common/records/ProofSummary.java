@@ -18,6 +18,11 @@
  */
 package io.streamnative.streaming.proof.common.records;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import io.streamnative.streaming.proof.common.LongSeq;
+import java.util.List;
+import java.util.Map;
+
 /**
  * A summary record that captures the results and statistics of a streaming proof test execution.
  * This immutable record provides key metrics about message delivery reliability, ordering
@@ -59,10 +64,14 @@ package io.streamnative.streaming.proof.common.records;
  * @see ProofDetails
  * @see Checkpoints
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record ProofSummary(long verified,
                            int errors,
                            int outOfOrders,
                            int missed,
                            int duplicates,
-                           int timeouts) {
+                           int timeouts,
+                           Map<String, List<LongSeq>> failedKeys,
+                           Map<String, List<List<Long>>> missedSeqs,
+                           Map<String, List<List<LongSeq>>> outOfOrderSeqs) {
 }

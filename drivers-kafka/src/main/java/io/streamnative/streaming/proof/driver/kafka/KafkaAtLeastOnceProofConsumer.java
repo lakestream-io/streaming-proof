@@ -18,11 +18,13 @@
  */
 package io.streamnative.streaming.proof.driver.kafka;
 
+import io.netty.util.concurrent.DefaultThreadFactory;
 import io.streamnative.streaming.proof.common.MessageListener;
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -73,6 +75,8 @@ import org.apache.kafka.common.TopicPartition;
  */
 @Slf4j
 public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
+
+    private final String name;
     /** The underlying Kafka consumer instance */
     private final KafkaConsumer<String, Long> consumer;
 
@@ -96,11 +100,13 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
      * @param callback Listener that will receive consumed messages
      */
     public KafkaAtLeastOnceProofConsumer(
+            String name,
             KafkaConsumer<String, Long> consumer,
             Map<String, Object> consumerConfig,
             MessageListener callback) {
+        this.name = name;
         this.consumer = consumer;
-        this.executor = Executors.newSingleThreadExecutor();
+        this.executor = Executors.newSingleThreadExecutor(new DefaultThreadFactory("proof-consumer"));
         this.autoCommit =
                 Boolean.parseBoolean(
                         (String)
@@ -113,6 +119,7 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
                                     ConsumerRecords<String, Long> records =
                                             consumer.poll(Duration.ofSeconds(30));
                                     Map<TopicPartition, OffsetAndMetadata> offsetMap = new HashMap<>();
+                                    Map<String, List<Long>> offsetRange = new HashMap<>();
                                     for (ConsumerRecord<String, Long> record : records) {
                                         callback.onMessage(record.key(), record.value(),
                                                 new MessageMetadata(record.offset()));
@@ -120,15 +127,23 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
                                         offsetMap.put(
                                                 new TopicPartition(record.topic(), record.partition()),
                                                 new OffsetAndMetadata(record.offset() + 1));
+                                        offsetRange.compute(record.topic() + "-" + record.partition(),
+                                                (k, v) -> {
+                                                    if (v == null) {
+                                                        v = List.of(record.offset(), record.offset());
+                                                    } else {
+                                                        v = List.of(v.getFirst(), record.offset());
+                                                    }
+                                                    return v;
+                                                });
                                     }
 
-                                    offsetMap.forEach(
-                                            (topicPartition, offsetAndMetadata) -> {
-                                                log.debug(
-                                                        "Polled latest message offset {} for partition {}",
-                                                        offsetAndMetadata.offset(),
-                                                        topicPartition);
-                                            });
+                                    offsetRange.forEach((topic, range) -> log.debug(
+                                            "[{}] Polled messages in offset range {}-{} from topic {}",
+                                            name,
+                                            range.getFirst(),
+                                            range.get(1),
+                                            topic));
 
                                     if (!autoCommit && !offsetMap.isEmpty()) {
                                         // Async commit all messages polled so far

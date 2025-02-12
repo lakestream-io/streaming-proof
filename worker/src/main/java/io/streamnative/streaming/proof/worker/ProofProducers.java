@@ -21,7 +21,7 @@ package io.streamnative.streaming.proof.worker;
 import io.streamnative.streaming.proof.common.LongSeq;
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.ProofProducer;
-import io.streamnative.streaming.proof.common.records.CheckPoint;
+import io.streamnative.streaming.proof.common.records.Checkpoint;
 import io.streamnative.streaming.proof.common.records.Driver;
 import io.streamnative.streaming.proof.common.records.NewProducers;
 import io.streamnative.streaming.proof.driver.kafka.KafkaProofDriver;
@@ -32,7 +32,6 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -153,18 +152,16 @@ public class ProofProducers {
      *
      * @return A checkpoint containing aggregated producer statistics
      */
-    public CheckPoint checkPoint() {
+    public Checkpoint checkPoint() {
         Map<String, LongSeq> keySeqs = new HashMap<>();
-        AtomicInteger errors = new AtomicInteger(0);
-        Map<String, List<Long>> failedSeqs = new HashMap<>();
+        Map<String, Integer> errors = new HashMap<>();
+        Map<String, List<List<LongSeq>>> outOfOrderOffsets = new HashMap<>();
         for (ProofProducerTask task : tasks) {
-            task.getLastPublished().forEach((k, v) -> {
-                keySeqs.put(k, v);
-                errors.addAndGet(task.getErrors().get());
-                failedSeqs.putAll(task.getFailedSeqs());
-            });
+            keySeqs.putAll(task.getLastPublished());
+            task.getErrors().forEach((k, v) -> errors.merge(k, v, Integer::sum));
+            outOfOrderOffsets.putAll(task.getOutOfOrderOffsets());
         }
-        return new CheckPoint(keySeqs, null, errors.get(), null, null, null, failedSeqs, null);
+        return new Checkpoint(keySeqs, null, errors, null, outOfOrderOffsets);
     }
 
     /**

@@ -18,7 +18,7 @@
  */
 package io.streamnative.streaming.proof.worker;
 
-import io.streamnative.streaming.proof.common.records.CheckPoint;
+import io.streamnative.streaming.proof.common.records.Checkpoint;
 import io.streamnative.streaming.proof.common.records.NewConsumers;
 import io.streamnative.streaming.proof.common.records.NewProducers;
 import java.util.Map;
@@ -75,7 +75,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * @see ProofProducers
  * @see ProofConsumers
- * @see CheckPoint
+ * @see Checkpoint
  */
 public class Worker {
 
@@ -112,7 +112,7 @@ public class Worker {
      * @param id The unique identifier of the producer group
      * @return A checkpoint containing producer statistics and sequence information
      */
-    public CheckPoint producerCheckPoint(String id) {
+    public Checkpoint producerCheckPoint(String id) {
         ProofProducers producer = producers.get(id);
         return producer.checkPoint();
     }
@@ -144,7 +144,7 @@ public class Worker {
      * @param id The unique identifier of the consumer group
      * @return A checkpoint containing consumer statistics and sequence information
      */
-    public CheckPoint consumerCheckPoint(String id) {
+    public Checkpoint consumerCheckPoint(String id) {
         ProofConsumers consumer = consumers.get(id);
         return consumer.checkPoint();
     }

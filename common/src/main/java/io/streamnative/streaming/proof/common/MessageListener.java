@@ -28,7 +28,6 @@ package io.streamnative.streaming.proof.common;
  * typically used to verify message ordering and detect duplicates or missing messages.
  *
  * @see ProofConsumer
- * @see ProofConsumerTask
  * @see MessageMetadata
  */
 public interface MessageListener {

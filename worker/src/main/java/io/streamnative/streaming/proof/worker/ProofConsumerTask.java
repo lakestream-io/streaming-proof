@@ -24,51 +24,14 @@ import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 
-/**
- * A task that processes and validates messages consumed from a messaging system.
- * This class implements both MessageListener for receiving messages and AutoCloseable
- * for resource cleanup. It tracks message sequences, duplicates, and ordering violations
- * to verify messaging system guarantees.
- *
- * <p>The task maintains the following metrics:
- * <ul>
- *   <li>Sequence numbers per message key</li>
- *   <li>Duplicate message counts</li>
- *   <li>Out-of-order message counts</li>
- *   <li>Missing sequence numbers</li>
- *   <li>Out-of-order sequence pairs</li>
- * </ul>
- *
- * <p>Message sequence validation rules:
- * <ul>
- *   <li>Sequential: value = previous + 1</li>
- *   <li>Duplicate: value ≤ previous</li>
- *   <li>Out-of-order: value > previous + 1</li>
- * </ul>
- *
- * <p>Example usage:
- * <pre>{@code
- * ProofConsumerTask task = new ProofConsumerTask();
- * ProofConsumer consumer = driver.createConsumer(topic, config, task);
- * task.setConsumer(consumer);
- *
- * // Message processing happens automatically through onMessage callback
- * // Later, check the metrics:
- * System.out.println("Duplicates: " + task.getDups().get());
- * System.out.println("Out of order: " + task.getOutOfOrders().get());
- * System.out.println("Missing sequences: " + task.getMissedSeqs());
- * }</pre>
- *
- * @see MessageListener
- * @see ProofConsumer
- */
-@Getter
+@Slf4j
 public class ProofConsumerTask implements MessageListener, AutoCloseable {
 
     /** The consumer instance that this task is associated with */
@@ -99,22 +62,39 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
      * @see LongSeq
      * @see MessageMetadata
      */
-    private final Map<String, LongSeq> keySeq;
+    private final Map<String, LongSeq> keySeq = new HashMap<>();
 
     /** Counter for duplicate messages detected */
-    private final AtomicInteger dups = new AtomicInteger(0);
-
-    /** Counter for out-of-order messages detected */
-    private final AtomicInteger outOfOrders = new AtomicInteger(0);
+    @Getter
+    private final Map<String, Integer> dups = new HashMap<>();
 
     /** 
-     * Tracks missing sequence numbers per message key.
-     * Key: Message key
-     * Value: List of sequence numbers that were skipped in the sequence.
-     * For example, if messages arrive with sequence numbers [1,2,5], then [3,4] will be
-     * recorded as missed sequences for that key.
+     * Tracks ranges of missing sequence numbers per message key.
+     * 
+     * <p>Key: Message key used for grouping related messages
+     * <p>Value: List of sequence number ranges, where each range is represented as a list
+     * containing [start, end] inclusive. Multiple non-contiguous ranges are stored as
+     * separate entries in the list.
+     *
+     * <p>Examples:
+     * <ul>
+     *   <li>If messages arrive as [1,2,5]:
+     *       <br>missedSeqs["key"] = [[3,4]]</li>
+     *   <li>If messages arrive as [1,5,10]:
+     *       <br>missedSeqs["key"] = [[2,4], [6,9]]</li>
+     *   <li>When message 3 arrives for previous gap [3,4]:
+     *       <br>missedSeqs["key"] = [[4,4]]</li>
+     *   <li>When message 4 arrives:
+     *       <br>missedSeqs["key"] is removed (range becomes empty)</li>
+     * </ul>
+     *
+     * <p>The ranges are maintained in sorted order and automatically merged or split
+     * when new messages arrive that fill parts of existing gaps.
+     *
+     * @see #updateMissedSequences(String, long)
+     * @see #handleMissedSeqs(String, LongSeq, LongSeq)
      */
-    private final Map<String, List<Long>> missedSeqs = new HashMap<>();
+    private final Map<String, List<List<Long>>> missedSeqs = new HashMap<>();
 
     /** 
      * Records out-of-order message sequences per message key.
@@ -141,13 +121,6 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
      * @see MessageMetadata
      */
     private final Map<String, List<List<LongSeq>>> outOfOrderSeqs = new HashMap<>();
-
-    /**
-     * Creates a new ProofConsumerTask with an empty sequence tracking map.
-     */
-    public ProofConsumerTask() {
-        this.keySeq = new HashMap<>();
-    }
 
     /**
      * Processes a received message and validates its sequence number against the expected order.
@@ -181,24 +154,145 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
         LongSeq newMsg = new LongSeq(value, metadata);
         LongSeq lastMsg = keySeq.getOrDefault(key, LongSeq.empty());
         long seq = lastMsg.seq();
-        missedSeqs.computeIfPresent(key, (k, list) -> {
-            list.remove(value);
-            return list.isEmpty() ? null : list;
-        });
+    
+        // Update missed sequences if this message fills a gap
+        updateMissedSequences(key, value);
+    
+        // Process message based on its sequence
         if (value - seq == 1) {
-            keySeq.put(key, newMsg);
+            handleInSequenceMessage(key, newMsg);
         } else if (value <= seq) {
-            dups.incrementAndGet();
+            handleDuplicateMessage(key, lastMsg, newMsg);
         } else {
-            for (long i = seq + 1; i < value; i++) {
-                missedSeqs.computeIfAbsent(key, k -> new ArrayList<>()).add(i);
-            }
-            outOfOrders.incrementAndGet();
-            List<List<LongSeq>> outOfOrder = outOfOrderSeqs.computeIfAbsent(key, k -> new ArrayList<>());
-            List<LongSeq> pair = List.of(lastMsg, newMsg);
-            outOfOrder.add(pair);
-            keySeq.put(key, newMsg);
+            handleMissedSeqs(key, newMsg, lastMsg);
         }
+        // Update latest sequence
+        keySeq.put(key, newMsg);
+    }
+
+    public Map<String, LongSeq> getKeySeq() {
+        return new HashMap<>(keySeq);
+    }
+
+    public Map<String, List<List<Long>>> getMissedSeqs() {
+        return new HashMap<>(missedSeqs);
+    }
+
+    public Map<String, List<List<LongSeq>>> getOutOfOrderSeqs() {
+        return new HashMap<>(outOfOrderSeqs);
+    }
+
+    private void updateMissedSequences(String key, long value) {
+        missedSeqs.computeIfPresent(key, (k, ranges) -> {
+            List<List<Long>> newRanges = new ArrayList<>();
+            Iterator<List<Long>> it = ranges.iterator();
+            
+            while (it.hasNext()) {
+                List<Long> range = new ArrayList<>(it.next());
+                if (!isValueInRange(value, range)) {
+                    continue;
+                }
+                
+                if (value == range.get(0)) {
+                    range.set(0, value + 1);
+                    if (range.get(0) <= range.get(1)) {
+                        newRanges.add(range);
+                    }
+                } else if (value == range.get(1)) {
+                    range.set(1, value - 1);
+                    if (range.get(0) <= range.get(1)) {
+                        newRanges.add(range);
+                    }
+                } else {
+                    splitRange(range, value, newRanges);
+                }
+                it.remove();
+                break;
+            }
+            
+            ranges.addAll(newRanges);
+            ranges.sort(this::compareRanges);
+            return ranges.isEmpty() ? null : ranges;
+        });
+    }
+
+    /**
+     * Splits a range of missing sequence numbers when a message arrives that falls within the range.
+     * The original range is split into two new ranges: one before and one after the received value.
+     * Only valid ranges (where start ≤ end) are added to the result list.
+     *
+     * <p>For example:
+     * <pre>
+     * Original range: [2,6]
+     * Received value: 4
+     * Result ranges: [2,3], [5,6]
+     * </pre>
+     *
+     * <p>Edge cases:
+     * <ul>
+     *   <li>If value - 1 < range start: only right range is added</li>
+     *   <li>If value + 1 > range end: only left range is added</li>
+     *   <li>If resulting range has start > end: range is discarded</li>
+     * </ul>
+     *
+     * @param range The original range of missing sequence numbers [start, end]
+     * @param value The sequence number that splits the range
+     * @param newRanges List to store the resulting valid ranges
+     * @see #updateMissedSequences(String, long)
+     */
+    private void splitRange(List<Long> range, long value, List<List<Long>> newRanges) {
+        List<Long> left = new ArrayList<>();
+        left.add(range.get(0));
+        left.add(value - 1);
+        
+        List<Long> right = new ArrayList<>();
+        right.add(value + 1);
+        right.add(range.get(1));
+        
+        if (left.get(0) <= left.get(1)) {
+            newRanges.add(left);
+        }
+        if (right.get(0) <= right.get(1)) {
+            newRanges.add(right);
+        }
+    }
+
+    private boolean isValueInRange(long value, List<Long> range) {
+        return value >= range.get(0) && value <= range.get(1);
+    }
+
+    private int compareRanges(List<Long> a, List<Long> b) {
+        long diff = a.get(0) - b.get(0);
+        return diff == 0 ? (int) (a.get(1) - b.get(1)) : (int) diff;
+    }
+
+    private void handleInSequenceMessage(String key, LongSeq newMsg) {
+        keySeq.put(key, newMsg);
+    }
+
+    private void handleDuplicateMessage(String key, LongSeq lastMsg, LongSeq newMsg) {
+        int dupCount = (int) (lastMsg.seq() - newMsg.seq() + 1);
+        dups.compute(key, (k, v) -> v == null ? dupCount : v + dupCount);
+        List<List<Long>> missedRanges = missedSeqs.get(key);
+        if (missedRanges != null) {
+            boolean removed = missedRanges.removeIf(range -> range.getFirst() >= newMsg.seq());
+            if (removed) {
+                outOfOrderSeqs.computeIfAbsent(key, k -> new ArrayList<>()).add(List.of(lastMsg, newMsg));
+            } else {
+                for (List<Long> missedRange : missedRanges) {
+                    if (isValueInRange(newMsg.seq(), missedRange)) {
+                        outOfOrderSeqs.computeIfAbsent(key, k -> new ArrayList<>()).add(List.of(lastMsg, newMsg));
+                        break;
+                    }
+                }
+            }
+        }
+        keySeq.put(key, newMsg);
+    }
+
+    private void handleMissedSeqs(String key, LongSeq newMsg, LongSeq lastMsg) {
+        List<Long> range = List.of(lastMsg.seq() + 1, newMsg.seq() - 1);
+        missedSeqs.computeIfAbsent(key, k -> new ArrayList<>()).add(range);
     }
 
     /**

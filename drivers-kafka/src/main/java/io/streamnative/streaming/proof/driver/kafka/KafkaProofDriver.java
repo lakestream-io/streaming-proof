@@ -22,14 +22,19 @@ import io.streamnative.streaming.proof.common.MessageListener;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.ProofProducer;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.LongDeserializer;
 import org.apache.kafka.common.serialization.LongSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -75,6 +80,7 @@ import org.apache.kafka.common.serialization.StringSerializer;
  * @see KafkaAtLeastOnceProofProducer
  * @see KafkaAtLeastOnceProofConsumer
  */
+@Slf4j
 public class KafkaProofDriver implements ProofDriver {
 
     /** Configuration key for zone ID */
@@ -164,7 +170,8 @@ public class KafkaProofDriver implements ProofDriver {
      * @return A configured ProofConsumer instance
      */
     @Override
-    public ProofConsumer createConsumer(String topicName, Map<String, Object> configs, MessageListener listener) {
+    public ProofConsumer createConsumer(String topicName, int partitionCount, Map<String, Object> configs,
+                MessageListener listener) {
         configs.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         configs.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, LongDeserializer.class.getName());
         configs.put(ConsumerConfig.GROUP_ID_CONFIG, "streaming-proof");
@@ -176,8 +183,18 @@ public class KafkaProofDriver implements ProofDriver {
                             String.valueOf(configs.get(KAFKA_CLIENT_ID)), System.getProperty(ZONE_ID_CONFIG)));
         }
         KafkaConsumer<String, Long> consumer = new KafkaConsumer<>(configs);
-        consumer.subscribe(List.of(topicName));
-        return new KafkaAtLeastOnceProofConsumer(consumer, configs, listener);
+        String consumerName = UUID.randomUUID().toString();
+        consumer.subscribe(List.of(topicName), new ConsumerRebalanceListener() {
+            @Override
+            public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
+                partitions.forEach(p -> log.info("[{}] Kafka partition revoked: {}", consumerName, p));
+            }
+            @Override
+            public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
+                partitions.forEach(p -> log.info("[{}] Kafka partition assigned: {}", consumerName, p));
+            }
+        });
+        return new KafkaAtLeastOnceProofConsumer(consumerName, consumer, configs, listener);
     }
 
     /**

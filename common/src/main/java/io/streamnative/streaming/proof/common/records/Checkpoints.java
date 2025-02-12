@@ -50,10 +50,10 @@ import java.util.Map;
  * @param lastFailed A map of the most recent failed checkpoints for each component,
  *                   useful for debugging and error analysis
  *
- * @see CheckPoint
+ * @see Checkpoint
  */
-public record Checkpoints(CheckPoint inCheck,
-                          Map<String, CheckPoint> latest,
-                          Map<String, CheckPoint> lastVerified,
-                          Map<String, CheckPoint> lastFailed) {
+public record Checkpoints(Checkpoint inCheck,
+                          Map<String, Checkpoint> latest,
+                          Map<String, Checkpoint> lastVerified,
+                          Map<String, Checkpoint> lastFailed) {
 }

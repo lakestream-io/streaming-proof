@@ -18,6 +18,8 @@
  */
 package io.streamnative.streaming.proof.common.records;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 /**
  * A comprehensive record that encapsulates the complete state and results of a streaming proof test.
  * This immutable record combines the test configuration, execution summary, and detailed checkpoints,
@@ -50,6 +52,7 @@ package io.streamnative.streaming.proof.common.records;
  * @see ProofSummary
  * @see Checkpoints
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record ProofDetails(Proof proof,
                            ProofSummary summary,
                            Checkpoints checkpoints) {

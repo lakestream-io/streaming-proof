@@ -23,6 +23,7 @@ import static io.streamnative.streaming.proof.common.Util.DELETE_CONFIG;
 import static io.streamnative.streaming.proof.common.Util.DELETE_PROOF;
 import static io.streamnative.streaming.proof.common.Util.GET_CONFIG;
 import static io.streamnative.streaming.proof.common.Util.GET_PROOF;
+import static io.streamnative.streaming.proof.common.Util.GET_PROOF_DETAILS;
 import static io.streamnative.streaming.proof.common.Util.LIST_PROOFS;
 import static io.streamnative.streaming.proof.common.Util.PUT_CONFIG;
 import static io.streamnative.streaming.proof.common.Util.STOP_PROOF;
@@ -64,6 +65,7 @@ public class CoordinatorHandler {
         this.coordinator = coordinator;
         app.post(CREATE_PROOF, this::handleCreateProof);
         app.get(GET_PROOF, this::handleGetProof);
+        app.get(GET_PROOF_DETAILS, this::handleGetProofDetails);
         app.put(STOP_PROOF, this::handleStopProof);
         app.delete(DELETE_PROOF, this::handleDeleteProof);
         app.get(LIST_PROOFS, this::handleListProofs);
@@ -98,7 +100,17 @@ public class CoordinatorHandler {
      */
     private void handleGetProof(Context ctx) throws Exception {
         String id = ctx.pathParam("id");
-        ProofDetails proofDetails = coordinator.getProof(id);
+        ProofDetails proofDetails = coordinator.getProofSummary(id);
+        if (proofDetails == null) {
+            ctx.status(404).result("Proof test not found: " + id);
+            return;
+        }
+        ctx.result(Util.JSON_WRITER.writeValueAsString(proofDetails));
+    }
+
+    private void handleGetProofDetails(Context ctx) throws Exception {
+        String id = ctx.pathParam("id");
+        ProofDetails proofDetails = coordinator.getProofDetails(id);
         if (proofDetails == null) {
             ctx.status(404).result("Proof test not found: " + id);
             return;

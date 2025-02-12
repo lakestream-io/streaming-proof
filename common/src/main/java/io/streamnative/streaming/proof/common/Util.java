@@ -67,6 +67,7 @@ public class Util {
     public static final String CREATE_PROOF = "/proofs";
     /** Endpoint to retrieve a specific proof test by ID */
     public static final String GET_PROOF = "/proofs/{id}";
+    public static final String GET_PROOF_DETAILS = "/proofs/{id}/details";
     /** Endpoint to stop a running proof test */
     public static final String STOP_PROOF = "/proofs/{id}/stop";
     /** Endpoint to delete a proof test and its resources */

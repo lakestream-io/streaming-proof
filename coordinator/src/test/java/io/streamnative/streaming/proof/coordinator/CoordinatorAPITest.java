@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package io.streamnative.streaming.proof;
+package io.streamnative.streaming.proof.coordinator;
 
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
@@ -26,7 +26,6 @@ import io.streamnative.streaming.proof.common.records.Configs;
 import io.streamnative.streaming.proof.common.records.Driver;
 import io.streamnative.streaming.proof.common.records.Proof;
 import io.streamnative.streaming.proof.common.records.ProofDetails;
-import io.streamnative.streaming.proof.coordinator.CoordinatorStarter;
 import io.streamnative.streaming.proof.worker.WorkerStarter;
 import java.io.IOException;
 import java.io.UncheckedIOException;

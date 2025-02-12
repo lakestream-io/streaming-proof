@@ -21,7 +21,7 @@ package io.streamnative.streaming.proof.worker;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 import io.streamnative.streaming.proof.common.Util;
-import io.streamnative.streaming.proof.common.records.CheckPoint;
+import io.streamnative.streaming.proof.common.records.Checkpoint;
 import io.streamnative.streaming.proof.common.records.NewConsumers;
 import io.streamnative.streaming.proof.common.records.NewProducers;
 import lombok.extern.slf4j.Slf4j;
@@ -118,7 +118,7 @@ public class WorkerHandler {
      */
     private void handleProducerCheckpoints(Context ctx) throws Exception {
         String proofID = ctx.pathParam("id");
-        CheckPoint checkPoint = worker.producerCheckPoint(proofID);
+        Checkpoint checkPoint = worker.producerCheckPoint(proofID);
         ctx.result(Util.JSON_WRITER.writeValueAsString(checkPoint));
     }
 
@@ -131,7 +131,7 @@ public class WorkerHandler {
      */
     private void handleConsumerCheckpoints(Context ctx) throws Exception {
         String proofID = ctx.pathParam("id");
-        CheckPoint checkPoint = worker.consumerCheckPoint(proofID);
+        Checkpoint checkPoint = worker.consumerCheckPoint(proofID);
         ctx.result(Util.JSON_WRITER.writeValueAsString(checkPoint));
     }
 

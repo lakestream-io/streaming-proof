@@ -185,17 +185,22 @@ public class Coordinator {
      *         summary, and checkpoint information
      * @throws IllegalStateException if the proof test with the given ID is not found
      */
-    public ProofDetails getProof(String proofID) {
+    public ProofDetails getProofDetails(String proofID) {
         ProofTask task = proofs.get(proofID);
         Checkpoints checkpoints = new Checkpoints(
                 task.getInCheck().clone().trim(),
-                Map.of("producer", task.getLatestProducerCheckPoint().clone().trim(),
-                        "consumer", task.getLatestConsumerCheckPoint().clone().trim()),
-                Map.of("producer", task.getLastVerifiedProducerCheckPoint().clone().trim(),
-                        "consumer", task.getLastVerifiedConsumerCheckPoint().clone().trim()),
-                Map.of("producer", task.getLastFailedProducerCheckPoint().clone().trim(),
-                        "consumer", task.getLastFailedConsumerCheckPoint().clone().trim()));
+                Map.of("producer", task.getLatestProducerCheckpoint().clone().trim(),
+                        "consumer", task.getLatestConsumerCheckpoint().clone().trim()),
+                Map.of("producer", task.getLastVerifiedProducerCheckpoint().clone().trim(),
+                        "consumer", task.getLastVerifiedConsumerCheckpoint().clone().trim()),
+                Map.of("producer", task.getLastFailedProducerCheckpoint().clone().trim(),
+                        "consumer", task.getLastFailedConsumerCheckpoint().clone().trim()));
         return new ProofDetails(task.getProof(), task.getSummary(), checkpoints);
+    }
+
+    public ProofDetails getProofSummary(String proofID) {
+        ProofTask task = proofs.get(proofID);
+        return new ProofDetails(task.getProof(), task.getSummary(), null);
     }
 
     /**

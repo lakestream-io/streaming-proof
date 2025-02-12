@@ -52,6 +52,7 @@ import io.streamnative.streaming.proof.common.ProofConsumer;
  */
 public record NewConsumers(String id,
                            String topic,
+                           int partitions,
                            int consumers,
                            Driver driver) {
 }

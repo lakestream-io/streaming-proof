@@ -18,16 +18,13 @@
  */
 package io.streamnative.streaming.proof.worker;
 
-import io.streamnative.streaming.proof.common.LongSeq;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import io.streamnative.streaming.proof.common.ProofDriver;
-import io.streamnative.streaming.proof.common.records.CheckPoint;
+import io.streamnative.streaming.proof.common.records.Checkpoint;
 import io.streamnative.streaming.proof.common.records.NewConsumers;
 import io.streamnative.streaming.proof.driver.kafka.KafkaProofDriver;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Manages a group of consumer tasks for streaming proof tests. This class is responsible
@@ -72,7 +69,7 @@ import java.util.Map;
  *
  * @see ProofConsumerTask
  * @see ProofDriver
- * @see CheckPoint
+ * @see Checkpoint
  */
 public class ProofConsumers {
 
@@ -114,7 +111,7 @@ public class ProofConsumers {
         }
         for (int i = 0; i < newConsumers.consumers(); i++) {
             ProofConsumerTask task = new ProofConsumerTask();
-            ProofConsumer proofConsumer = driver.createConsumer(newConsumers.topic(),
+            ProofConsumer proofConsumer = driver.createConsumer(newConsumers.topic(), newConsumers.partitions(),
                     newConsumers.driver().driverConfigs(), task);
             task.setConsumer(proofConsumer);
             tasks.add(task);
@@ -133,22 +130,14 @@ public class ProofConsumers {
      *
      * @return A checkpoint containing aggregated consumer statistics
      */
-    public CheckPoint checkPoint() {
-        Map<String, LongSeq> keySeqs = new HashMap<>();
-        int dups = 0;
-        int outOfOrders = 0;
-        int missed = 0;
-        Map<String, List<Long>> missedSeqs = new HashMap<>();
-        Map<String, List<List<LongSeq>>> outOfOrderSeqs = new HashMap<>();
+    public Checkpoint checkPoint() {
+        Checkpoint checkPoint = Checkpoint.empty();
         for (ProofConsumerTask task : tasks) {
-            keySeqs.putAll(task.getKeySeq());
-            dups += task.getDups().get();
-            outOfOrders += task.getOutOfOrders().get();
-            missed += task.getMissedSeqs().size();
-            missedSeqs.putAll(task.getMissedSeqs());
-            outOfOrderSeqs.putAll(task.getOutOfOrderSeqs());
+            Checkpoint c = new Checkpoint(task.getKeySeq(), task.getDups(), null,
+                    task.getMissedSeqs(), task.getOutOfOrderSeqs());
+            checkPoint.merge(c);
         }
-        return new CheckPoint(keySeqs, dups, 0, outOfOrders, missed, missedSeqs, null, outOfOrderSeqs);
+        return checkPoint;
     }
 
     /**

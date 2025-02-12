@@ -97,9 +97,11 @@ public interface ProofDriver {
      * Creates a new consumer instance for receiving messages from a specific topic.
      *
      * @param topicName The name of the topic to consume messages from
+     * @param partitions The number of partitions of the topic to consume from
      * @param configs Consumer-specific configuration parameters
      * @param listener A {@link MessageListener} that will receive the consumed messages
      * @return A new {@link ProofConsumer} instance configured for the specified topic
      */
-    ProofConsumer createConsumer(String topicName, Map<String, Object> configs, MessageListener listener);
+    ProofConsumer createConsumer(String topicName, int partitions, Map<String, Object> configs,
+                 MessageListener listener);
 }

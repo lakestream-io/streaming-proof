@@ -28,7 +28,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import lombok.Getter;
 
@@ -97,16 +96,18 @@ public class ProofProducerTask implements AutoCloseable {
     private final Map<String, LongSeq> lastPublished;
 
     /** Counter for failed message sends */
-    private final AtomicInteger errors = new AtomicInteger(0);
+    private final Map<String, Integer> errors = new HashMap<>();
 
     /** Counter for round-robin key selection */
     private final AtomicLong index = new AtomicLong(0);
 
-    /** 
-     * Maps keys to their failed sequence numbers. Each key maps to a list of sequence 
-     * numbers that failed during message sending.
+    /**
+     * Maps keys to lists of out-of-order message offsets. Each key maps to a list of LongSeq lists,
+     * where each inner list represents a sequence of messages that were received from the broker
+     * in an order different from their sending order. This helps track and analyze message ordering
+     * anomalies during the streaming proof tests.
      */
-    private final Map<String, List<Long>> failedSeqs = new HashMap<>();
+    private final Map<String, List<List<LongSeq>>> outOfOrderOffsets = new HashMap<>();
 
     /**
      * Creates a new producer task with the specified number of unique keys.
@@ -142,13 +143,18 @@ public class ProofProducerTask implements AutoCloseable {
         long seq = keySeq.get(key).getAndIncrement();
         return producer.sendAsync(key, seq).whenComplete((metadata, e) -> {
             if (e != null) {
-                errors.incrementAndGet();
-                synchronized (failedSeqs) {
-                    failedSeqs.computeIfAbsent(key, k -> new ArrayList<>()).add(seq);
+                synchronized (errors) {
+                    errors.compute(e.getMessage(), (k, v) -> v == null ? 1 : v + 1);
                 }
             } else {
                 synchronized (lastPublished) {
-                    lastPublished.put(key, new LongSeq(seq, metadata));
+                    LongSeq newMsg = new LongSeq(seq, metadata);
+                    if (metadata.offset() <= lastPublished.get(key).metadata().offset()) {
+                        List<List<LongSeq>> outOfOrder = outOfOrderOffsets.computeIfAbsent(key, k -> new ArrayList<>());
+                        List<LongSeq> pair = List.of(lastPublished.get(key), newMsg);
+                        outOfOrder.add(pair);
+                    }
+                    lastPublished.put(key, newMsg);
                 }
             }
         });
