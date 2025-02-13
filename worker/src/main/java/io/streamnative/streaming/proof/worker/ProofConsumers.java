@@ -24,7 +24,9 @@ import io.streamnative.streaming.proof.common.records.Checkpoint;
 import io.streamnative.streaming.proof.common.records.NewConsumers;
 import io.streamnative.streaming.proof.driver.kafka.KafkaProofDriver;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Manages a group of consumer tasks for streaming proof tests. This class is responsible
@@ -138,6 +140,15 @@ public class ProofConsumers {
             checkPoint.merge(c);
         }
         return checkPoint;
+    }
+
+    public Map<String, Checkpoint> checkPointDetails() {
+        Map<String, Checkpoint> result = new HashMap<>();
+        for (ProofConsumerTask task : tasks) {
+            result.put(task.getConsumerName(), new Checkpoint(task.getKeySeq(), task.getDups(), null,
+                    task.getMissedSeqs(), task.getOutOfOrderSeqs()));
+        }
+        return result;
     }
 
     /**

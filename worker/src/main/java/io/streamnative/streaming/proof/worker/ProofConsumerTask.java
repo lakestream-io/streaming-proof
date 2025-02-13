@@ -24,7 +24,6 @@ import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import lombok.Getter;
@@ -185,14 +184,13 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
     private void updateMissedSequences(String key, long value) {
         missedSeqs.computeIfPresent(key, (k, ranges) -> {
             List<List<Long>> newRanges = new ArrayList<>();
-            Iterator<List<Long>> it = ranges.iterator();
-            
-            while (it.hasNext()) {
-                List<Long> range = new ArrayList<>(it.next());
+
+            for (List<Long> range : ranges) {
                 if (!isValueInRange(value, range)) {
+                    newRanges.add(range);
                     continue;
                 }
-                
+                range = new ArrayList<>(range);
                 if (value == range.get(0)) {
                     range.set(0, value + 1);
                     if (range.get(0) <= range.get(1)) {
@@ -206,13 +204,9 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
                 } else {
                     splitRange(range, value, newRanges);
                 }
-                it.remove();
-                break;
             }
-            
-            ranges.addAll(newRanges);
-            ranges.sort(this::compareRanges);
-            return ranges.isEmpty() ? null : ranges;
+            newRanges.sort(this::compareRanges);
+            return newRanges.isEmpty() ? null : newRanges;
         });
     }
 
@@ -241,11 +235,11 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
      * @see #updateMissedSequences(String, long)
      */
     private void splitRange(List<Long> range, long value, List<List<Long>> newRanges) {
-        List<Long> left = new ArrayList<>();
+        List<Long> left = new ArrayList<>(2);
         left.add(range.get(0));
         left.add(value - 1);
         
-        List<Long> right = new ArrayList<>();
+        List<Long> right = new ArrayList<>(2);
         right.add(value + 1);
         right.add(range.get(1));
         
@@ -288,6 +282,10 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
             }
         }
         keySeq.put(key, newMsg);
+    }
+
+    public String getConsumerName() {
+        return consumer.name();
     }
 
     private void handleMissedSeqs(String key, LongSeq newMsg, LongSeq lastMsg) {

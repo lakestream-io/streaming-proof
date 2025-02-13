@@ -282,6 +282,7 @@ public class Checkpoint implements Cloneable {
         if (missedSeqs == null || missedSeqs.isEmpty()) {
             return List.of(List.of(0L, latestSeq));
         }
+        missedSeqs = new ArrayList<>(missedSeqs);
         missedSeqs.sort(Comparator.comparingLong(List::getFirst));
         List<List<Long>> noMissed = new ArrayList<>();
         for (int i = 0; i < missedSeqs.size(); i++) {

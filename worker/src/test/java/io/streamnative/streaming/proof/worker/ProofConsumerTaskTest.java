@@ -143,6 +143,7 @@ public class ProofConsumerTaskTest {
             assertEquals(missedSeqs.get(KEY3), List.of(List.of(1L, 5L)));
 
             consumerTask.onMessage(KEY1, 8L, createMetadata(15L));
+            missedSeqs = consumerTask.getMissedSeqs();
             assertEquals(missedSeqs.get(KEY1).size(), 2); // Missing 1,2,3,4,6,7
             assertEquals(missedSeqs.get(KEY1), List.of(List.of(1L, 4L), List.of(6L, 7L)));
         }

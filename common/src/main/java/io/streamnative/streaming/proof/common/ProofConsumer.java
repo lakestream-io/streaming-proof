@@ -55,4 +55,6 @@ package io.streamnative.streaming.proof.common;
  * @see KafkaProofConsumer
  */
 public interface ProofConsumer extends AutoCloseable {
+
+    String name();
 }

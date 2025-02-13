@@ -24,6 +24,7 @@ import io.streamnative.streaming.proof.common.Util;
 import io.streamnative.streaming.proof.common.records.Checkpoint;
 import io.streamnative.streaming.proof.common.records.NewConsumers;
 import io.streamnative.streaming.proof.common.records.NewProducers;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -78,6 +79,7 @@ public class WorkerHandler {
         app.post(Util.START_CONSUMER, this::handleStartConsumer);
         app.get(Util.PRODUCER_CHECKPOINTS, this::handleProducerCheckpoints);
         app.get(Util.CONSUMER_CHECKPOINTS, this::handleConsumerCheckpoints);
+        app.get(Util.CONSUMER_CHECKPOINTS_DETAILS, this::handleConsumerCheckpointsDetails);
         app.post(Util.STOP_PRODUCER, this::handleStopProducer);
         app.post(Util.STOP_CONSUMER, this::handleStopConsumer);
     }
@@ -132,6 +134,12 @@ public class WorkerHandler {
     private void handleConsumerCheckpoints(Context ctx) throws Exception {
         String proofID = ctx.pathParam("id");
         Checkpoint checkPoint = worker.consumerCheckPoint(proofID);
+        ctx.result(Util.JSON_WRITER.writeValueAsString(checkPoint));
+    }
+
+    private void handleConsumerCheckpointsDetails(Context ctx) throws Exception {
+        String proofID = ctx.pathParam("id");
+        Map<String, Checkpoint> checkPoint = worker.consumerCheckPointDetails(proofID);
         ctx.result(Util.JSON_WRITER.writeValueAsString(checkPoint));
     }
 

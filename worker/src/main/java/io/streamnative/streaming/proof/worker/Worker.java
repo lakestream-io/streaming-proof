@@ -161,4 +161,9 @@ public class Worker {
         producers.values().forEach(ProofProducers::stop);
         consumers.values().forEach(ProofConsumers::stop);
     }
+
+    public Map<String, Checkpoint> consumerCheckPointDetails(String id) {
+        ProofConsumers consumer = consumers.get(id);
+        return consumer.checkPointDetails();
+    }
 }

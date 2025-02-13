@@ -105,6 +105,7 @@ public class Util {
     public static final String START_CONSUMER = "/consumers/start";
     /** Endpoint to retrieve consumer checkpoints for verification */
     public static final String CONSUMER_CHECKPOINTS = "/consumers/checkpoints/{id}";
+    public static final String CONSUMER_CHECKPOINTS_DETAILS = "/consumers/checkpoints/{id}/details";
     /** Endpoint to stop a running consumer */
     public static final String STOP_CONSUMER = "/consumers/stop/{id}";
 }

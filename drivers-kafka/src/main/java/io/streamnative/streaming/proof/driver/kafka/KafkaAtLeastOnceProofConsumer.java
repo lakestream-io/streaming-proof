@@ -186,4 +186,9 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
             consumer.close();
         });
     }
+
+    @Override
+    public String name() {
+        return name;
+    }
 }
