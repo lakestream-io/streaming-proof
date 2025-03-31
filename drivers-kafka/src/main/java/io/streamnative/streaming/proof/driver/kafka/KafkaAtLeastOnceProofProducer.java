@@ -108,15 +108,19 @@ public class KafkaAtLeastOnceProofProducer implements ProofProducer {
         ProducerRecord<String, Long> record = new ProducerRecord<>(topic, key, value);
         CompletableFuture<MessageMetadata> future = new CompletableFuture<>();
 
-        producer.send(
-                record,
-                (metadata, exception) -> {
-                    if (exception != null) {
-                        future.completeExceptionally(exception);
-                    } else {
-                        future.complete(new MessageMetadata(metadata.offset()));
-                    }
-                });
+        try {
+            producer.send(
+                    record,
+                    (metadata, exception) -> {
+                        if (exception != null) {
+                            future.completeExceptionally(exception);
+                        } else {
+                            future.complete(new MessageMetadata(metadata.offset()));
+                        }
+                    });
+        } catch (Exception e) {
+            future.completeExceptionally(e);
+        }
 
         return future;
     }
