@@ -25,9 +25,38 @@ package io.streamnative.streaming.proof.common;
  *
  * @param offset The position of the message in the message log. A value of -1
  *              indicates an invalid or uninitialized offset.
+ * @param ledgerId The ID of the ledger containing the message in Pulsar. A value of -1
+ *                indicates this field is not applicable or uninitialized.
+ * @param entryId The position of the message within its ledger in Pulsar. A value of -1
+ *               indicates this field is not applicable or uninitialized.
  *
  * @see LongSeq
  * @see ProofConsumer
  */
-public record MessageMetadata(Long offset) {
+public record MessageMetadata(
+        long offset,
+        long ledgerId,
+        long entryId
+) {
+    public MessageMetadata(long offset) {
+        this(offset, -1L, -1L);
+    }
+
+    public static MessageMetadata empty() {
+        return new MessageMetadata(-1L);
+    }
+
+    public boolean isAfter(MessageMetadata other) {
+        if (other == null) {
+            return true;
+        }
+        if (this.ledgerId >= 0 && this.entryId >= 0 
+                && other.ledgerId >= 0 && other.entryId >= 0) {
+            if (this.ledgerId != other.ledgerId) {
+                return this.ledgerId > other.ledgerId;
+            }
+            return this.entryId > other.entryId;
+        }
+        return this.offset > other.offset;
+    }
 }
