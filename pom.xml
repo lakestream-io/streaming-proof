@@ -32,6 +32,7 @@
         <module>coordinator</module>
         <module>worker</module>
         <module>drivers-kafka</module>
+        <module>drivers-pulsar</module>
         <module>common</module>
         <module>distribution</module>
         <module>docker</module>
@@ -50,6 +51,7 @@
         <testng.version>7.7.1</testng.version>
         <http.client.version>2.12.4</http.client.version>
         <kafka.client.version>3.7.1</kafka.client.version>
+        <pulsar.client.version>4.0.3</pulsar.client.version>
         <commons.lang3.version>3.17.0</commons.lang3.version>
         <maven-checkstyle-plugin.version>3.1.2</maven-checkstyle-plugin.version>
         <maven-surefire-plugin.version>3.2.5</maven-surefire-plugin.version>
@@ -151,6 +153,16 @@
                 <groupId>org.apache.kafka</groupId>
                 <artifactId>kafka-clients</artifactId>
                 <version>${kafka.client.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.pulsar</groupId>
+                <artifactId>pulsar-client</artifactId>
+                <version>${pulsar.client.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.pulsar</groupId>
+                <artifactId>pulsar-client-admin</artifactId>
+                <version>${pulsar.client.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.commons</groupId>

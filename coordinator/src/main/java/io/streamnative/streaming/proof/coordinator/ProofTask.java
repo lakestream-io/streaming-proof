@@ -29,6 +29,7 @@ import io.streamnative.streaming.proof.common.records.NewProducers;
 import io.streamnative.streaming.proof.common.records.Proof;
 import io.streamnative.streaming.proof.common.records.ProofSummary;
 import io.streamnative.streaming.proof.driver.kafka.KafkaProofDriver;
+import io.streamnative.streaming.proof.driver.pulsar.PulsarProofDriver;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -153,6 +154,8 @@ public class ProofTask {
         if (null == proofDriver) {
             if ("kafka".equals(driver.driverType())) {
                 this.proofDriver = new KafkaProofDriver();
+            } else if ("pulsar".equals(driver.driverType())) {
+                this.proofDriver = new PulsarProofDriver();
             } else {
                 throw new IllegalArgumentException("Unsupported driver: " + driver.driverType());
             }

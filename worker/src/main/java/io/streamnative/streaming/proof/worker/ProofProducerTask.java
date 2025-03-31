@@ -149,7 +149,7 @@ public class ProofProducerTask implements AutoCloseable {
             } else {
                 synchronized (lastPublished) {
                     LongSeq newMsg = new LongSeq(seq, metadata);
-                    if (metadata.offset() <= lastPublished.get(key).metadata().offset()) {
+                    if (!metadata.isAfter(lastPublished.get(key).metadata())) {
                         List<List<LongSeq>> outOfOrder = outOfOrderOffsets.computeIfAbsent(key, k -> new ArrayList<>());
                         List<LongSeq> pair = List.of(lastPublished.get(key), newMsg);
                         outOfOrder.add(pair);

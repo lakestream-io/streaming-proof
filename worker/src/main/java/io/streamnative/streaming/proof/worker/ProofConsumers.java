@@ -23,6 +23,7 @@ import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.records.Checkpoint;
 import io.streamnative.streaming.proof.common.records.NewConsumers;
 import io.streamnative.streaming.proof.driver.kafka.KafkaProofDriver;
+import io.streamnative.streaming.proof.driver.pulsar.PulsarProofDriver;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -107,6 +108,8 @@ public class ProofConsumers {
         if (null == driver) {
             if ("kafka".equals(driverType)) {
                 this.driver = new KafkaProofDriver();
+            } else if ("pulsar".equals(driverType)) {
+                this.driver = new PulsarProofDriver();
             } else {
                 throw new IllegalArgumentException("Unsupported driver: " + driverType);
             }
