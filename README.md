@@ -82,7 +82,7 @@ mvn clean install -DskipTests -Pdocker
 1. Start docker compose:
 
 ```bash
-cd docker
+cd deploy/docker-compose/kafka
 docker-compose up -d
 ```
 This will start:
