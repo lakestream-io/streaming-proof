@@ -157,12 +157,9 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
         // Update missed sequences if this message fills a gap
         updateMissedSequences(key, value);
     
-        // Process message based on its sequence
-        if (value - seq == 1) {
-            handleInSequenceMessage(key, newMsg);
-        } else if (value <= seq) {
+       if (value <= seq) {
             handleDuplicateMessage(key, lastMsg, newMsg);
-        } else {
+        } else if (value - seq > 1) {
             handleMissedSeqs(key, newMsg, lastMsg);
         }
         // Update latest sequence
@@ -260,10 +257,6 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
         return diff == 0 ? (int) (a.get(1) - b.get(1)) : (int) diff;
     }
 
-    private void handleInSequenceMessage(String key, LongSeq newMsg) {
-        keySeq.put(key, newMsg);
-    }
-
     private void handleDuplicateMessage(String key, LongSeq lastMsg, LongSeq newMsg) {
         int dupCount = (int) (lastMsg.seq() - newMsg.seq() + 1);
         dups.compute(key, (k, v) -> v == null ? dupCount : v + dupCount);
@@ -281,7 +274,6 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
                 }
             }
         }
-        keySeq.put(key, newMsg);
     }
 
     public String getConsumerName() {
