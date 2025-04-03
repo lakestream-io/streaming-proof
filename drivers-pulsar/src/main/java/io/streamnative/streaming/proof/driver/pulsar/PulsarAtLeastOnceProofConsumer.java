@@ -73,6 +73,8 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
     /** The message listener to invoke for each received message */
     private final MessageListener messageListener;
 
+    private final long consumeDelayMs;
+
     /**
      * Creates a new Pulsar consumer with at-least-once delivery guarantees.
      *
@@ -88,10 +90,12 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
             PulsarClient client,
             String topic,
             Map<String, Object> configs,
+            long consumeDelayMs,
             MessageListener listener) throws PulsarClientException {
 
         this.name = name;
         this.messageListener = listener;
+        this.consumeDelayMs = consumeDelayMs;
 
         ConsumerBuilder<Long> consumerBuilder = client.newConsumer(Schema.INT64)
                 .topic(topic)
@@ -133,6 +137,15 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
                         if (log.isDebugEnabled()) {
                             log.debug("[{}] Processed message: key={}, value={}, msgId={}",
                                     name, key, value, message.getMessageId());
+                        }
+
+                        if (consumeDelayMs > 0) {
+                            long timestampDiff = System.currentTimeMillis() - message.getPublishTime();
+                            if (timestampDiff < consumeDelayMs) {
+                                log.debug("[{}] Sleeping for {} ms after consuming message",
+                                        name, consumeDelayMs - timestampDiff);
+                                Thread.sleep(consumeDelayMs - timestampDiff);
+                            }
                         }
                     } catch (Exception e) {
                         log.error("[{}] Error processing message", name, e);

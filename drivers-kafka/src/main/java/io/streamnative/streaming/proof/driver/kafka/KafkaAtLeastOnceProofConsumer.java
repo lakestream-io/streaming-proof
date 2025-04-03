@@ -103,6 +103,7 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
             String name,
             KafkaConsumer<String, Long> consumer,
             Map<String, Object> consumerConfig,
+            long consumeDelayMs,
             MessageListener callback) {
         this.name = name;
         this.consumer = consumer;
@@ -121,6 +122,14 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
                                     Map<TopicPartition, OffsetAndMetadata> offsetMap = new HashMap<>();
                                     Map<String, List<Long>> offsetRange = new HashMap<>();
                                     for (ConsumerRecord<String, Long> record : records) {
+                                        if (consumeDelayMs > 0) {
+                                            long timestampDiff = System.currentTimeMillis() - record.timestamp();
+                                            if (timestampDiff < consumeDelayMs) {
+                                                log.debug("[{}] Sleeping for {} ms after consuming message",
+                                                        name, consumeDelayMs - timestampDiff);
+                                                Thread.sleep(consumeDelayMs - timestampDiff);
+                                            }
+                                        }
                                         callback.onMessage(record.key(), record.value(),
                                                 new MessageMetadata(record.offset()));
 

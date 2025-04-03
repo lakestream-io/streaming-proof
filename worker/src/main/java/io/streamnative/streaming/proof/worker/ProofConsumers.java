@@ -117,7 +117,7 @@ public class ProofConsumers {
         for (int i = 0; i < newConsumers.consumers(); i++) {
             ProofConsumerTask task = new ProofConsumerTask();
             ProofConsumer proofConsumer = driver.createConsumer(newConsumers.topic(), newConsumers.partitions(),
-                    newConsumers.driver().driverConfigs(), task);
+                    newConsumers.consumeDelayMs(), newConsumers.driver().driverConfigs(), task);
             task.setConsumer(proofConsumer);
             tasks.add(task);
         }

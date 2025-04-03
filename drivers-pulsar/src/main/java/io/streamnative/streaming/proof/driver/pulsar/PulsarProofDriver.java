@@ -205,12 +205,13 @@ public class PulsarProofDriver implements ProofDriver {
      * @return A configured ProofConsumer instance
      */
     @Override
-    public ProofConsumer createConsumer(String topicName, int partitionCount, Map<String, Object> configs,
-                                        MessageListener listener) {
+    public ProofConsumer createConsumer(String topicName, int partitionCount, long consumeDelayMs,
+                Map<String, Object> configs, MessageListener listener) {
         try {
             this.init(configs);
             String consumerName = UUID.randomUUID().toString();
-            return new PulsarAtLeastOnceProofConsumer(consumerName, client, topicName, configs, listener);
+            return new PulsarAtLeastOnceProofConsumer(consumerName, client, topicName, configs, consumeDelayMs,
+                    listener);
         } catch (PulsarClientException e) {
             throw new RuntimeException(e);
         }

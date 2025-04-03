@@ -170,8 +170,8 @@ public class KafkaProofDriver implements ProofDriver {
      * @return A configured ProofConsumer instance
      */
     @Override
-    public ProofConsumer createConsumer(String topicName, int partitionCount, Map<String, Object> configs,
-                MessageListener listener) {
+    public ProofConsumer createConsumer(String topicName, int partitionCount, long consumeDelayMs,
+                Map<String, Object> configs, MessageListener listener) {
         configs.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         configs.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, LongDeserializer.class.getName());
         configs.put(ConsumerConfig.GROUP_ID_CONFIG, "streaming-proof");
@@ -194,7 +194,7 @@ public class KafkaProofDriver implements ProofDriver {
                 partitions.forEach(p -> log.info("[{}] Kafka partition assigned: {}", consumerName, p));
             }
         });
-        return new KafkaAtLeastOnceProofConsumer(consumerName, consumer, configs, listener);
+        return new KafkaAtLeastOnceProofConsumer(consumerName, consumer, configs, consumeDelayMs, listener);
     }
 
     /**

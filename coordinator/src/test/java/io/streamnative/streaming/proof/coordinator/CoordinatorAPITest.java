@@ -20,6 +20,7 @@ package io.streamnative.streaming.proof.coordinator;
 
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.fail;
 
 import io.streamnative.streaming.proof.common.CoordinatorHttpClient;
 import io.streamnative.streaming.proof.common.records.Configs;
@@ -148,6 +149,56 @@ public class CoordinatorAPITest {
         httpClient.deleteProof(proofs.getFirst().getId()).join();
         List<Proof> proofs3 = httpClient.listProofs().join();
         assertEquals(proofs3.size(), 0);
+    }
+
+    @Test()
+    public void testProofWithConsumeDelay() throws Exception {
+        Configs configs = new Configs(Map.of("worker1", "http://localhost:" + workerPort), Map.of("kafka_driver",
+                new Driver("kafka", Map.of("bootstrap.servers", "localhost:" + kafkaPort))));
+        httpClient.putConfigs(configs).join();
+        Configs configs1 = httpClient.getConfigs().join();
+        assertEquals(configs1, configs);
+        Proof proof = Proof.builder()
+                .name(UUID.randomUUID().toString())
+                .driver("kafka_driver")
+                .keys(100)
+                .partitions(10)
+                .producers(4)
+                .consumers(4)
+                .features(List.of("at_least_once", "ordering"))
+                .checkPointInterval(5)
+                .msgRate(1000)
+                .consumeDelay(300)
+                .timeout(180)
+                .build();
+        try {
+            httpClient.createProof(proof).join();
+            fail();
+        } catch (Exception e) {
+            assertTrue(e.getMessage().contains("Server Error"));
+        }
+
+        proof = Proof.builder()
+                .name(UUID.randomUUID().toString())
+                .driver("kafka_driver")
+                .keys(100)
+                .partitions(10)
+                .producers(4)
+                .consumers(4)
+                .features(List.of("at_least_once", "ordering"))
+                .checkPointInterval(5)
+                .msgRate(1000)
+                .consumeDelay(10)
+                .timeout(180)
+                .build();
+        httpClient.createProof(proof).join();
+        List<Proof> proofs = httpClient.listProofs().join();
+        assertEquals(proofs.size(), 1);
+        Awaitility.await().atLeast(10, TimeUnit.SECONDS)
+                .atMost(1, TimeUnit.MINUTES).untilAsserted(() -> {
+            ProofDetails details = httpClient.getProof(proofs.getFirst().getId()).join();
+            assertTrue(details.summary().verified() > 0);
+        });
     }
 
     private static int getFreePort() {

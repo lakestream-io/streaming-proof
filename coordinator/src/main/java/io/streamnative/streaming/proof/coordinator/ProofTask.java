@@ -202,6 +202,7 @@ public class ProofTask {
                     proof.getTopic(),
                     proof.getPartitions(),
                     consumerCount,
+                    TimeUnit.SECONDS.toMillis(proof.getConsumeDelay()),
                     configs.drivers().get(proof.getDriver())
             );
             try {

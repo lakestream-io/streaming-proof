@@ -129,6 +129,14 @@ public class Proof {
     @Builder.Default
     private int timeout = 180;
 
+    /**
+     * Delay in seconds to simulate catchup reading.
+     * The value must be 0 or greater than timeout.
+     * Default is 0, means no delay.
+     */
+    @Builder.Default
+    private int consumeDelay = 0;
+
     /** 
      * Total duration of the proof test in seconds.
      * Default is 8 hours (28800 seconds).

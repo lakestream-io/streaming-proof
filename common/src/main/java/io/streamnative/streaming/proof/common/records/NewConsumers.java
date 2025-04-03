@@ -44,6 +44,7 @@ import io.streamnative.streaming.proof.common.ProofConsumer;
  * @param topic The name of the topic from which these consumers will read messages
  * @param consumers The number of consumer instances to create, allowing for parallel
  *                 message consumption across multiple partitions
+ * @param consumeDelayMs The delay in milliseconds between message published and consumed
  * @param driver The messaging system driver configuration that specifies how to
  *              create and configure the consumer instances
  *
@@ -54,5 +55,6 @@ public record NewConsumers(String id,
                            String topic,
                            int partitions,
                            int consumers,
+                           long consumeDelayMs,
                            Driver driver) {
 }

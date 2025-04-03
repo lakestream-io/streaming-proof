@@ -122,6 +122,9 @@ public class Coordinator {
             throw new IllegalArgumentException("Unsupported proof features: " + proof.getFeatures()
                     + ". Supported features: " + Util.SUPPORTED_PROOF_FEATS);
         }
+        if (proof.getConsumeDelay() > 0 && proof.getConsumeDelay() >= proof.getTimeout()) {
+            throw new IllegalArgumentException("Consume delay must be less than timeout.");
+        }
         String proofID = UUID.randomUUID().toString();
         proof.setId(proofID);
         ProofTask task = new ProofTask(proof, configs);

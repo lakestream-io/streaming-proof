@@ -102,6 +102,6 @@ public interface ProofDriver {
      * @param listener A {@link MessageListener} that will receive the consumed messages
      * @return A new {@link ProofConsumer} instance configured for the specified topic
      */
-    ProofConsumer createConsumer(String topicName, int partitions, Map<String, Object> configs,
+    ProofConsumer createConsumer(String topicName, int partitions, long consumeDelayMs, Map<String, Object> configs,
                  MessageListener listener);
 }
