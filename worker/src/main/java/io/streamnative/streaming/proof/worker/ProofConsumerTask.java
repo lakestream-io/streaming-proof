@@ -261,6 +261,8 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
         int dupCount = (int) (lastMsg.seq() - newMsg.seq() + 1);
         dups.compute(key, (k, v) -> v == null ? dupCount : v + dupCount);
         List<List<Long>> missedRanges = missedSeqs.get(key);
+        log.info("[{}] Duplicate message detected | key: {} | from: {} | to {} | missed seqs {}",
+                consumer.name(), key, lastMsg.seq(), newMsg.seq(), missedRanges);
         if (missedRanges != null) {
             boolean removed = missedRanges.removeIf(range -> range.getFirst() >= newMsg.seq());
             if (removed) {
@@ -282,6 +284,8 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
 
     private void handleMissedSeqs(String key, LongSeq newMsg, LongSeq lastMsg) {
         List<Long> range = List.of(lastMsg.seq() + 1, newMsg.seq() - 1);
+        log.info("[{}] Missed message detected | key: {} | from: {} | to: {}",
+                consumer.name(), key, lastMsg, newMsg);
         missedSeqs.computeIfAbsent(key, k -> new ArrayList<>()).add(range);
     }
 
