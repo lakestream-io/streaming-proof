@@ -23,9 +23,11 @@ import io.streamnative.streaming.proof.common.MessageListener;
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import java.time.Duration;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -95,8 +97,10 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
     /**
      * Creates a new Kafka consumer with at-least-once delivery guarantees.
      *
+     * @param name Unique name for this consumer
      * @param consumer The underlying Kafka consumer instance
      * @param consumerConfig Configuration for the consumer, including commit strategy
+     * @param consumeDelayMs Optional delay after consuming each message
      * @param callback Listener that will receive consumed messages
      */
     public KafkaAtLeastOnceProofConsumer(
@@ -114,9 +118,10 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
                                 consumerConfig.getOrDefault(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false"));
         this.consumerTask =
                 this.executor.submit(
-                        () -> {
+                        () -> {                            
                             while (!closing) {
                                 try {
+                                    prioritizePartitionsBasedOnLag();
                                     ConsumerRecords<String, Long> records =
                                             consumer.poll(Duration.ofSeconds(30));
                                     Map<TopicPartition, OffsetAndMetadata> offsetMap = new HashMap<>();
@@ -125,9 +130,10 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
                                         if (consumeDelayMs > 0) {
                                             long timestampDiff = System.currentTimeMillis() - record.timestamp();
                                             if (timestampDiff < consumeDelayMs) {
+                                                long sleepTime = consumeDelayMs - timestampDiff;
                                                 log.debug("[{}] Sleeping for {} ms after consuming message",
-                                                        name, consumeDelayMs - timestampDiff);
-                                                Thread.sleep(consumeDelayMs - timestampDiff);
+                                                        name, sleepTime);
+                                                Thread.sleep(sleepTime);
                                             }
                                         }
                                         callback.onMessage(record.key(), record.value(),
@@ -168,6 +174,65 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
                                 }
                             }
                         });
+    }
+    
+    /**
+     * Checks the lag for each partition and prioritizes consumption from partitions
+     * with higher lag by pausing/resuming partitions as needed.
+     */
+    private void prioritizePartitionsBasedOnLag() {
+        try {
+            Set<TopicPartition> assignedPartitions = consumer.assignment();
+            if (assignedPartitions.isEmpty()) {
+                return;
+            }
+            
+            // Get the end offsets (latest) for all assigned partitions
+            Map<TopicPartition, Long> endOffsets = consumer.endOffsets(assignedPartitions);
+            
+            // Calculate lag for each partition
+            Map<TopicPartition, Long> partitionLags = new HashMap<>();
+            for (TopicPartition partition : assignedPartitions) {
+                long currentPosition = consumer.position(partition);
+                long endOffset = endOffsets.get(partition);
+                long lag = endOffset - currentPosition;
+                
+                partitionLags.put(partition, lag);
+                log.debug("[{}] Partition {}-{} has lag of {} messages",
+                        name, partition.topic(), partition.partition(), lag);
+            }
+            
+            // Find the partition with the highest lag
+            TopicPartition highestLagPartition = null;
+            long maxLag = -1;
+            
+            for (Map.Entry<TopicPartition, Long> entry : partitionLags.entrySet()) {
+                if (entry.getValue() > maxLag) {
+                    maxLag = entry.getValue();
+                    highestLagPartition = entry.getKey();
+                }
+            }
+            
+            // Pause all partitions first
+            consumer.pause(assignedPartitions);
+            
+            // Only resume the partition with the highest lag if it has any lag
+            if (highestLagPartition != null && maxLag > 0) {
+                consumer.resume(Collections.singleton(highestLagPartition));
+                log.debug("[{}] Prioritizing consumption from single partition: {}-{} (lag: {})",
+                        name, 
+                        highestLagPartition.topic(), 
+                        highestLagPartition.partition(),
+                        maxLag);
+            } else {
+                // If no partition has lag, resume all to check for new messages
+                consumer.resume(assignedPartitions);
+                log.debug("[{}] No significant lag detected, resuming all partitions", name);
+            }
+            
+        } catch (Exception e) {
+            log.error("[{}] Error while checking partition lags", name, e);
+        }
     }
 
     /**

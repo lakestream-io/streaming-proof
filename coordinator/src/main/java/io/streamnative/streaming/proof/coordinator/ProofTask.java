@@ -280,6 +280,9 @@ public class ProofTask {
                     LongSeq expectedSeq = entry.getValue();
                     LongSeq actualSeq = ProofTask.this.latestConsumerCheckpoint.getKeys().get(entry.getKey());
                     if (actualSeq == null || actualSeq.compareTo(expectedSeq) < 0) {
+                        log.info("[{}] checkpoint verify in progress | {} | {} <= {} ", 
+                            proof.getId(), entry.getKey(), expectedSeq.seq(), 
+                            actualSeq == null ? -1L : actualSeq.seq());
                         fulfilled = false;
                         break;
                     }
