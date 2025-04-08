@@ -38,8 +38,8 @@ package io.streamnative.streaming.proof.common;
  */
 public record LongSeq(long seq, MessageMetadata metadata) implements Comparable<LongSeq> {
 
-    /** An empty message instance with sequence number -1 and offset -1 */
-    private static final LongSeq EMPTY = new LongSeq(-1, new MessageMetadata(-1L));
+    /** An empty message instance with sequence number -1 */
+    private static final LongSeq EMPTY = new LongSeq(-1, MessageMetadata.empty());
 
     /**
      * Returns an empty message instance.

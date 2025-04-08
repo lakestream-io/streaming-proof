@@ -108,7 +108,7 @@ public class PulsarAtLeastOnceProofProducer implements ProofProducer {
                     MessageIdAdv topicMessageIdImpl = (MessageIdAdv) msgId;
                     long ledgerId = topicMessageIdImpl.getLedgerId();
                     long entryId = topicMessageIdImpl.getEntryId();
-                    resultFuture.complete(new MessageMetadata(-1, ledgerId, entryId));
+                    resultFuture.complete(new MessageMetadata(ledgerId, entryId));
                 })
                 .exceptionally(ex -> {
                     resultFuture.completeExceptionally(ex);

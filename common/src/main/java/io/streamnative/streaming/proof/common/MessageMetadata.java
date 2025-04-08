@@ -18,6 +18,9 @@
  */
 package io.streamnative.streaming.proof.common;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonInclude.Include;
+
 /**
  * A record class that encapsulates metadata associated with messages in the streaming proof system.
  * This immutable record primarily tracks the offset information for messages, which is crucial for
@@ -34,29 +37,40 @@ package io.streamnative.streaming.proof.common;
  * @see ProofConsumer
  */
 public record MessageMetadata(
-        long offset,
-        long ledgerId,
-        long entryId
+        @JsonInclude(Include.NON_NULL)
+        Long offset,
+        
+        @JsonInclude(Include.NON_NULL)
+        Long ledgerId,
+        
+        @JsonInclude(Include.NON_NULL)
+        Long entryId
 ) {
-    public MessageMetadata(long offset) {
-        this(offset, -1L, -1L);
-    }
 
     public static MessageMetadata empty() {
-        return new MessageMetadata(-1L);
+        return new MessageMetadata(-1L, -1L, -1L);
+    }
+    public MessageMetadata(long offset) {
+        this(offset, null, null);
+    }
+
+    public MessageMetadata(long ledgerId, long entryId) {
+        this(null, ledgerId, entryId);
     }
 
     public boolean isAfter(MessageMetadata other) {
         if (other == null) {
             return true;
         }
-        if (this.ledgerId >= 0 && this.entryId >= 0 
-                && other.ledgerId >= 0 && other.entryId >= 0) {
-            if (this.ledgerId != other.ledgerId) {
-                return this.ledgerId > other.ledgerId;
-            }
-            return this.entryId > other.entryId;
+        
+        // If both have ledger and entry IDs, compare them
+        if (this.ledgerId != null && this.entryId != null
+                && other.ledgerId != null && other.entryId != null) {
+            return this.ledgerId > other.ledgerId
+                    || (this.ledgerId.equals(other.ledgerId) && this.entryId > other.entryId);
         }
+        
+        // Otherwise compare by offset
         return this.offset > other.offset;
     }
 }
