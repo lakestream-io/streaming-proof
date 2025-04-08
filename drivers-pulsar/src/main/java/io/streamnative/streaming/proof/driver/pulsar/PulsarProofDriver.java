@@ -96,9 +96,20 @@ public class PulsarProofDriver implements ProofDriver {
             });
 
             this.client = clientBuilder.build();
-            this.admin = PulsarAdmin.builder()
-                    .serviceHttpUrl(adminUrl)
-                    .build();
+
+            if (authToken != null && !authToken.isEmpty()) {
+                this.admin = PulsarAdmin.builder()
+                        .serviceHttpUrl(adminUrl)
+                        .authentication(
+                                "org.apache.pulsar.client.impl.auth.AuthenticationToken",
+                                authToken
+                        )
+                        .build();
+            } else {
+                this.admin = PulsarAdmin.builder()
+                        .serviceHttpUrl(adminUrl)
+                        .build();
+            }
 
             // Ensure the default namespace exists
             try {

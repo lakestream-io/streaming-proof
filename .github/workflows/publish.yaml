@@ -37,8 +37,9 @@ jobs:
 
       - name: Push image
         run: |
-          docker push streamnative/streaming-proof:latest
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.tag }}" != "latest" ]]; then
             docker tag streamnative/streaming-proof:latest streamnative/streaming-proof:${{ inputs.tag }}
             docker push streamnative/streaming-proof:${{ inputs.tag }}
+          else
+            docker push streamnative/streaming-proof:latest
           fi
