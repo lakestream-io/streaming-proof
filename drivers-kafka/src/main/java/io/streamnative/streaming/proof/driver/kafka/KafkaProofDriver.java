@@ -22,6 +22,7 @@ import io.streamnative.streaming.proof.common.MessageListener;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.ProofProducer;
+import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -206,5 +207,12 @@ public class KafkaProofDriver implements ProofDriver {
      */
     private static String applyZoneId(String clientId, String zoneId) {
         return clientId.replace(ZONE_ID_TEMPLATE, zoneId);
+    }
+
+    @Override
+    public void close() throws IOException {
+        if (admin != null) {
+            admin.close();
+        }
     }
 }

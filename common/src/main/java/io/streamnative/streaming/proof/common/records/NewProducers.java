@@ -63,5 +63,6 @@ public record NewProducers(String id,
                            int producers,
                            int keys,
                            int msgRate,
+                           String driverName,
                            Driver driver) {
 }

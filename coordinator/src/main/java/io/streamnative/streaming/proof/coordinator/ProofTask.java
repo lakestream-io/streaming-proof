@@ -23,13 +23,10 @@ import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.WorkerHttpClient;
 import io.streamnative.streaming.proof.common.records.Checkpoint;
 import io.streamnative.streaming.proof.common.records.Configs;
-import io.streamnative.streaming.proof.common.records.Driver;
 import io.streamnative.streaming.proof.common.records.NewConsumers;
 import io.streamnative.streaming.proof.common.records.NewProducers;
 import io.streamnative.streaming.proof.common.records.Proof;
 import io.streamnative.streaming.proof.common.records.ProofSummary;
-import io.streamnative.streaming.proof.driver.kafka.KafkaProofDriver;
-import io.streamnative.streaming.proof.driver.pulsar.PulsarProofDriver;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -90,7 +87,7 @@ public class ProofTask {
     private final Configs configs;
     
     /** The messaging system driver implementation */
-    private ProofDriver proofDriver;
+    private final ProofDriver proofDriver;
     
     /** List of HTTP clients for communicating with worker nodes */
     private final List<WorkerHttpClient> clients;
@@ -131,36 +128,16 @@ public class ProofTask {
      * @param proof The proof test configuration
      * @param configs System-wide configuration for workers and drivers
      */
-    public ProofTask(Proof proof, Configs configs) {
+    public ProofTask(Proof proof, Configs configs, ProofDriver driver) {
         this.proof = proof;
         this.executor = Executors.newSingleThreadScheduledExecutor();
         this.configs = configs;
         this.clients = new ArrayList<>(configs.workers().size());
+        this.proofDriver = driver;
         configs.workers().forEach((k, v) -> {
             WorkerHttpClient client = new WorkerHttpClient(Dsl.asyncHttpClient(), v);
             clients.add(client);
         });
-    }
-
-    /**
-     * Initializes the messaging system driver based on the proof configuration.
-     * Currently supports Kafka driver type.
-     *
-     * @throws IllegalArgumentException if the specified driver type is not supported
-     */
-    private void init() {
-        String driverName = proof.getDriver();
-        Driver driver = configs.drivers().get(driverName);
-        if (null == proofDriver) {
-            if ("kafka".equals(driver.driverType())) {
-                this.proofDriver = new KafkaProofDriver();
-            } else if ("pulsar".equals(driver.driverType())) {
-                this.proofDriver = new PulsarProofDriver();
-            } else {
-                throw new IllegalArgumentException("Unsupported driver: " + driver.driverType());
-            }
-        }
-        proofDriver.init(driver.driverConfigs());
     }
 
     /**
@@ -174,7 +151,6 @@ public class ProofTask {
      * </ul>
      */
     public void start() {
-        init();
         proofDriver.createTopic(proof.getTopic(), proof.getPartitions());
         startConsumers();
         startProducers();
@@ -194,7 +170,7 @@ public class ProofTask {
         int totalConsumers = proof.getConsumers();
         int baseConsumersPerWorker = totalConsumers / workerCount;
         int consumerRemainder = totalConsumers % workerCount;
-
+        String driverName = proof.getDrivers() == null ? proof.getDriver() : proof.getDrivers().consumer();
         for (int i = 0; i < clients.size(); i++) {
             int consumerCount = baseConsumersPerWorker + (i == workerCount - 1 ? consumerRemainder : 0);
             NewConsumers record = new NewConsumers(
@@ -203,7 +179,8 @@ public class ProofTask {
                     proof.getPartitions(),
                     consumerCount,
                     TimeUnit.SECONDS.toMillis(proof.getConsumeDelay()),
-                    configs.drivers().get(proof.getDriver())
+                    driverName,
+                    configs.drivers().get(driverName)
             );
             try {
                 clients.get(i).startConsumers(record).join();
@@ -232,19 +209,19 @@ public class ProofTask {
         int keysRemainder = totalKeys % workerCount;
         int baseMsgRatePerWorker = totalMsgRate / workerCount;
         int msgRateRemainder = totalMsgRate % workerCount;
-
+        String driverName = proof.getDrivers() == null ? proof.getDriver() : proof.getDrivers().producer();
         for (int i = 0; i < clients.size(); i++) {
             int producerCount = baseProducersPerWorker + (i == workerCount - 1 ? producerRemainder : 0);
             int keyCount = baseKeysPerWorker + (i == workerCount - 1 ? keysRemainder : 0);
             int msgRate = baseMsgRatePerWorker + (i == workerCount - 1 ? msgRateRemainder : 0);
-
             NewProducers record = new NewProducers(
                     proof.getId(),
                     proof.getTopic(),
                     producerCount,
                     keyCount,
                     msgRate,
-                    configs.drivers().get(proof.getDriver())
+                    driverName,
+                    configs.drivers().get(driverName)
             );
             try {
                 clients.get(i).startProducers(record).join();

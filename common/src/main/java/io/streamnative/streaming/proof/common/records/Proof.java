@@ -68,6 +68,12 @@ public class Proof {
      */
     private String driver;
 
+    /**
+     * The driver configuration for the proof.
+     * This includes driver name for the admin, producer, and consumer.
+     */
+    private Drivers drivers;
+
     /** 
      * List of messaging guarantees to validate.
      * Supported features include: exactly-once, at-least-once, ordering

@@ -23,6 +23,7 @@ import io.streamnative.streaming.proof.common.records.Checkpoints;
 import io.streamnative.streaming.proof.common.records.Configs;
 import io.streamnative.streaming.proof.common.records.Proof;
 import io.streamnative.streaming.proof.common.records.ProofDetails;
+import io.streamnative.streaming.proof.worker.DriverCache;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -77,6 +78,8 @@ public class Coordinator {
     /** Active proof tasks mapped by their unique identifiers */
     private final Map<String, ProofTask> proofs = new ConcurrentHashMap<>();
 
+    private final DriverCache driverCache = new DriverCache();
+
     /**
      * Updates the system configuration with new worker and driver settings.
      * If no configuration exists, initializes a new one. Otherwise, merges
@@ -113,7 +116,7 @@ public class Coordinator {
      *         if any requested features are not supported
      */
     public void createProof(Proof proof) {
-        String driverName = proof.getDriver();
+        String driverName = proof.getDrivers() == null ? proof.getDriver() : proof.getDrivers().admin();
         if (!configs.drivers().containsKey(driverName)) {
             throw new IllegalArgumentException("Driver " + driverName + " not found. "
                     + "Available drivers: " + configs.drivers().keySet());
@@ -127,7 +130,8 @@ public class Coordinator {
         }
         String proofID = UUID.randomUUID().toString();
         proof.setId(proofID);
-        ProofTask task = new ProofTask(proof, configs);
+        ProofTask task = new ProofTask(proof, configs, driverCache.getDriver(driverName,
+                configs.drivers().get(driverName)));
         proofs.put(proof.getId(), task);
         task.start();
     }
@@ -213,5 +217,6 @@ public class Coordinator {
      */
     public void close() {
         proofs.values().forEach(ProofTask::stop);
+        driverCache.close();
     }
 }

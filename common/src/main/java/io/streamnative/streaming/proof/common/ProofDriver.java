@@ -18,6 +18,7 @@
  */
 package io.streamnative.streaming.proof.common;
 
+import java.io.Closeable;
 import java.util.Map;
 
 /**
@@ -58,7 +59,7 @@ import java.util.Map;
  * @see MessageListener
  * @see KafkaProofDriver
  */
-public interface ProofDriver {
+public interface ProofDriver extends Closeable {
 
     /**
      * Initializes the driver with system-specific configurations.

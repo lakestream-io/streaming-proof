@@ -22,8 +22,6 @@ import io.streamnative.streaming.proof.common.ProofConsumer;
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.records.Checkpoint;
 import io.streamnative.streaming.proof.common.records.NewConsumers;
-import io.streamnative.streaming.proof.driver.kafka.KafkaProofDriver;
-import io.streamnative.streaming.proof.driver.pulsar.PulsarProofDriver;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -80,7 +78,7 @@ public class ProofConsumers {
     private final NewConsumers newConsumers;
     
     /** The messaging system driver instance */
-    private ProofDriver driver;
+    private final ProofDriver driver;
     
     /** List of running consumer tasks */
     private final List<ProofConsumerTask> tasks;
@@ -91,8 +89,9 @@ public class ProofConsumers {
      * @param newConsumers Configuration specifying the number of consumers,
      *                    topic, and driver settings
      */
-    public ProofConsumers(NewConsumers newConsumers) {
+    public ProofConsumers(NewConsumers newConsumers, ProofDriver driver) {
         this.newConsumers = newConsumers;
+        this.driver = driver;
         tasks = new ArrayList<>(newConsumers.consumers());
     }
 
@@ -104,16 +103,6 @@ public class ProofConsumers {
      * @throws IllegalArgumentException if the specified driver type is not supported
      */
     public void start() {
-        String driverType = newConsumers.driver().driverType();
-        if (null == driver) {
-            if ("kafka".equals(driverType)) {
-                this.driver = new KafkaProofDriver();
-            } else if ("pulsar".equals(driverType)) {
-                this.driver = new PulsarProofDriver();
-            } else {
-                throw new IllegalArgumentException("Unsupported driver: " + driverType);
-            }
-        }
         for (int i = 0; i < newConsumers.consumers(); i++) {
             ProofConsumerTask task = new ProofConsumerTask();
             ProofConsumer proofConsumer = driver.createConsumer(newConsumers.topic(), newConsumers.partitions(),

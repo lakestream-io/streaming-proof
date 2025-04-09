@@ -80,7 +80,6 @@
             <groupId>io.streamnative</groupId>
             <artifactId>streaming-proof-worker</artifactId>
             <version>1.0-SNAPSHOT</version>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.kafka</groupId>

@@ -200,7 +200,6 @@ public class PulsarProofDriver implements ProofDriver {
     @Override
     public ProofProducer createProducer(String topicName, Map<String, Object> configs) {
         try {
-            this.init(configs);
             return new PulsarAtLeastOnceProofProducer(client, topicName, configs);
         } catch (PulsarClientException e) {
             throw new RuntimeException(e);
@@ -219,7 +218,6 @@ public class PulsarProofDriver implements ProofDriver {
     public ProofConsumer createConsumer(String topicName, int partitionCount, long consumeDelayMs,
                 Map<String, Object> configs, MessageListener listener) {
         try {
-            this.init(configs);
             String consumerName = UUID.randomUUID().toString();
             return new PulsarAtLeastOnceProofConsumer(consumerName, client, topicName, configs, consumeDelayMs,
                     listener);
@@ -241,6 +239,7 @@ public class PulsarProofDriver implements ProofDriver {
     /**
      * Closes the Pulsar client and admin resources.
      */
+    @Override
     public void close() {
         try {
             if (client != null) {

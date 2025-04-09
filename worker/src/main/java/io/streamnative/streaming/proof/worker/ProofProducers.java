@@ -22,10 +22,7 @@ import io.streamnative.streaming.proof.common.LongSeq;
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.ProofProducer;
 import io.streamnative.streaming.proof.common.records.Checkpoint;
-import io.streamnative.streaming.proof.common.records.Driver;
 import io.streamnative.streaming.proof.common.records.NewProducers;
-import io.streamnative.streaming.proof.driver.kafka.KafkaProofDriver;
-import io.streamnative.streaming.proof.driver.pulsar.PulsarProofDriver;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -83,7 +80,7 @@ public class ProofProducers {
     private final NewProducers newProducers;
     
     /** The messaging system driver instance */
-    private ProofDriver driver;
+    private final ProofDriver driver;
     
     /** List of running producer tasks */
     private final List<ProofProducerTask> tasks;
@@ -106,8 +103,9 @@ public class ProofProducers {
      * @param newProducers Configuration specifying the number of producers,
      *                     message rate, and driver settings
      */
-    public ProofProducers(NewProducers newProducers) {
+    public ProofProducers(NewProducers newProducers, ProofDriver driver) {
         this.newProducers = newProducers;
+        this.driver = driver;
         this.tasks = new ArrayList<>(newProducers.producers());
         this.rateLimiter = new UniformRateLimiter(newProducers.msgRate());
     }
@@ -119,17 +117,6 @@ public class ProofProducers {
      * @throws IllegalArgumentException if the specified driver type is not supported
      */
     private void init() {
-        Driver d = newProducers.driver();
-        if (null == driver) {
-            if ("kafka".equals(d.driverType())) {
-                this.driver = new KafkaProofDriver();
-            } else if ("pulsar".equals(d.driverType())) {
-                this.driver = new PulsarProofDriver();
-            } else {
-                throw new IllegalArgumentException("Unsupported driver: " + d.driverType());
-            }
-        }
-
         // Calculate keys per producer
         int totalKeys = newProducers.keys();
         int producerCount = newProducers.producers();
@@ -138,7 +125,7 @@ public class ProofProducers {
 
         // Create tasks with their respective key counts
         for (int i = 0; i < producerCount; i++) {
-            ProofProducer producer = driver.createProducer(newProducers.topic(), d.driverConfigs());
+            ProofProducer producer = driver.createProducer(newProducers.topic(), newProducers.driver().driverConfigs());
             int keyCount = baseKeysPerProducer + (i == producerCount - 1 ? remainder : 0);
             tasks.add(new ProofProducerTask(producer, keyCount));
         }

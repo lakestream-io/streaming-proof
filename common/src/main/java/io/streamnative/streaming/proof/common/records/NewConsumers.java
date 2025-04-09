@@ -56,5 +56,6 @@ public record NewConsumers(String id,
                            int partitions,
                            int consumers,
                            long consumeDelayMs,
+                           String driverName,
                            Driver driver) {
 }

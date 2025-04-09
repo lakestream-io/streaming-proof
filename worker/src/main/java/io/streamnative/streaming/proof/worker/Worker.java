@@ -85,13 +85,17 @@ public class Worker {
     /** Thread-safe map of consumer groups indexed by their IDs */
     private final Map<String, ProofConsumers> consumers = new ConcurrentHashMap<>();
 
+    /** Cache for driver instances to avoid redundant initializations */
+    private final DriverCache driverCache = new DriverCache();
+
     /**
      * Starts a new group of producers with the specified configuration.
      *
      * @param newProducers Configuration for the producer group to start
      */
     public void startProducers(NewProducers newProducers) {
-        ProofProducers producer = new ProofProducers(newProducers);
+        ProofProducers producer = new ProofProducers(newProducers,
+                driverCache.getDriver(newProducers.driverName(), newProducers.driver()));
         producers.put(newProducers.id(), producer);
         producer.start();
     }
@@ -123,7 +127,8 @@ public class Worker {
      * @param newConsumers Configuration for the consumer group to start
      */
     public void startConsumers(NewConsumers newConsumers) {
-        ProofConsumers consumer = new ProofConsumers(newConsumers);
+        ProofConsumers consumer = new ProofConsumers(newConsumers,
+                driverCache.getDriver(newConsumers.driverName(), newConsumers.driver()));
         consumers.put(newConsumers.id(), consumer);
         consumer.start();
     }
@@ -160,6 +165,7 @@ public class Worker {
     public void close() {
         producers.values().forEach(ProofProducers::stop);
         consumers.values().forEach(ProofConsumers::stop);
+        driverCache.close();
     }
 
     public Map<String, Checkpoint> consumerCheckPointDetails(String id) {
