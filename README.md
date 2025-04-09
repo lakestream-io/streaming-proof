@@ -152,7 +152,60 @@ docker-compose down
 
 ### Deploy with Kubernetes
 
-1. Create a service to expose the headless service of workers:
+1. Create a NodePool for streaming-proof which disable auto-scaling and uses non-spot instance:
+
+```yaml
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: non-spot
+spec:
+  disruption:
+    budgets:
+    - nodes: "1"
+    consolidateAfter: 1h
+    consolidationPolicy: WhenEmptyOrUnderutilized
+  template:
+    spec:
+      taints:
+      - key: nodepool
+        value: non-spot
+        effect: NoSchedule
+      expireAfter: Never
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: default
+      requirements:
+      - key: kubernetes.io/os
+        operator: In
+        values:
+        - linux
+      - key: kubernetes.io/arch
+        operator: In
+        values:
+        - amd64
+      - key: karpenter.k8s.aws/instance-hypervisor
+        operator: In
+        values:
+        - nitro
+      - key: karpenter.sh/capacity-type
+        operator: In
+        values:
+        - on-demand
+      - key: karpenter.k8s.aws/instance-category
+        operator: In
+        values:
+        - c
+        - m
+        - r
+      - key: karpenter.k8s.aws/instance-generation
+        operator: Gt
+        values:
+        - "5"
+```
+
+2. Create a service to expose the headless service of workers:
 
 ```yaml
 apiVersion: v1
@@ -174,7 +227,7 @@ spec:
 kubectl apply -f <service.yaml>
 ```
 
-2. Create a sts for coordinator:
+3. Create a sts for coordinator:
 
 ```yaml
 apiVersion: apps/v1
@@ -194,6 +247,12 @@ spec:
         app: streaming-proof
         component: streaming-proof-coordinator
     spec:
+      nodeSelector:
+        karpenter.sh/capacity-type: on-demand
+      tolerations:
+      - key: nodepool
+        value: non-spot
+        effect: NoSchedule
       containers:
       - args:
         - |
@@ -230,7 +289,7 @@ spec:
 kubectl apply -f <coordinator.yaml>
 ```
 
-3. Create a sts for workers:
+4. Create a sts for workers:
 
 ```yaml
 apiVersion: apps/v1
@@ -251,6 +310,12 @@ spec:
         app: streaming-proof
         component: streaming-proof-worker
     spec:
+      nodeSelector:
+        karpenter.sh/capacity-type: on-demand
+      tolerations:
+      - key: nodepool
+        value: non-spot
+        effect: NoSchedule
       affinity:
         podAffinity: {}
         podAntiAffinity:
@@ -297,7 +362,7 @@ spec:
 kubectl apply -f <worker.yaml>
 ```
 
-4. Verify the deployment:
+5. Verify the deployment:
 
 ```
 kubectl get pods | grep "streaming-proof"
