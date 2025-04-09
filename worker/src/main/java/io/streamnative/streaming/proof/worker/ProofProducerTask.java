@@ -29,7 +29,6 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicLong;
-import lombok.Getter;
 
 /**
  * A task that manages message production for streaming proof tests. This class handles
@@ -73,7 +72,6 @@ import lombok.Getter;
  * @see ProofProducer
  * @see ProofProducers
  */
-@Getter
 public class ProofProducerTask implements AutoCloseable {
 
     /** The underlying producer for sending messages */
@@ -158,6 +156,18 @@ public class ProofProducerTask implements AutoCloseable {
                 }
             }
         });
+    }
+
+    public synchronized Map<String, LongSeq> getLastPublished() {
+        return Collections.unmodifiableMap(lastPublished);
+    }
+
+    public synchronized Map<String, Integer> getErrors() {
+        return  Collections.unmodifiableMap(errors);
+    }
+
+    public synchronized Map<String, List<List<LongSeq>>> getOutOfOrderOffsets() {
+        return Collections.unmodifiableMap(outOfOrderOffsets);
     }
 
     /**

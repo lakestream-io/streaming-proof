@@ -23,10 +23,10 @@ import io.streamnative.streaming.proof.common.MessageListener;
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
@@ -64,7 +64,6 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
     private final Map<String, LongSeq> keySeq = new HashMap<>();
 
     /** Counter for duplicate messages detected */
-    @Getter
     private final Map<String, Integer> dups = new HashMap<>();
 
     /** 
@@ -166,16 +165,20 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
         keySeq.put(key, newMsg);
     }
 
-    public Map<String, LongSeq> getKeySeq() {
-        return new HashMap<>(keySeq);
+    public synchronized Map<String, LongSeq> getKeySeq() {
+        return Collections.unmodifiableMap(keySeq);
     }
 
-    public Map<String, List<List<Long>>> getMissedSeqs() {
-        return new HashMap<>(missedSeqs);
+    public synchronized Map<String, List<List<Long>>> getMissedSeqs() {
+        return Collections.unmodifiableMap(missedSeqs);
     }
 
-    public Map<String, List<List<LongSeq>>> getOutOfOrderSeqs() {
-        return new HashMap<>(outOfOrderSeqs);
+    public synchronized Map<String, List<List<LongSeq>>> getOutOfOrderSeqs() {
+        return Collections.unmodifiableMap(outOfOrderSeqs);
+    }
+
+    public synchronized Map<String, Integer> getDups() {
+        return Collections.unmodifiableMap(dups);
     }
 
     private void updateMissedSequences(String key, long value) {
