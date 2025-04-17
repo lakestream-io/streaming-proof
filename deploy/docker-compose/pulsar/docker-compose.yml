@@ -29,6 +29,8 @@ services:
       - HEAP_OPTS=-Xms1G -Xmx1G
     depends_on:
       - pulsar
+    volumes:
+      - ../../volumes/configs:/mnt/streaming-proof/config
   worker:
     image: streamnative/streaming-proof:latest
     command: bin/worker

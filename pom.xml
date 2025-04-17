@@ -281,6 +281,7 @@
                         <exclude>**/.github/**</exclude>
                         <exclude>**/data/**</exclude>
                         <exclude>**/mockito-extensions/**</exclude>
+                        <exclude>deploy/**</exclude>
                     </excludes>
                     <mapping>
                         <proto>JAVADOC_STYLE</proto>

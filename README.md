@@ -152,7 +152,26 @@ docker-compose down
 
 ### Deploy with Kubernetes
 
-1. Create a NodePool for streaming-proof which disable auto-scaling and uses non-spot instance:
+1. Create configmap
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: streaming-proof-configs
+  namespace: streaming-proof
+data:
+  serverless.json: |
+    {
+      "workers": {
+        "worker.1": "http://streaming-proof-worker-0.streaming-proof-worker-headless.streaming-proof.svc.cluster.local:8088",
+        "worker.2": "http://streaming-proof-worker-1.streaming-proof-worker-headless.streaming-proof.svc.cluster.local:8088",
+        "worker.3": "http://streaming-proof-worker-2.streaming-proof-worker-headless.streaming-proof.svc.cluster.local:8088"
+      },
+      "drivers": {
+      }
+
+2. Create a NodePool for streaming-proof which disable auto-scaling and uses non-spot instance:
 
 ```yaml
 apiVersion: karpenter.sh/v1
@@ -205,7 +224,7 @@ spec:
         - "5"
 ```
 
-2. Create a service to expose the headless service of workers:
+3. Create a service to expose the headless service of workers:
 
 ```yaml
 apiVersion: v1
@@ -227,7 +246,7 @@ spec:
 kubectl apply -f <service.yaml>
 ```
 
-3. Create a sts for coordinator:
+4. Create a sts for coordinator:
 
 ```yaml
 apiVersion: apps/v1
@@ -247,6 +266,10 @@ spec:
         app: streaming-proof
         component: streaming-proof-coordinator
     spec:
+      volumes:
+      - name: config-volume
+        configMap:
+          name: streaming-proof-configs
       nodeSelector:
         karpenter.sh/capacity-type: on-demand
       tolerations:
@@ -267,6 +290,9 @@ spec:
         image: streamnative/streaming-proof:latest
         imagePullPolicy: Always
         name: streaming-proof-coordinator
+        volumeMounts:
+        - mountPath: /mnt/streaming-proof/configs
+          name: config-volume
         ports:
         - containerPort: 8080
           protocol: TCP
@@ -289,7 +315,7 @@ spec:
 kubectl apply -f <coordinator.yaml>
 ```
 
-4. Create a sts for workers:
+5. Create a sts for workers:
 
 ```yaml
 apiVersion: apps/v1
@@ -362,7 +388,7 @@ spec:
 kubectl apply -f <worker.yaml>
 ```
 
-5. Verify the deployment:
+6. Verify the deployment:
 
 ```
 kubectl get pods | grep "streaming-proof"

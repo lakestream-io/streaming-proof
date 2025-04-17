@@ -28,12 +28,22 @@ import static io.streamnative.streaming.proof.common.Util.LIST_PROOFS;
 import static io.streamnative.streaming.proof.common.Util.PUT_CONFIG;
 import static io.streamnative.streaming.proof.common.Util.STOP_PROOF;
 
+import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 import io.streamnative.streaming.proof.common.Util;
 import io.streamnative.streaming.proof.common.records.Configs;
 import io.streamnative.streaming.proof.common.records.Proof;
 import io.streamnative.streaming.proof.common.records.ProofDetails;
+import java.io.IOException;
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardWatchEventKinds;
+import java.nio.file.WatchEvent;
+import java.nio.file.WatchKey;
+import java.nio.file.WatchService;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 
@@ -51,18 +61,30 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public class CoordinatorHandler {
-
-    /** The coordinator instance that manages proof tests and configurations */
     private final Coordinator coordinator;
+    private final Path configPath;
+    private volatile boolean running = true;
+    private WatchService watchService;
 
-    /**
-     * Creates a new CoordinatorHandler and registers all REST API endpoints.
-     *
-     * @param app The Javalin application instance to register endpoints with
-     * @param coordinator The coordinator instance to delegate operations to
-     */
     public CoordinatorHandler(Javalin app, Coordinator coordinator) {
+        this(app, coordinator,
+                Paths.get("/mnt/streaming-proof/configs")
+        );
+    }
+
+    public CoordinatorHandler(Javalin app, Coordinator coordinator, Path configPath) {
         this.coordinator = coordinator;
+        this.configPath = configPath;
+        try {
+            this.watchService = FileSystems.getDefault().newWatchService();
+            configPath.register(watchService, StandardWatchEventKinds.ENTRY_CREATE,
+                    StandardWatchEventKinds.ENTRY_DELETE, StandardWatchEventKinds.ENTRY_MODIFY);
+            loadExistingFiles();
+            startFileWatcher();
+        } catch (IOException e) {
+            log.error("Failed to init watch service", e);
+        }
+
         app.post(CREATE_PROOF, this::handleCreateProof);
         app.get(GET_PROOF, this::handleGetProof);
         app.get(GET_PROOF_DETAILS, this::handleGetProofDetails);
@@ -72,6 +94,73 @@ public class CoordinatorHandler {
         app.put(PUT_CONFIG, this::handlePutConfig);
         app.get(GET_CONFIG, this::handleGetConfig);
         app.delete(DELETE_CONFIG, this::handleDeleteConfig);
+
+
+    }
+
+    private final YAMLMapper yamlMapper = new YAMLMapper();
+
+    private void loadExistingFiles() {
+        try {
+            if (Files.exists(configPath)) {
+                Files.list(configPath)
+                    .filter(path -> path.toString().endsWith(".yaml"))
+                    .forEach(file -> {
+                        try {
+                            Configs configs = yamlMapper.readValue(Files.readString(file), Configs.class);
+                            coordinator.updateConfigs(configs);
+                            log.info("Loaded existing config file: {}", file);
+                        } catch (Exception e) {
+                            log.error("Error loading config file: {}", file, e);
+                        }
+                    });
+            } else {
+                Files.createDirectories(configPath);
+                log.info("Created config directory: {}", configPath);
+            }
+
+        } catch (IOException e) {
+            log.error("Error loading existing files", e);
+        }
+    }
+
+    private void startFileWatcher() {
+        Thread watchThread = new Thread(() -> {
+            while (running) {
+                try {
+                    WatchKey key = watchService.take();
+                    Path dir = (Path) key.watchable();
+
+                    for (WatchEvent<?> event : key.pollEvents()) {
+                        WatchEvent.Kind<?> kind = event.kind();
+                        Path fileName = (Path) event.context();
+                        Path fullPath = dir.resolve(fileName);
+
+                        if (dir.equals(configPath)) {
+                            handleConfigFileChange(kind, fullPath);
+                        }
+                    }
+                    key.reset();
+                } catch (InterruptedException e) {
+                    log.warn("File watcher interrupted", e);
+                    Thread.currentThread().interrupt();
+                    break;
+                } catch (Exception e) {
+                    log.error("Error in file watcher", e);
+                }
+            }
+        }, "FileWatcherThread");
+        watchThread.setDaemon(true);
+        watchThread.start();
+    }
+
+    private void handleConfigFileChange(WatchEvent.Kind<?> kind, Path file) {
+        try {
+            coordinator.clearAllConfigs();
+            loadExistingFiles();
+        } catch (Exception e) {
+            log.error("Error handling config file change: {}", file, e);
+        }
     }
 
     /**

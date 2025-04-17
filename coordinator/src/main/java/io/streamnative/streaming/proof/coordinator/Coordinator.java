@@ -107,6 +107,17 @@ public class Coordinator {
     }
 
     /**
+     * Removes all worker and driver configurations from the system.
+     */
+    public void clearAllConfigs() {
+        if (this.configs != null) {
+            this.configs.workers().clear();
+            this.configs.drivers().clear();
+            log.info("All configurations have been cleared");
+        }
+    }
+
+    /**
      * Creates and starts a new proof test with the specified configuration.
      * The method validates the driver and features before creating the test,
      * assigns a unique identifier, and initializes a new {@link ProofTask}.

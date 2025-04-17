@@ -30,7 +30,10 @@ services:
       - HEAP_OPTS=-Xms1G -Xmx1G
       - JVM_OPTS=-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
     depends_on:
-      - pulsar
+      worker:
+        condition: service_started
+    volumes:
+      - ../../volumes/configs:/mnt/streaming-proof/configs
   worker:
     image: streamnative/streaming-proof:latest
     command: bin/worker
@@ -41,8 +44,14 @@ services:
       - HEAP_OPTS=-Xms1G -Xmx1G
       - JVM_OPTS=-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
     depends_on:
-      - coordinator
-      - pulsar
+      pulsar:
+        condition: service_healthy
   pulsar:
     image: apachepulsar/pulsar:4.0.3
     command: bin/pulsar standalone
+    healthcheck:
+      test: ["CMD", "bin/pulsar-admin", "brokers", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s

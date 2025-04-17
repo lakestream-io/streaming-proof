@@ -1,0 +1,8 @@
+workers:
+  worker.1: http://worker:8088
+drivers:
+  serverless:
+    driverType: pulsar
+    driverConfigs:
+      pulsar.service.url: pulsar://pulsar:6650
+      pulsar.admin.url: http://pulsar:8080
