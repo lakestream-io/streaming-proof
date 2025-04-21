@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: streaming-proof-frontend
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: streaming-proof
+    component: streaming-proof-frontend
+spec:
+  ports:
+  - port: {{ .Values.frontend.service.port }}
+    protocol: TCP
+    targetPort: {{ .Values.frontend.service.port }}
+  selector:
+    app: streaming-proof
+    component: streaming-proof-frontend

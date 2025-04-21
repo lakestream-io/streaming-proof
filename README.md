@@ -394,6 +394,13 @@ kubectl apply -f <worker.yaml>
 kubectl get pods | grep "streaming-proof"
 ```
 
+## Deploy with helm chart
+
+```bash
+cd streaming-proof/deploy/helm
+helm install streaming-proof ./streaming-proof -n streaming-proof 
+```
+
 ## Create proof
 
 1. Create workers and drivers configuration:

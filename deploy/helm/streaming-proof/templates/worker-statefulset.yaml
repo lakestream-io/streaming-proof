@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: streaming-proof-worker
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "streaming-proof.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  selector:
+    matchLabels:
+      app: streaming-proof
+      component: streaming-proof-worker
+  serviceName: streaming-proof-worker-headless
+  template:
+    metadata:
+      labels:
+        app: streaming-proof
+        component: streaming-proof-worker
+    spec:
+      tolerations:
+      - effect: NoSchedule
+        key: nodepool
+        value: non-spot
+      nodeSelector:
+        karpenter.sh/capacity-type: on-demand
+      containers:
+      - args:
+        - |
+          apt-get update && apt-get install curl jq -y
+          export TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600");
+          export ZONE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/availability-zone-id);
+          export HEAP_OPTS="-Xms4G -Xmx4G -Dzone.id=${ZONE_ID} -Dnetworkaddress.cache.ttl=10 -Dnetworkaddress.cache.negative.ttl=0 -Dio.netty.resolver.dns.cacheMaxTimeToLive=10 -Dio.netty.resolver.dns.cacheMinTimeToLive=10"
+          bin/worker
+        command:
+        - sh
+        - -c
+        image: "{{ .Values.worker.image.repository }}:{{ .Values.worker.image.tag }}"
+        imagePullPolicy: {{ .Values.worker.image.pullPolicy }}
+        name: streaming-proof-worker
+        ports:
+        - containerPort: 8088
+          protocol: TCP
+        resources:
+          {{- toYaml .Values.worker.resources | nindent 10 }}

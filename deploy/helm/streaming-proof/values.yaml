@@ -1,0 +1,54 @@
+# Default values for streaming-proof
+namespace: streaming-proof
+
+coordinator:
+  replicas: 1
+  image:
+    repository: streamnative/streaming-proof
+    tag: latest
+    pullPolicy: Always
+  resources:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "2"
+      memory: "8Gi"
+
+worker:
+  replicas: 3
+  image:
+    repository: streamnative/streaming-proof
+    tag: latest
+    pullPolicy: Always
+  resources:
+    requests:
+      cpu: "2"
+      memory: "8Gi"
+    limits:
+      cpu: "2"
+      memory: "8Gi"
+
+frontend:
+  replicas: 1
+  image:
+    repository: streamnative/streaming-proof-frontend
+    tag: latest
+    pullPolicy: Always
+  resources: {}
+  service:
+    port: 80
+
+configs:
+  workers:
+    worker.1: "http://streaming-proof-worker-0.streaming-proof-worker-headless.streaming-proof.svc.cluster.local:8088"
+    worker.2: "http://streaming-proof-worker-1.streaming-proof-worker-headless.streaming-proof.svc.cluster.local:8088"
+    worker.3: "http://streaming-proof-worker-2.streaming-proof-worker-headless.streaming-proof.svc.cluster.local:8088"
+
+  drivers:
+    serverless:
+      driverType: "pulsar"
+      driverConfigs:
+        pulsar.service.url: "pulsar+ssl://xxx:6651"
+        pulsar.admin.url: "https://xxx"
+        pulsar.auth.token: "xxx"

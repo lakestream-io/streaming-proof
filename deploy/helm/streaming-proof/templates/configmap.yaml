@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: streaming-proof-configs
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "streaming-proof.labels" . | nindent 4 }}
+data:
+  {{- toYaml .Values.configs | nindent 4 }}

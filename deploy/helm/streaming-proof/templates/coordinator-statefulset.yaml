@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: streaming-proof-coordinator
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "streaming-proof.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.coordinator.replicas }}
+  selector:
+    matchLabels:
+      app: streaming-proof
+      component: streaming-proof-coordinator
+  template:
+    metadata:
+      labels:
+        app: streaming-proof
+        component: streaming-proof-coordinator
+    spec:
+      volumes:
+      - name: config-volume
+        configMap:
+          name: streaming-proof-configs
+      tolerations:
+      - effect: NoSchedule
+        key: nodepool
+        value: non-spot
+      nodeSelector:
+        karpenter.sh/capacity-type: on-demand
+      containers:
+      - args:
+        - |
+          apt-get update && apt-get install curl jq -y
+          export TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600");
+          export ZONE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/availability-zone-id);
+          export HEAP_OPTS="-Xms4G -Xmx4G -Dzone.id=${ZONE_ID}"
+          bin/coordinator
+        command:
+        - sh
+        - -c
+        image: "{{ .Values.coordinator.image.repository }}:{{ .Values.coordinator.image.tag }}"
+        imagePullPolicy: {{ .Values.coordinator.image.pullPolicy }}
+        name: streaming-proof-coordinator
+        volumeMounts:
+        - mountPath: /mnt/streaming-proof/configs
+          name: config-volume
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        resources:
+          {{- toYaml .Values.coordinator.resources | nindent 10 }}

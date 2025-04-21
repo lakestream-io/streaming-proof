@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: streaming-proof-frontend
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: streaming-proof
+    component: streaming-proof-frontend
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  selector:
+    matchLabels:
+      app: streaming-proof
+      component: streaming-proof-frontend
+  template:
+    metadata:
+      labels:
+        app: streaming-proof
+        component: streaming-proof-frontend
+    spec:
+      containers:
+      - name: streaming-proof-frontend
+        image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+        imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.frontend.service.port }}
+          protocol: TCP
+        {{- with .Values.frontend.resources }}
+        resources:
+          {{- toYaml . | nindent 12 }}
+        {{- end }}

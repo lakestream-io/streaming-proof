@@ -1,0 +1,6 @@
+apiVersion: v2
+name: streaming-proof
+description: A Helm chart for StreamNative Streaming Proof
+type: application
+version: 0.1.0
+appVersion: "latest"
