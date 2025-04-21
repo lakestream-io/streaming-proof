@@ -21,10 +21,11 @@ package io.streamnative.streaming.proof.coordinator;
 import io.streamnative.streaming.proof.common.LongSeq;
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.WorkerHttpClient;
-import io.streamnative.streaming.proof.common.records.Checkpoint;
 import io.streamnative.streaming.proof.common.records.Configs;
+import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
 import io.streamnative.streaming.proof.common.records.NewConsumers;
 import io.streamnative.streaming.proof.common.records.NewProducers;
+import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
 import io.streamnative.streaming.proof.common.records.Proof;
 import io.streamnative.streaming.proof.common.records.ProofSummary;
 import java.time.Duration;
@@ -93,26 +94,26 @@ public class ProofTask {
     private final List<WorkerHttpClient> clients;
     
     /** Current checkpoint being verified */
-    private Checkpoint inCheck = Checkpoint.empty();
+    private ProducerCheckpoint inCheck = new ProducerCheckpoint();
     
     /** Last successfully verified producer checkpoint */
-    private Checkpoint lastVerifiedProducerCheckpoint = Checkpoint.empty();
+    private ProducerCheckpoint lastVerifiedProducerCheckpoint = new ProducerCheckpoint();
     
     /** Last successfully verified consumer checkpoint */
-    private Checkpoint lastVerifiedConsumerCheckpoint = Checkpoint.empty();
+    private ConsumerCheckPoint lastVerifiedConsumerCheckpoint = new ConsumerCheckPoint();
     
     /** Latest producer checkpoint received */
-    private Checkpoint latestProducerCheckpoint = Checkpoint.empty();
+    private ProducerCheckpoint latestProducerCheckpoint = new ProducerCheckpoint();
     
     /** Latest consumer checkpoint received */
     @Setter(AccessLevel.PACKAGE)
-    private Checkpoint latestConsumerCheckpoint = Checkpoint.empty();
+    private ConsumerCheckPoint latestConsumerCheckpoint = new ConsumerCheckPoint();
     
     /** Last failed producer checkpoint */
-    private Checkpoint lastFailedProducerCheckpoint = Checkpoint.empty();
+    private ProducerCheckpoint lastFailedProducerCheckpoint = new ProducerCheckpoint();
     
     /** Last failed consumer checkpoint */
-    private Checkpoint lastFailedConsumerCheckpoint = Checkpoint.empty();
+    private ConsumerCheckPoint lastFailedConsumerCheckpoint = new ConsumerCheckPoint();
     
     /** Number of checkpoint verification timeouts */
     private int timeouts;
@@ -244,7 +245,7 @@ public class ProofTask {
     private void scheduleCheckpoint() {
         executor.scheduleAtFixedRate(() -> {
             try {
-                Pair<Checkpoint, Checkpoint> checkpoints = aggregateCheckpoints();
+                Pair<ProducerCheckpoint, ConsumerCheckPoint> checkpoints = aggregateCheckpoints();
                 ProofTask.this.latestProducerCheckpoint = checkpoints.getLeft();
                 ProofTask.this.latestConsumerCheckpoint = checkpoints.getRight();
                 if (ProofTask.this.inCheck == null) {
@@ -253,9 +254,9 @@ public class ProofTask {
                 }
 
                 boolean fulfilled = true;
-                for (Map.Entry<String, LongSeq> entry : ProofTask.this.inCheck.getKeys().entrySet()) {
+                for (Map.Entry<String, LongSeq> entry : ProofTask.this.inCheck.getPublished().entrySet()) {
                     LongSeq expectedSeq = entry.getValue();
-                    LongSeq actualSeq = ProofTask.this.latestConsumerCheckpoint.getKeys().get(entry.getKey());
+                    LongSeq actualSeq = ProofTask.this.latestConsumerCheckpoint.getLastSeq(entry.getKey());
                     if (actualSeq == null || actualSeq.compareTo(expectedSeq) < 0) {
                         log.info("[{}] checkpoint verify in progress | {} | {} <= {} ", 
                             proof.getId(), entry.getKey(), expectedSeq.seq(), 
@@ -288,14 +289,14 @@ public class ProofTask {
         }, proof.getCheckPointInterval(), proof.getCheckPointInterval(), TimeUnit.SECONDS);
     }
 
-    Pair<Checkpoint, Checkpoint> aggregateCheckpoints() {
-        Checkpoint aggregatedProducerCheckpoint = Checkpoint.empty();
-        Checkpoint aggregatedConsumerCheckpoint = Checkpoint.empty();
+    Pair<ProducerCheckpoint, ConsumerCheckPoint> aggregateCheckpoints() {
+        ProducerCheckpoint aggregatedProducerCheckpoint = new ProducerCheckpoint();
+        ConsumerCheckPoint aggregatedConsumerCheckpoint = new ConsumerCheckPoint();
         for (WorkerHttpClient client : clients) {
             try {
-                Checkpoint producerCheckpoint = client.producerCheckpoint(proof.getId()).join();
+                ProducerCheckpoint producerCheckpoint = client.producerCheckpoint(proof.getId()).join();
                 aggregatedProducerCheckpoint.merge(producerCheckpoint);
-                Checkpoint consumerCheckpoint = client.consumerCheckpoint(proof.getId()).join();
+                ConsumerCheckPoint consumerCheckpoint = client.consumerCheckpoint(proof.getId()).join();
                 aggregatedConsumerCheckpoint.merge(consumerCheckpoint);
             } catch (Exception e) {
                 throw new RuntimeException(e);
@@ -310,34 +311,40 @@ public class ProofTask {
      * @return A ProofSummary containing verification statistics
      */
     public ProofSummary getSummary() {
-        long verified = this.getLastVerifiedProducerCheckpoint().getKeys().values().stream()
+        long verified = this.getLastVerifiedProducerCheckpoint().getPublished().values().stream()
                 .mapToLong(LongSeq::seq).sum();
         Map<String, List<LongSeq>> failedKeys = new HashMap<>();
         if (failed) {
-            inCheck.getKeys().forEach((k, v) -> {
-                LongSeq consumerLongSeq = latestConsumerCheckpoint.getKeys().get(k);
+            latestConsumerCheckpoint.calculate();
+            inCheck.getPublished().forEach((k, v) -> {
+                LongSeq consumerLongSeq = latestConsumerCheckpoint.getLastSeq(k);
                 if (consumerLongSeq != null
                         && v.compareTo(consumerLongSeq) > 0) {
                     failedKeys.put(k, List.of(v, consumerLongSeq));
                 }
             });
         }
+        ConsumerCheckPoint lastVerifiedConsumerCheckpoint = this.getLastVerifiedConsumerCheckpoint();
+        lastVerifiedConsumerCheckpoint.calculate();
         return new ProofSummary(
                 verified,
                 this.getLastVerifiedProducerCheckpoint().getErrors().values().stream()
                         .mapToInt(Integer::intValue).sum(),
-                this.getLastVerifiedConsumerCheckpoint().getOutOfOrderSeqs().values()
-                        .stream().mapToInt(List::size).sum(),
-                this.getLastVerifiedConsumerCheckpoint().getMissedSeqs().values().stream()
+                lastVerifiedConsumerCheckpoint.getOutOfOrderSeqs().values().stream()
                         .flatMap(ranges -> ranges.stream()
-                                .map(range -> range.get(1) - range.getFirst() + 1))
+                                .map(range -> range.getRight() - range.getLeft() + 1))
                         .mapToInt(Long::intValue)
                         .sum(),
-                this.getLastVerifiedConsumerCheckpoint().getDuplicates().values().stream().reduce(0, Integer::sum),
+                lastVerifiedConsumerCheckpoint.getMissedSeqs().values().stream()
+                        .flatMap(ranges -> ranges.stream()
+                                .map(range -> range.getRight() - range.getLeft() + 1))
+                        .mapToInt(Long::intValue)
+                        .sum(),
+                lastVerifiedConsumerCheckpoint.getDuplicatedCount().values().stream().reduce(0L, Long::sum),
                 this.getTimeouts(),
                 failedKeys,
-                this.getLastVerifiedConsumerCheckpoint().getMissedSeqs(),
-                this.getLastVerifiedConsumerCheckpoint().getOutOfOrderSeqs());
+                lastVerifiedConsumerCheckpoint.getMissedSeqs(),
+                lastVerifiedConsumerCheckpoint.getOutOfOrderSeqs());
     }
 
     /**

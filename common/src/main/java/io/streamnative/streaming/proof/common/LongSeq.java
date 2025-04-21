@@ -18,6 +18,8 @@
  */
 package io.streamnative.streaming.proof.common;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+
 /**
  * A record class representing a message with a long value and associated metadata in the streaming proof system.
  * This class is used to track message sequences and their processing state throughout the system.
@@ -62,5 +64,14 @@ public record LongSeq(long seq, MessageMetadata metadata) implements Comparable<
     @Override
     public int compareTo(LongSeq other) {
         return Long.compare(this.seq, other.seq);
+    }
+
+    @Override
+    public String toString() {
+        try {
+            return Util.JSON_WRITER.writeValueAsString(this);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

@@ -18,15 +18,12 @@
  */
 package io.streamnative.streaming.proof.worker;
 
-import io.streamnative.streaming.proof.common.LongSeq;
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.ProofProducer;
-import io.streamnative.streaming.proof.common.records.Checkpoint;
 import io.streamnative.streaming.proof.common.records.NewProducers;
+import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -142,16 +139,13 @@ public class ProofProducers {
      *
      * @return A checkpoint containing aggregated producer statistics
      */
-    public Checkpoint checkPoint() {
-        Map<String, LongSeq> keySeqs = new HashMap<>();
-        Map<String, Integer> errors = new HashMap<>();
-        Map<String, List<List<LongSeq>>> outOfOrderOffsets = new HashMap<>();
+    public ProducerCheckpoint checkPoint() {
+        ProducerCheckpoint checkpoint = new ProducerCheckpoint();
         for (ProofProducerTask task : tasks) {
-            keySeqs.putAll(task.getLastPublished());
-            task.getErrors().forEach((k, v) -> errors.merge(k, v, Integer::sum));
-            outOfOrderOffsets.putAll(task.getOutOfOrderOffsets());
+            task.getLastPublished().forEach(checkpoint::addPublished);
+            task.getErrors().forEach(checkpoint::addErrors);
         }
-        return new Checkpoint(keySeqs, null, errors, null, outOfOrderOffsets);
+        return checkpoint;
     }
 
     /**

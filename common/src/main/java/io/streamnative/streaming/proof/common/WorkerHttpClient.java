@@ -20,9 +20,10 @@ package io.streamnative.streaming.proof.common;
 
 import static java.net.HttpURLConnection.HTTP_OK;
 
-import io.streamnative.streaming.proof.common.records.Checkpoint;
+import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
 import io.streamnative.streaming.proof.common.records.NewConsumers;
 import io.streamnative.streaming.proof.common.records.NewProducers;
+import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
 import java.util.concurrent.CompletableFuture;
 import org.asynchttpclient.AsyncHttpClient;
 
@@ -113,7 +114,7 @@ public class WorkerHttpClient {
      * @return A CompletableFuture that completes with the checkpoint information
      * @throws Exception if there's an error preparing the request or deserializing the response
      */
-    public CompletableFuture<Checkpoint> producerCheckpoint(String id) throws Exception {
+    public CompletableFuture<ProducerCheckpoint> producerCheckpoint(String id) throws Exception {
         return client.prepareGet(baseUrl + Util.PRODUCER_CHECKPOINTS.replace("{id}", id))
                 .execute()
                 .toCompletableFuture()
@@ -122,7 +123,7 @@ public class WorkerHttpClient {
                         throw new RuntimeException("Failed to get producer checkpoint: " + response.getStatusCode());
                     }
                     try {
-                        return Util.JSON_MAPPER.readValue(response.getResponseBody(), Checkpoint.class);
+                        return Util.JSON_MAPPER.readValue(response.getResponseBody(), ProducerCheckpoint.class);
                     } catch (Exception e) {
                         throw new RuntimeException(e);
                     }
@@ -173,7 +174,7 @@ public class WorkerHttpClient {
      * @return A CompletableFuture that completes with the checkpoint information
      * @throws Exception if there's an error preparing the request or deserializing the response
      */
-    public CompletableFuture<Checkpoint> consumerCheckpoint(String id) throws Exception {
+    public CompletableFuture<ConsumerCheckPoint> consumerCheckpoint(String id) throws Exception {
         return client.prepareGet(baseUrl + Util.CONSUMER_CHECKPOINTS.replace("{id}", id))
                 .execute()
                 .toCompletableFuture()
@@ -182,7 +183,7 @@ public class WorkerHttpClient {
                         throw new RuntimeException("Failed to get consumer checkpoint: " + response.getStatusCode());
                     }
                     try {
-                        return Util.JSON_MAPPER.readValue(response.getResponseBody(), Checkpoint.class);
+                        return Util.JSON_MAPPER.readValue(response.getResponseBody(), ConsumerCheckPoint.class);
                     } catch (Exception e) {
                         throw new RuntimeException(e);
                     }

@@ -121,7 +121,9 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
                         () -> {                            
                             while (!closing) {
                                 try {
-                                    prioritizePartitionsBasedOnLag();
+                                    if (consumeDelayMs > 0) {
+                                        prioritizePartitionsBasedOnLag();
+                                    }
                                     ConsumerRecords<String, Long> records =
                                             consumer.poll(Duration.ofSeconds(30));
                                     Map<TopicPartition, OffsetAndMetadata> offsetMap = new HashMap<>();
@@ -137,7 +139,7 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
                                             }
                                         }
                                         callback.onMessage(record.key(), record.value(),
-                                                new MessageMetadata(record.offset()));
+                                                new MessageMetadata(record.offset(), record.partition()));
 
                                         offsetMap.put(
                                                 new TopicPartition(record.topic(), record.partition()),

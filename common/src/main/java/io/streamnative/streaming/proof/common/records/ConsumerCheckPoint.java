@@ -1,0 +1,311 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+package io.streamnative.streaming.proof.common.records;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import io.streamnative.streaming.proof.common.LongSeq;
+import io.streamnative.streaming.proof.common.Util;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.SortedMap;
+import java.util.TreeMap;
+import lombok.Data;
+import org.apache.commons.lang3.tuple.Pair;
+
+/**
+ * Tracks and manages sequence ranges for consumed messages.
+ * This class is responsible for:
+ * - Maintaining sequence ranges for different message keys
+ * - Detecting missed sequences (gaps in the sequence)
+ * - Identifying duplicated messages (overlaps in sequences)
+ * - Tracking out-of-order sequences
+ */
+@Data
+public class ConsumerCheckPoint {
+
+    /**
+     * Represents a range of sequence numbers.
+     * Contains a start and end sequence number.
+     */
+    @Data
+    public static class SeqRange {
+        private LongSeq start;
+        private LongSeq end;
+
+        @Override
+        public String toString() {
+            try {
+                return Util.JSON_WRITER.writeValueAsString(this);
+            } catch (JsonProcessingException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    /** 
+     * Map storing consumed sequence ranges for each key.
+     * The outer map's key is the message key.
+     * The inner map's key is the formatted date/time string representing when the range was created.
+     */
+    private final Map<String, SortedMap<String, SeqRange>> consumed = new HashMap<>();
+
+    /**
+     * Map storing optimized and merged sequence ranges for each key.
+     * This is a transient field that is recalculated during processing.
+     * It contains the same sequence data as the 'consumed' map but with
+     * adjacent and overlapping ranges merged together for more efficient
+     * gap detection and sequence analysis.
+     */
+    @JsonIgnore
+    private final Map<String, List<SeqRange>> mergedConsumed = new HashMap<>();
+
+    /** Map storing missed sequence ranges for each key */
+    private volatile Map<String, List<Pair<Long, Long>>> missedSeqs = Collections.emptyMap();
+    /** Map storing the count of duplicated messages for each key */
+    private volatile Map<String, Long> duplicatedCount = Collections.emptyMap();
+    /** Map storing out-of-order sequence ranges for each key */
+    private volatile Map<String, List<Pair<Long, Long>>> outOfOrderSeqs = Collections.emptyMap();
+
+    /**
+     * Adds sequence ranges for a specific key.
+     * If a new range connects with an existing range (end of existing + 1 = start of new),
+     * they will be merged into a single range.
+     *
+     * @param key The message key
+     * @param consumedRange Map of sequence ranges to add for the key
+     */
+    public void addKey(String key, Map<String, SeqRange> consumedRange) {
+        consumed.compute(key, (k, v) -> {
+            if (v == null) {
+                v = new TreeMap<>();
+            }
+            v.putAll(consumedRange);
+            return v;
+        });
+    }
+
+    /**
+     * Merges another ConsumerCheckPoint into this one.
+     * All sequence ranges from the other checkpoint will be added to this one.
+     *
+     * @param checkPoint The checkpoint to merge into this one
+     */
+    public void merge(ConsumerCheckPoint checkPoint) {
+        checkPoint.consumed.forEach(this::addKey);
+    }
+
+    /**
+     * Gets the last (highest) sequence number for a specific key.
+     *
+     * @param key The message key
+     * @return The last sequence number, or null if the key doesn't exist or has no sequences
+     */
+    public LongSeq getLastSeq(String key) {
+        trim();
+        if (!mergedConsumed.containsKey(key)) {
+            return null;
+        }
+        if (mergedConsumed.get(key).isEmpty()) {
+            return null;
+        }
+        SeqRange range = mergedConsumed.get(key).getLast();
+        return range.getEnd();
+    }
+
+    /**
+     * Calculates missed sequences and duplicated messages based on the current state.
+     * Updates the missedSeqs and duplicatedCount maps.
+     */
+    public void calculate() {
+        Map<String, List<Pair<Long, Long>>> missedSeqs = new HashMap<>();
+        Map<String, Long> duplicatedCount = new HashMap<>();
+        trim();
+        consumed.forEach((key, value) -> {
+            List<SeqRange> values = value.values().stream().toList();
+            long count = getDuplicatedCount(values);
+            if (count > 0) {
+                duplicatedCount.put(key, count);
+            }
+            
+            List<Pair<Long, Long>> missed = getMissedSeqs(mergedConsumed.get(key));
+            if (!missed.isEmpty()) {
+                missedSeqs.put(key, missed);
+            }
+        });
+
+        this.missedSeqs = missedSeqs;
+        this.duplicatedCount = duplicatedCount;
+    }
+
+    /**
+     * Calculates the number of duplicated messages in the given sequence ranges.
+     * A message is considered duplicated if its sequence number appears in more than one range.
+     * 
+     * The algorithm works by:
+     * 1. Comparing each range with all previously processed ranges
+     * 2. Identifying overlapping sections between ranges
+     * 3. Calculating the exact number of sequence numbers that appear in multiple ranges
+     * 4. Summing up all overlapping sequence numbers
+     * 
+     * For example, if range [1-10] overlaps with range [5-15], the duplicated count is 6
+     * (representing sequence numbers 5, 6, 7, 8, 9, 10).
+     *
+     * @param ranges List of sequence ranges to check for duplicates
+     * @return The count of duplicated messages, or 0 if no duplicates are found
+     */
+    private long getDuplicatedCount(List<SeqRange> ranges) {
+        long duplicates = 0;
+        
+        // If there's only one range or less, there can't be duplicates
+        if (ranges.size() <= 1) {
+            return 0;
+        }
+        // Iterate through consecutive ranges to find duplicates
+        for (int i = 1; i < ranges.size(); i++) {
+            SeqRange current = ranges.get(i);
+            List<SeqRange> trimmed = trim(ranges.subList(0, i));
+            for (SeqRange previous : trimmed) {
+                // If current start sequence is less than or equal to previous end sequence,
+                // we have a duplicate or overlap
+                if (current.getStart().seq() <= previous.getEnd().seq()) {
+                    // Calculate how many messages are duplicated
+                    long overlapStart = Math.max(current.getStart().seq(), previous.getStart().seq());
+                    long overlapEnd = Math.min(current.getEnd().seq(), previous.getEnd().seq());
+                    long overlap = overlapEnd - overlapStart + 1;
+
+                    // Add to total duplicates if there's an actual overlap
+                    if (overlap > 0) {
+                        duplicates += overlap;
+                    }
+                }
+            }
+        }
+        
+        return duplicates;
+    }
+
+    /**
+     * Identifies missed sequences (gaps) between the given sequence ranges.
+     * A sequence is considered missed if there's a gap between consecutive ranges.
+     * 
+     * The algorithm works by:
+     * 1. Sorting the sequence ranges in ascending order
+     * 2. Comparing each range with the previous range
+     * 3. Identifying gaps between the end of the previous range and the start of the current range
+     * 4. Creating pairs representing the start and end of each gap
+     * 
+     * For example, if we have ranges [1-5] and [10-15], the missed sequence range is [6-9]
+     * (representing sequence numbers 6, 7, 8, 9).
+     *
+     * @param ranges List of sequence ranges to check for gaps
+     * @return List of pairs representing missed sequence ranges (start, end), or empty list if no gaps are found
+     */
+    private List<Pair<Long, Long>> getMissedSeqs(List<SeqRange> ranges) {
+        
+        // If there's only one range or less, we can't determine missed sequences
+        if (ranges.size() <= 1) {
+            return Collections.emptyList();
+        }
+        
+        List<Pair<Long, Long>> missedRanges = new ArrayList<>();
+
+        // Iterate through consecutive ranges to find gaps
+        for (int i = 1; i < ranges.size(); i++) {
+            SeqRange current = ranges.get(i);
+            SeqRange previous = ranges.get(i - 1);
+            
+            // If there's a gap between the previous range's end and current range's start
+            if (current.getStart().seq() > previous.getEnd().seq() + 1) {
+                // Create a pair representing the missed sequence range
+                long missedStart = previous.getEnd().seq() + 1;
+                long missedEnd = current.getStart().seq() - 1;
+                missedRanges.add(Pair.of(missedStart, missedEnd));
+            }
+        }
+        
+        return missedRanges;
+    }
+
+    /**
+     * Processes the consumed map to create optimized sequence ranges in the mergedConsumed map.
+     * This method performs two key optimizations:
+     * 1. Merges adjacent or overlapping ranges into single continuous ranges
+     * 2. Eliminates redundant ranges that are completely contained within other ranges
+     * 
+     * The resulting mergedConsumed map contains a more efficient representation
+     * of the sequence data, which improves performance for gap detection and
+     * other sequence analysis operations.
+     */
+    public void trim() {
+        mergedConsumed.clear();
+        consumed.forEach((key, rangeMap) -> {
+            if (rangeMap.isEmpty()) {
+                return;
+            }
+            mergedConsumed.put(key, trim(rangeMap.values().stream().toList()));
+        });
+    }
+
+    private List<SeqRange> trim(List<SeqRange> ranges) {
+        if (ranges.size() <= 1) {
+            return ranges;
+        }
+        List<SeqRange> mergedRanges = new ArrayList<>();
+        // Start with the first range
+        SeqRange currentRange = new SeqRange();
+        currentRange.setStart(ranges.getFirst().getStart());
+        currentRange.setEnd(ranges.getFirst().getEnd());
+
+        // Try to merge subsequent ranges
+        for (int i = 1; i < ranges.size(); i++) {
+            SeqRange nextRange = ranges.get(i);
+            long currentEnd = currentRange.getEnd().seq();
+            long nextStart = nextRange.getStart().seq();
+            long nextEnd = nextRange.getEnd().seq();
+
+            // Case 1: Overlap - next range starts before or at current range end
+            if (nextStart <= currentEnd) {
+                // Extend the current range if the next range ends after the current range
+                if (nextEnd > currentEnd) {
+                    currentRange.setEnd(nextRange.getEnd());
+                }
+                // If next range is completely contained in current range, do nothing
+            } else if (nextStart == currentEnd + 1) {
+                // Case 2: No gap, no overlap - next range starts exactly one after current range end
+                // Simply extend the current range
+                currentRange.setEnd(nextRange.getEnd());
+            } else {
+                // Case 3: Gap - next range starts more than one after current range end
+                // Add the current range to the result and start a new one
+                mergedRanges.add(currentRange);
+                currentRange = new SeqRange();
+                currentRange.setStart(nextRange.getStart());
+                currentRange.setEnd(nextRange.getEnd());
+            }
+        }
+
+        // Add the last range
+        mergedRanges.add(currentRange);
+        return mergedRanges;
+    }
+}

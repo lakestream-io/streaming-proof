@@ -115,7 +115,7 @@ public class KafkaAtLeastOnceProofProducer implements ProofProducer {
                         if (exception != null) {
                             future.completeExceptionally(exception);
                         } else {
-                            future.complete(new MessageMetadata(metadata.offset()));
+                            future.complete(new MessageMetadata(metadata.offset(), metadata.partition()));
                         }
                     });
         } catch (Exception e) {

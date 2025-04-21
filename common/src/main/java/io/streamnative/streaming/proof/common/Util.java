@@ -47,7 +47,7 @@ public class Util {
      * Preconfigured ObjectWriter instance that outputs JSON with pretty printing.
      * This writer is thread-safe and can be used across multiple threads.
      */
-    public static final ObjectWriter JSON_WRITER = JSON_MAPPER.writerWithDefaultPrettyPrinter();
+    public static final ObjectWriter JSON_WRITER = JSON_MAPPER.writer();
 
     /**
      * Set of supported proof features that can be validated by the system.

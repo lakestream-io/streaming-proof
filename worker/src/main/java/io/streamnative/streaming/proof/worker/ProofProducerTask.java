@@ -21,14 +21,13 @@ package io.streamnative.streaming.proof.worker;
 import io.streamnative.streaming.proof.common.LongSeq;
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofProducer;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicLong;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * A task that manages message production for streaming proof tests. This class handles
@@ -72,6 +71,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * @see ProofProducer
  * @see ProofProducers
  */
+@Slf4j
 public class ProofProducerTask implements AutoCloseable {
 
     /** The underlying producer for sending messages */
@@ -98,14 +98,6 @@ public class ProofProducerTask implements AutoCloseable {
 
     /** Counter for round-robin key selection */
     private final AtomicLong index = new AtomicLong(0);
-
-    /**
-     * Maps keys to lists of out-of-order message offsets. Each key maps to a list of LongSeq lists,
-     * where each inner list represents a sequence of messages that were received from the broker
-     * in an order different from their sending order. This helps track and analyze message ordering
-     * anomalies during the streaming proof tests.
-     */
-    private final Map<String, List<List<LongSeq>>> outOfOrderOffsets = new HashMap<>();
 
     /**
      * Creates a new producer task with the specified number of unique keys.
@@ -147,10 +139,10 @@ public class ProofProducerTask implements AutoCloseable {
             } else {
                 synchronized (lastPublished) {
                     LongSeq newMsg = new LongSeq(seq, metadata);
-                    if (!metadata.isAfter(lastPublished.get(key).metadata())) {
-                        List<List<LongSeq>> outOfOrder = outOfOrderOffsets.computeIfAbsent(key, k -> new ArrayList<>());
-                        List<LongSeq> pair = List.of(lastPublished.get(key), newMsg);
-                        outOfOrder.add(pair);
+                    LongSeq previousMsg = this.lastPublished.get(key);
+                    if (!metadata.isAfter(previousMsg.metadata())) {
+                        log.info("Out of order message | key: {} | new message: {} | previous message: {}",
+                                key, newMsg, previousMsg);
                     }
                     lastPublished.put(key, newMsg);
                 }
@@ -164,10 +156,6 @@ public class ProofProducerTask implements AutoCloseable {
 
     public synchronized Map<String, Integer> getErrors() {
         return  Collections.unmodifiableMap(errors);
-    }
-
-    public synchronized Map<String, List<List<LongSeq>>> getOutOfOrderOffsets() {
-        return Collections.unmodifiableMap(outOfOrderOffsets);
     }
 
     /**

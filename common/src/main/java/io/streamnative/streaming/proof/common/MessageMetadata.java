@@ -20,6 +20,7 @@ package io.streamnative.streaming.proof.common;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
+import com.fasterxml.jackson.core.JsonProcessingException;
 
 /**
  * A record class that encapsulates metadata associated with messages in the streaming proof system.
@@ -44,18 +45,25 @@ public record MessageMetadata(
         Long ledgerId,
         
         @JsonInclude(Include.NON_NULL)
-        Long entryId
+        Long entryId,
+
+        @JsonInclude(Include.NON_NULL)
+        Integer partition
 ) {
 
     public static MessageMetadata empty() {
-        return new MessageMetadata(-1L, -1L, -1L);
+        return new MessageMetadata(-1L, -1L, -1L, null);
     }
     public MessageMetadata(long offset) {
-        this(offset, null, null);
+        this(offset, null, null, null);
+    }
+
+    public MessageMetadata(long offset, int partition) {
+        this(offset, null, null, partition);
     }
 
     public MessageMetadata(long ledgerId, long entryId) {
-        this(null, ledgerId, entryId);
+        this(null, ledgerId, entryId, null);
     }
 
     public boolean isAfter(MessageMetadata other) {
@@ -72,5 +80,14 @@ public record MessageMetadata(
         
         // Otherwise compare by offset
         return this.offset > other.offset;
+    }
+
+    @Override
+    public String toString() {
+        try {
+            return Util.JSON_WRITER.writeValueAsString(this);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

@@ -20,7 +20,7 @@ package io.streamnative.streaming.proof.worker;
 
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import io.streamnative.streaming.proof.common.ProofDriver;
-import io.streamnative.streaming.proof.common.records.Checkpoint;
+import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
 import io.streamnative.streaming.proof.common.records.NewConsumers;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -35,42 +35,14 @@ import java.util.Map;
  * <p>The class provides functionality for:
  * <ul>
  *   <li>Creating and managing multiple consumer tasks</li>
- *   <li>Initializing appropriate messaging system driver</li>
+ *   <li>Initializing consumers with the appropriate messaging system driver</li>
  *   <li>Collecting and aggregating consumer statistics</li>
  *   <li>Monitoring message delivery guarantees</li>
  * </ul>
  *
- * <p>Each consumer task tracks:
- * <ul>
- *   <li>Message sequences per key</li>
- *   <li>Duplicate messages</li>
- *   <li>Out-of-order messages</li>
- *   <li>Missing messages in sequences</li>
- * </ul>
- *
- * <p>Example usage:
- * <pre>{@code
- * Driver kafkaDriver = new Driver("kafka", kafkaConfigs);
- * NewConsumers config = new NewConsumers(
- *     "consumer-group-1",  // unique group ID
- *     "test-topic",       // topic to consume from
- *     4,                  // number of consumers
- *     kafkaDriver         // messaging system driver
- * );
- * 
- * ProofConsumers consumers = new ProofConsumers(config);
- * consumers.start();
- * 
- * // Later, check consumption progress
- * CheckPoint checkpoint = consumers.checkPoint();
- * 
- * // Finally, stop all consumers
- * consumers.stop();
- * }</pre>
- *
  * @see ProofConsumerTask
  * @see ProofDriver
- * @see Checkpoint
+ * @see ConsumerCheckPoint
  */
 public class ProofConsumers {
 
@@ -84,10 +56,11 @@ public class ProofConsumers {
     private final List<ProofConsumerTask> tasks;
 
     /**
-     * Creates a new ProofConsumers instance with the specified configuration.
+     * Creates a new ProofConsumers instance with the specified configuration and driver.
      *
      * @param newConsumers Configuration specifying the number of consumers,
-     *                    topic, and driver settings
+     *                    topic, partitions, and other settings
+     * @param driver The messaging system driver instance to use for creating consumers
      */
     public ProofConsumers(NewConsumers newConsumers, ProofDriver driver) {
         this.newConsumers = newConsumers;
@@ -114,31 +87,30 @@ public class ProofConsumers {
 
     /**
      * Collects and aggregates checkpoints from all consumer tasks.
-     * The checkpoint includes:
-     * <ul>
-     *   <li>Latest sequence number per key</li>
-     *   <li>Count of duplicate messages</li>
-     *   <li>Count of out-of-order messages</li>
-     *   <li>Count of missed messages</li>
-     * </ul>
      *
      * @return A checkpoint containing aggregated consumer statistics
      */
-    public Checkpoint checkPoint() {
-        Checkpoint checkPoint = Checkpoint.empty();
+    public ConsumerCheckPoint checkPoint() {
+        ConsumerCheckPoint checkpoint = new ConsumerCheckPoint();
         for (ProofConsumerTask task : tasks) {
-            Checkpoint c = new Checkpoint(task.getKeySeq(), task.getDups(), null,
-                    task.getMissedSeqs(), task.getOutOfOrderSeqs());
-            checkPoint.merge(c);
+            task.getConsumed().forEach(checkpoint::addKey);
         }
-        return checkPoint;
+        return checkpoint;
     }
 
-    public Map<String, Checkpoint> checkPointDetails() {
-        Map<String, Checkpoint> result = new HashMap<>();
+    /**
+     * Collects individual checkpoints from each consumer task.
+     * This provides more detailed information than the aggregated checkpoint,
+     * allowing analysis of consumption patterns per consumer.
+     *
+     * @return A map of consumer names to their individual checkpoints
+     */
+    public Map<String, ConsumerCheckPoint> checkPointDetails() {
+        Map<String, ConsumerCheckPoint> result = new HashMap<>();
         for (ProofConsumerTask task : tasks) {
-            result.put(task.getConsumerName(), new Checkpoint(task.getKeySeq(), task.getDups(), null,
-                    task.getMissedSeqs(), task.getOutOfOrderSeqs()));
+            ConsumerCheckPoint checkPoint = new ConsumerCheckPoint();
+            task.getConsumed().forEach(checkPoint::addKey);
+            result.put(task.getConsumerName(), checkPoint);
         }
         return result;
     }

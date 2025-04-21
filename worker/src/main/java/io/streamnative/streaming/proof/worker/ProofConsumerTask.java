@@ -22,14 +22,22 @@ import io.streamnative.streaming.proof.common.LongSeq;
 import io.streamnative.streaming.proof.common.MessageListener;
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofConsumer;
-import java.util.ArrayList;
-import java.util.Collections;
+import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
+import java.util.SortedMap;
+import java.util.TreeMap;
+import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * A task that consumes messages and tracks sequence ranges for validation.
+ * This class is responsible for:
+ * - Consuming messages from a streaming system
+ * - Tracking sequence numbers for each message key
+ * - Maintaining sequence ranges for consumed messages
+ */
 @Slf4j
 public class ProofConsumerTask implements MessageListener, AutoCloseable {
 
@@ -37,109 +45,23 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
     @Setter
     private ProofConsumer consumer;
 
-    /** Maps message keys to their latest sequence numbers */
-    /** 
-     * Maps message keys to their latest received message information.
-     * Each entry contains both the sequence number and metadata for the most recently
-     * processed message for a given key.
-     *
-     * <p>Key: The message key used for grouping related messages
-     * <p>Value: A {@link LongSeq} containing:
-     * <ul>
-     *   <li>The sequence number of the latest message</li>
-     *   <li>Associated metadata (e.g., message offset)</li>
-     * </ul>
-     *
-     * <p>This map is used to:
-     * <ul>
-     *   <li>Track message ordering within each key's sequence</li>
-     *   <li>Detect duplicate messages (when new sequence ≤ stored sequence)</li>
-     *   <li>Identify gaps in message sequences (missing messages)</li>
-     *   <li>Maintain message metadata for checkpointing</li>
-     * </ul>
-     *
-     * @see LongSeq
-     * @see MessageMetadata
+    /**
+     * Map storing consumed sequence ranges for each key.
+     * The outer map's key is the message key.
+     * The inner map's key is the timestamp as a formatted date/time string.
      */
-    private final Map<String, LongSeq> keySeq = new HashMap<>();
+    @Getter
+    private final Map<String, SortedMap<String, ConsumerCheckPoint.SeqRange>> consumed = new HashMap<>();
 
-    /** Counter for duplicate messages detected */
-    private final Map<String, Integer> dups = new HashMap<>();
-
-    /** 
-     * Tracks ranges of missing sequence numbers per message key.
-     * 
-     * <p>Key: Message key used for grouping related messages
-     * <p>Value: List of sequence number ranges, where each range is represented as a list
-     * containing [start, end] inclusive. Multiple non-contiguous ranges are stored as
-     * separate entries in the list.
-     *
-     * <p>Examples:
-     * <ul>
-     *   <li>If messages arrive as [1,2,5]:
-     *       <br>missedSeqs["key"] = [[3,4]]</li>
-     *   <li>If messages arrive as [1,5,10]:
-     *       <br>missedSeqs["key"] = [[2,4], [6,9]]</li>
-     *   <li>When message 3 arrives for previous gap [3,4]:
-     *       <br>missedSeqs["key"] = [[4,4]]</li>
-     *   <li>When message 4 arrives:
-     *       <br>missedSeqs["key"] is removed (range becomes empty)</li>
-     * </ul>
-     *
-     * <p>The ranges are maintained in sorted order and automatically merged or split
-     * when new messages arrive that fill parts of existing gaps.
-     *
-     * @see #updateMissedSequences(String, long)
-     * @see #handleMissedSeqs(String, LongSeq, LongSeq)
-     */
-    private final Map<String, List<List<Long>>> missedSeqs = new HashMap<>();
-
-    /** 
-     * Records out-of-order message sequences per message key.
-     * Each entry tracks the message pairs that violate sequential ordering.
-     *
-     * <p>Key: The message key used for grouping related messages
-     * <p>Value: List of message pairs, where each pair contains:
-     * <ul>
-     *   <li>First element: The last correctly sequenced message ({@link LongSeq})</li>
-     *   <li>Second element: The out-of-order message that followed it ({@link LongSeq})</li>
-     * </ul>
-     *
-     * <p>For example, if messages should arrive in sequence [1,2,3,4,5] but we receive
-     * [1,2,5], then a pair containing messages [2,5] will be added to the list,
-     * indicating that message 5 arrived immediately after 2, skipping 3 and 4.
-     *
-     * <p>Each {@link LongSeq} in the pair contains:
-     * <ul>
-     *   <li>The sequence number of the message</li>
-     *   <li>Associated metadata (e.g., message offset)</li>
-     * </ul>
-     *
-     * @see LongSeq
-     * @see MessageMetadata
-     */
-    private final Map<String, List<List<LongSeq>>> outOfOrderSeqs = new HashMap<>();
+    /** Interval in milliseconds between logging consumed messages */
+    private static final int LOG_INTERVAL_MS = 30000;
+    
+    /** Timestamp of the last logged message */
+    private long lastLogTime = System.currentTimeMillis();
 
     /**
      * Processes a received message and validates its sequence number against the expected order.
      * This method is synchronized to ensure thread-safe updates to the sequence tracking maps.
-     *
-     * <p>The method handles three scenarios:
-     * <ul>
-     *   <li><b>In-sequence message:</b> When value = previous + 1
-     *       <br>Updates the latest sequence number and metadata for the key</li>
-     *   <li><b>Duplicate message:</b> When value ≤ previous
-     *       <br>Increments the duplicate counter without updating the sequence</li>
-     *   <li><b>Out-of-order message:</b> When value > previous + 1
-     *       <br>Records missing sequences in the gap
-     *       <br>Tracks the out-of-order pair [previous message, current message]
-     *       <br>Updates the latest sequence number and metadata
-     *       <br>Increments the out-of-order counter</li>
-     * </ul>
-     *
-     * <p>For each message, the method also checks if its sequence number matches any
-     * previously recorded missing sequences and removes it from the missing sequences
-     * list if found.
      *
      * @param key The message key used for sequence tracking and message grouping
      * @param value The sequence number of the message, used to verify ordering
@@ -150,146 +72,85 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
     @Override
     public synchronized void onMessage(String key, long value, MessageMetadata metadata) {
         LongSeq newMsg = new LongSeq(value, metadata);
-        LongSeq lastMsg = keySeq.getOrDefault(key, LongSeq.empty());
-        long seq = lastMsg.seq();
-    
-        // Update missed sequences if this message fills a gap
-        updateMissedSequences(key, value);
-    
-       if (value <= seq) {
-            handleDuplicateMessage(key, lastMsg, newMsg);
-        } else if (value - seq > 1) {
-            handleMissedSeqs(key, newMsg, lastMsg);
+        if (System.currentTimeMillis() - lastLogTime > LOG_INTERVAL_MS) {
+            log.info("[{}] Consumed message | key: {} | new message {} | last seq range: {}",
+                    consumer.name(), key, newMsg, getLastSeq(key));
+            lastLogTime = System.currentTimeMillis();
         }
-        // Update latest sequence
-        keySeq.put(key, newMsg);
+        ConsumerCheckPoint.SeqRange lastConsumedRange = getLastSeq(key);
+        if (lastConsumedRange == null) {
+            newConsumedRange(key, newMsg);
+            return;
+        }
+        long seq = lastConsumedRange.getEnd() == null
+                ? lastConsumedRange.getStart().seq()
+                : lastConsumedRange.getEnd().seq();
+    
+        if (value <= seq) {
+            long dups = seq - value + 1;
+            log.info("[{}] Duplicated message detected | key: {} | new message: {} | last seq range: {} | dups: {}",
+                    consumer.name(), key, newMsg, getLastSeq(key), dups);
+            newConsumedRange(key, newMsg);
+        } else if (value - seq > 1) {
+            log.info("[{}] Range gap detected | key: {} | new message: {} | last seq range: {}",
+                    consumer.name(), key, newMsg, getLastSeq(key));
+            newConsumedRange(key, newMsg);
+        } else {
+            lastConsumedRange.setEnd(newMsg);
+        }
     }
 
-    public synchronized Map<String, LongSeq> getKeySeq() {
-        return Collections.unmodifiableMap(keySeq);
+    /**
+     * Retrieves the last sequence range for a given key.
+     *
+     * @param key The message key to look up
+     * @return The last sequence range for the key, or null if the key doesn't exist or has no ranges
+     */
+    private ConsumerCheckPoint.SeqRange getLastSeq(String key) {
+        if (!consumed.containsKey(key)) {
+            return null;
+        }
+        if (consumed.get(key).isEmpty()) {
+            return null;
+        }
+        return consumed.get(key).lastEntry().getValue();
     }
 
-    public synchronized Map<String, List<List<Long>>> getMissedSeqs() {
-        return Collections.unmodifiableMap(missedSeqs);
-    }
-
-    public synchronized Map<String, List<List<LongSeq>>> getOutOfOrderSeqs() {
-        return Collections.unmodifiableMap(outOfOrderSeqs);
-    }
-
-    public synchronized Map<String, Integer> getDups() {
-        return Collections.unmodifiableMap(dups);
-    }
-
-    private void updateMissedSequences(String key, long value) {
-        missedSeqs.computeIfPresent(key, (k, ranges) -> {
-            List<List<Long>> newRanges = new ArrayList<>();
-
-            for (List<Long> range : ranges) {
-                if (!isValueInRange(value, range)) {
-                    newRanges.add(range);
-                    continue;
-                }
-                range = new ArrayList<>(range);
-                if (value == range.get(0)) {
-                    range.set(0, value + 1);
-                    if (range.get(0) <= range.get(1)) {
-                        newRanges.add(range);
-                    }
-                } else if (value == range.get(1)) {
-                    range.set(1, value - 1);
-                    if (range.get(0) <= range.get(1)) {
-                        newRanges.add(range);
-                    }
-                } else {
-                    splitRange(range, value, newRanges);
-                }
+    /**
+     * Creates a new sequence range for a key starting with the given message.
+     * This is called when:
+     * - A new key is encountered
+     * - A duplicate message is detected
+     * - A gap in the sequence is detected
+     *
+     * @param key The message key
+     * @param newMsg The message to start the new range with
+     */
+    private void newConsumedRange(String key, LongSeq newMsg) {
+        log.info("[{}] New consumed range | key: {} | new message: {} | last seq range: {}",
+                consumer.name(), key, newMsg, getLastSeq(key));
+        ConsumerCheckPoint.SeqRange range = new ConsumerCheckPoint.SeqRange();
+        range.setStart(newMsg);
+        range.setEnd(newMsg);
+        consumed.compute(key, (k, v) -> {
+            if (v == null) {
+                v = new TreeMap<>();
             }
-            newRanges.sort(this::compareRanges);
-            return newRanges.isEmpty() ? null : newRanges;
+            // Format the current timestamp as a readable date/time string
+            String timestamp = java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME
+                    .format(java.time.LocalDateTime.now());
+            v.put(timestamp, range);
+            return v;
         });
     }
 
     /**
-     * Splits a range of missing sequence numbers when a message arrives that falls within the range.
-     * The original range is split into two new ranges: one before and one after the received value.
-     * Only valid ranges (where start ≤ end) are added to the result list.
+     * Gets the name of the associated consumer.
      *
-     * <p>For example:
-     * <pre>
-     * Original range: [2,6]
-     * Received value: 4
-     * Result ranges: [2,3], [5,6]
-     * </pre>
-     *
-     * <p>Edge cases:
-     * <ul>
-     *   <li>If value - 1 < range start: only right range is added</li>
-     *   <li>If value + 1 > range end: only left range is added</li>
-     *   <li>If resulting range has start > end: range is discarded</li>
-     * </ul>
-     *
-     * @param range The original range of missing sequence numbers [start, end]
-     * @param value The sequence number that splits the range
-     * @param newRanges List to store the resulting valid ranges
-     * @see #updateMissedSequences(String, long)
+     * @return The consumer name
      */
-    private void splitRange(List<Long> range, long value, List<List<Long>> newRanges) {
-        List<Long> left = new ArrayList<>(2);
-        left.add(range.get(0));
-        left.add(value - 1);
-        
-        List<Long> right = new ArrayList<>(2);
-        right.add(value + 1);
-        right.add(range.get(1));
-        
-        if (left.get(0) <= left.get(1)) {
-            newRanges.add(left);
-        }
-        if (right.get(0) <= right.get(1)) {
-            newRanges.add(right);
-        }
-    }
-
-    private boolean isValueInRange(long value, List<Long> range) {
-        return value >= range.get(0) && value <= range.get(1);
-    }
-
-    private int compareRanges(List<Long> a, List<Long> b) {
-        long diff = a.get(0) - b.get(0);
-        return diff == 0 ? (int) (a.get(1) - b.get(1)) : (int) diff;
-    }
-
-    private void handleDuplicateMessage(String key, LongSeq lastMsg, LongSeq newMsg) {
-        int dupCount = (int) (lastMsg.seq() - newMsg.seq() + 1);
-        dups.compute(key, (k, v) -> v == null ? dupCount : v + dupCount);
-        List<List<Long>> missedRanges = missedSeqs.get(key);
-        log.info("[{}] Duplicate message detected | key: {} | from: {} | to {} | missed seqs {}",
-                consumer.name(), key, lastMsg.seq(), newMsg.seq(), missedRanges);
-        if (missedRanges != null) {
-            boolean removed = missedRanges.removeIf(range -> range.getFirst() >= newMsg.seq());
-            if (removed) {
-                outOfOrderSeqs.computeIfAbsent(key, k -> new ArrayList<>()).add(List.of(lastMsg, newMsg));
-            } else {
-                for (List<Long> missedRange : missedRanges) {
-                    if (isValueInRange(newMsg.seq(), missedRange)) {
-                        outOfOrderSeqs.computeIfAbsent(key, k -> new ArrayList<>()).add(List.of(lastMsg, newMsg));
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
     public String getConsumerName() {
         return consumer.name();
-    }
-
-    private void handleMissedSeqs(String key, LongSeq newMsg, LongSeq lastMsg) {
-        List<Long> range = List.of(lastMsg.seq() + 1, newMsg.seq() - 1);
-        log.info("[{}] Missed message detected | key: {} | from: {} | to: {}",
-                consumer.name(), key, lastMsg, newMsg);
-        missedSeqs.computeIfAbsent(key, k -> new ArrayList<>()).add(range);
     }
 
     /**

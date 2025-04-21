@@ -206,13 +206,13 @@ public class Coordinator {
     public ProofDetails getProofDetails(String proofID) {
         ProofTask task = proofs.get(proofID);
         Checkpoints checkpoints = new Checkpoints(
-                task.getInCheck().clone().trim(),
-                Map.of("producer", task.getLatestProducerCheckpoint().clone().trim(),
-                        "consumer", task.getLatestConsumerCheckpoint().clone().trim()),
-                Map.of("producer", task.getLastVerifiedProducerCheckpoint().clone().trim(),
-                        "consumer", task.getLastVerifiedConsumerCheckpoint().clone().trim()),
-                Map.of("producer", task.getLastFailedProducerCheckpoint().clone().trim(),
-                        "consumer", task.getLastFailedConsumerCheckpoint().clone().trim()));
+                task.getInCheck(),
+                task.getLatestProducerCheckpoint(),
+                task.getLatestConsumerCheckpoint(),
+                task.getLastVerifiedProducerCheckpoint(),
+                task.getLastVerifiedConsumerCheckpoint(),
+                task.getLastFailedProducerCheckpoint(),
+                task.getLastFailedConsumerCheckpoint());
         return new ProofDetails(task.getProof(), task.getSummary(), checkpoints);
     }
 

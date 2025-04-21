@@ -18,42 +18,29 @@
  */
 package io.streamnative.streaming.proof.common.records;
 
-import java.util.Map;
-
 /**
  * A record class that maintains different checkpoint states for message processing in a streaming system.
  * This immutable record provides a comprehensive snapshot of various checkpoint states, enabling tracking
- * and verification of message processing progress and reliability.
  *
- * <p>The record maintains four distinct checkpoint states:
- * <ul>
- *   <li>Current processing state</li>
- *   <li>Latest recorded state</li>
- *   <li>Last verified state</li>
- *   <li>Last failed state</li>
- * </ul>
+ * @param inCheck The producer checkpoint currently being processed, representing the active state
+ *                of message production
+ * @param latestProducer The most recent producer checkpoint, providing the latest known state of message production
+ * @param latestConsumer The most recent consumer checkpoint, providing the latest known state of message consumption
+ * @param verifiedProducer
+ *              The most recent successfully verified producer checkpoint, used to track confirmed message delivery
+ * @param verifiedConsumer
+ *              The most recent successfully verified consumer checkpoint, used to track confirmed message processing
+ * @param failedProducer The most recent failed producer checkpoint, useful for debugging and error analysis
+ * @param failedConsumer The most recent failed consumer checkpoint, useful for debugging and error analysis
  *
- * <p>This structure allows for:
- * <ul>
- *   <li>Real-time monitoring of message processing</li>
- *   <li>Historical tracking of processing states</li>
- *   <li>Verification of message delivery guarantees</li>
- *   <li>Failure analysis and debugging</li>
- * </ul>
- *
- * @param inCheck The checkpoint currently being processed, representing the active state
- *               of message processing across all producers and consumers
- * @param latest A map containing the most recent checkpoints for each component (producer/consumer),
- *               providing the latest known state of message processing
- * @param lastVerified A map of the most recent successfully verified checkpoints for each component,
- *                     used to track confirmed message delivery and processing
- * @param lastFailed A map of the most recent failed checkpoints for each component,
- *                   useful for debugging and error analysis
- *
- * @see Checkpoint
+ * @see ProducerCheckpoint
+ * @see ConsumerCheckPoint
  */
-public record Checkpoints(Checkpoint inCheck,
-                          Map<String, Checkpoint> latest,
-                          Map<String, Checkpoint> lastVerified,
-                          Map<String, Checkpoint> lastFailed) {
+public record Checkpoints(ProducerCheckpoint inCheck,
+                          ProducerCheckpoint latestProducer,
+                          ConsumerCheckPoint latestConsumer,
+                          ProducerCheckpoint verifiedProducer,
+                          ConsumerCheckPoint verifiedConsumer,
+                          ProducerCheckpoint failedProducer,
+                          ConsumerCheckPoint failedConsumer) {
 }

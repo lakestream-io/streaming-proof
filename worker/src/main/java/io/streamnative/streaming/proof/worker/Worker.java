@@ -18,9 +18,10 @@
  */
 package io.streamnative.streaming.proof.worker;
 
-import io.streamnative.streaming.proof.common.records.Checkpoint;
+import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
 import io.streamnative.streaming.proof.common.records.NewConsumers;
 import io.streamnative.streaming.proof.common.records.NewProducers;
+import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -35,47 +36,17 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li>Starting and stopping producer/consumer instances</li>
  *   <li>Collecting checkpoints for verification</li>
  *   <li>Thread-safe operation management</li>
+ *   <li>Caching driver instances for efficient resource usage</li>
  * </ul>
  *
  * <p>Each producer and consumer group is identified by a unique ID, allowing
  * multiple test scenarios to run concurrently on the same worker node.
  *
- * <p>Example usage:
- * <pre>{@code
- * Worker worker = new Worker();
- * 
- * // Start producers
- * NewProducers producers = NewProducers.builder()
- *     .id("test-1")
- *     .topic("test-topic")
- *     .producers(4)
- *     .keys(100)
- *     .msgRate(5000)
- *     .driver(kafkaDriver)
- *     .build();
- * worker.startProducers(producers);
- * 
- * // Start consumers
- * NewConsumers consumers = NewConsumers.builder()
- *     .id("test-1")
- *     .topic("test-topic")
- *     .consumers(4)
- *     .driver(kafkaDriver)
- *     .build();
- * worker.startConsumers(consumers);
- * 
- * // Monitor progress
- * CheckPoint producerStats = worker.producerCheckPoint("test-1");
- * CheckPoint consumerStats = worker.consumerCheckPoint("test-1");
- * 
- * // Clean up
- * worker.stopProducers("test-1");
- * worker.stopConsumers("test-1");
- * }</pre>
- *
  * @see ProofProducers
  * @see ProofConsumers
- * @see Checkpoint
+ * @see ProducerCheckpoint
+ * @see ConsumerCheckPoint
+ * @see DriverCache
  */
 public class Worker {
 
@@ -116,7 +87,7 @@ public class Worker {
      * @param id The unique identifier of the producer group
      * @return A checkpoint containing producer statistics and sequence information
      */
-    public Checkpoint producerCheckPoint(String id) {
+    public ProducerCheckpoint producerCheckPoint(String id) {
         ProofProducers producer = producers.get(id);
         return producer.checkPoint();
     }
@@ -149,7 +120,7 @@ public class Worker {
      * @param id The unique identifier of the consumer group
      * @return A checkpoint containing consumer statistics and sequence information
      */
-    public Checkpoint consumerCheckPoint(String id) {
+    public ConsumerCheckPoint consumerCheckPoint(String id) {
         ProofConsumers consumer = consumers.get(id);
         return consumer.checkPoint();
     }
@@ -168,7 +139,15 @@ public class Worker {
         driverCache.close();
     }
 
-    public Map<String, Checkpoint> consumerCheckPointDetails(String id) {
+    /**
+     * Retrieves detailed checkpoints for each consumer in a consumer group.
+     * This provides more granular information than the aggregated checkpoint,
+     * allowing analysis of consumption patterns per individual consumer.
+     *
+     * @param id The unique identifier of the consumer group
+     * @return A map of consumer names to their individual checkpoints
+     */
+    public Map<String, ConsumerCheckPoint> consumerCheckPointDetails(String id) {
         ProofConsumers consumer = consumers.get(id);
         return consumer.checkPointDetails();
     }
