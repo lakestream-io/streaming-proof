@@ -44,8 +44,8 @@ import java.nio.file.StandardWatchEventKinds;
 import java.nio.file.WatchEvent;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
-import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.RandomStringUtils;
 
 /**
  * HTTP request handler for the Streaming Proof Coordinator.
@@ -175,7 +175,7 @@ public class CoordinatorHandler {
         log.info("New create proof request: {}", ctx.body());
         Proof proof = Util.JSON_MAPPER.readValue(ctx.body(), Proof.class);
         if (proof.getTopic() == null || proof.getTopic().isEmpty()) {
-            proof.setTopic(UUID.randomUUID().toString());
+            proof.setTopic(RandomStringUtils.secure().nextAlphanumeric(5));
         }
         coordinator.createProof(proof);
         ctx.result(Util.JSON_WRITER.writeValueAsString(proof));

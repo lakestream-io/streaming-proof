@@ -24,10 +24,10 @@ import io.streamnative.streaming.proof.common.ProofProducer;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicLong;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.RandomStringUtils;
 
 /**
  * A task that manages message production for streaming proof tests. This class handles
@@ -112,7 +112,7 @@ public class ProofProducerTask implements AutoCloseable {
         Map<String, AtomicLong> map = new HashMap<>();
         Map<String, LongSeq> last = new HashMap<>();
         for (int i = 0; i < keys; i++) {
-            String key = UUID.randomUUID().toString();
+            String key = RandomStringUtils.secure().nextAlphanumeric(5);
             map.put(key, new AtomicLong(0));
             last.put(key, LongSeq.empty());
             keyArray[i] = key;

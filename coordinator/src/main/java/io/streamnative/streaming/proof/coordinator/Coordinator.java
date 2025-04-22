@@ -26,10 +26,10 @@ import io.streamnative.streaming.proof.common.records.ProofDetails;
 import io.streamnative.streaming.proof.worker.DriverCache;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.RandomStringUtils;
 
 /**
  * The Coordinator class manages the lifecycle and execution of streaming proof tests.
@@ -139,7 +139,7 @@ public class Coordinator {
         if (proof.getConsumeDelay() > 0 && proof.getConsumeDelay() >= proof.getTimeout()) {
             throw new IllegalArgumentException("Consume delay must be less than timeout.");
         }
-        String proofID = UUID.randomUUID().toString();
+        String proofID = RandomStringUtils.secure().nextAlphanumeric(5);
         proof.setId(proofID);
         ProofTask task = new ProofTask(proof, configs, driverCache.getDriver(driverName,
                 configs.drivers().get(driverName)));

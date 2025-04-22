@@ -26,8 +26,8 @@ import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -184,7 +184,7 @@ public class KafkaProofDriver implements ProofDriver {
                             String.valueOf(configs.get(KAFKA_CLIENT_ID)), System.getProperty(ZONE_ID_CONFIG)));
         }
         KafkaConsumer<String, Long> consumer = new KafkaConsumer<>(configs);
-        String consumerName = UUID.randomUUID().toString();
+        String consumerName = RandomStringUtils.secure().nextAlphanumeric(5);
         consumer.subscribe(List.of(topicName), new ConsumerRebalanceListener() {
             @Override
             public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
