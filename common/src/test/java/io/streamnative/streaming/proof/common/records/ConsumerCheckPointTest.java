@@ -27,8 +27,8 @@ import static org.testng.Assert.assertTrue;
 import io.streamnative.streaming.proof.common.LongSeq;
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import org.apache.commons.lang3.tuple.Pair;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
@@ -103,9 +103,9 @@ public class ConsumerCheckPointTest {
         // Verify missed sequences
         assertNotNull(checkPoint.getMissedSeqs().get(TEST_KEY_1));
         assertEquals(checkPoint.getMissedSeqs().get(TEST_KEY_1).size(), 1);
-        Pair<Long, Long> missedRange = checkPoint.getMissedSeqs().get(TEST_KEY_1).getFirst();
-        assertEquals(missedRange.getLeft().longValue(), 6L);
-        assertEquals(missedRange.getRight().longValue(), 9L);
+        List<ConsumerCheckPoint.SeqRange> missedRange = checkPoint.getMissedSeqs().get(TEST_KEY_1);
+        assertEquals(missedRange.getFirst().getStart().seq(), 5L);
+        assertEquals(missedRange.getLast().getEnd().seq(), 10L);
     }
 
     @Test
@@ -220,19 +220,19 @@ public class ConsumerCheckPointTest {
         assertEquals(checkPoint.getMissedSeqs().get(TEST_KEY_1).size(), 3);
         
         // First gap: 6-9
-        Pair<Long, Long> firstGap = checkPoint.getMissedSeqs().get(TEST_KEY_1).getFirst();
-        assertEquals(firstGap.getLeft().longValue(), 6L);
-        assertEquals(firstGap.getRight().longValue(), 9L);
+        List<ConsumerCheckPoint.SeqRange> firstGap = checkPoint.getMissedSeqs().get(TEST_KEY_1);
+        assertEquals(firstGap.getFirst().getStart().seq(), 5L);
+        assertEquals(firstGap.getFirst().getEnd().seq(), 10L);
         
         // Second gap: 16-19
-        Pair<Long, Long> secondGap = checkPoint.getMissedSeqs().get(TEST_KEY_1).get(1);
-        assertEquals(secondGap.getLeft().longValue(), 16L);
-        assertEquals(secondGap.getRight().longValue(), 19L);
+        List<ConsumerCheckPoint.SeqRange> secondGap = checkPoint.getMissedSeqs().get(TEST_KEY_1);
+        assertEquals(secondGap.get(1).getStart().seq(), 15L);
+        assertEquals(secondGap.get(1).getEnd().seq(), 20L);
         
         // Third gap: 26-29
-        Pair<Long, Long> thirdGap = checkPoint.getMissedSeqs().get(TEST_KEY_1).get(2);
-        assertEquals(thirdGap.getLeft().longValue(), 26L);
-        assertEquals(thirdGap.getRight().longValue(), 29L);
+        List<ConsumerCheckPoint.SeqRange> thirdGap = checkPoint.getMissedSeqs().get(TEST_KEY_1);
+        assertEquals(thirdGap.get(2).getStart().seq(), 25L);
+        assertEquals(thirdGap.get(2).getEnd().seq(), 30L);
 
         // Test adding a range that overlaps with an existing range
         checkPoint.addKey(TEST_KEY_1, createRangeMap("35", 10L, 40L));

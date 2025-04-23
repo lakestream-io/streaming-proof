@@ -73,6 +73,6 @@ public record ProofSummary(long verified,
                            long duplicates,
                            int timeouts,
                            Map<String, List<LongSeq>> failedKeys,
-                           Map<String, List<Pair<Long, Long>>> missedSeqs,
+                           Map<String, List<ConsumerCheckPoint.SeqRange>> missedSeqs,
                            Map<String, List<Pair<Long, Long>>> outOfOrderSeqs) {
 }

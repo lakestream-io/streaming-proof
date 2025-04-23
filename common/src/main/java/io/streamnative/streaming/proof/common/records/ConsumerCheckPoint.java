@@ -80,7 +80,7 @@ public class ConsumerCheckPoint {
     private final Map<String, List<SeqRange>> mergedConsumed = new HashMap<>();
 
     /** Map storing missed sequence ranges for each key */
-    private volatile Map<String, List<Pair<Long, Long>>> missedSeqs = Collections.emptyMap();
+    private volatile Map<String, List<SeqRange>> missedSeqs = Collections.emptyMap();
     /** Map storing the count of duplicated messages for each key */
     private volatile Map<String, Long> duplicatedCount = Collections.emptyMap();
     /** Map storing out-of-order sequence ranges for each key */
@@ -137,7 +137,7 @@ public class ConsumerCheckPoint {
      * Updates the missedSeqs and duplicatedCount maps.
      */
     public void calculate() {
-        Map<String, List<Pair<Long, Long>>> missedSeqs = new HashMap<>();
+        Map<String, List<SeqRange>> missedSeqs = new HashMap<>();
         Map<String, Long> duplicatedCount = new HashMap<>();
         trim();
         consumed.forEach((key, value) -> {
@@ -147,7 +147,7 @@ public class ConsumerCheckPoint {
                 duplicatedCount.put(key, count);
             }
             
-            List<Pair<Long, Long>> missed = getMissedSeqs(mergedConsumed.get(key));
+            List<SeqRange> missed = getMissedSeqs(mergedConsumed.get(key));
             if (!missed.isEmpty()) {
                 missedSeqs.put(key, missed);
             }
@@ -220,14 +220,14 @@ public class ConsumerCheckPoint {
      * @param ranges List of sequence ranges to check for gaps
      * @return List of pairs representing missed sequence ranges (start, end), or empty list if no gaps are found
      */
-    private List<Pair<Long, Long>> getMissedSeqs(List<SeqRange> ranges) {
+    private List<SeqRange> getMissedSeqs(List<SeqRange> ranges) {
         
         // If there's only one range or less, we can't determine missed sequences
         if (ranges.size() <= 1) {
             return Collections.emptyList();
         }
         
-        List<Pair<Long, Long>> missedRanges = new ArrayList<>();
+        List<SeqRange> missedRanges = new ArrayList<>();
 
         // Iterate through consecutive ranges to find gaps
         for (int i = 1; i < ranges.size(); i++) {
@@ -236,10 +236,10 @@ public class ConsumerCheckPoint {
             
             // If there's a gap between the previous range's end and current range's start
             if (current.getStart().seq() > previous.getEnd().seq() + 1) {
-                // Create a pair representing the missed sequence range
-                long missedStart = previous.getEnd().seq() + 1;
-                long missedEnd = current.getStart().seq() - 1;
-                missedRanges.add(Pair.of(missedStart, missedEnd));
+                SeqRange missedRange = new SeqRange();
+                missedRange.setStart(previous.getEnd());
+                missedRange.setEnd(current.getStart());
+                missedRanges.add(missedRange);
             }
         }
         

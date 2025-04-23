@@ -337,7 +337,7 @@ public class ProofTask {
                         .sum(),
                 lastVerifiedConsumerCheckpoint.getMissedSeqs().values().stream()
                         .flatMap(ranges -> ranges.stream()
-                                .map(range -> range.getRight() - range.getLeft() + 1))
+                                .map(range -> range.getEnd().seq() - range.getStart().seq() - 1))
                         .mapToInt(Long::intValue)
                         .sum(),
                 lastVerifiedConsumerCheckpoint.getDuplicatedCount().values().stream().reduce(0L, Long::sum),
