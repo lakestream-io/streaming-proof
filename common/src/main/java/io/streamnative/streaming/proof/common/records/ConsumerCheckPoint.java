@@ -44,13 +44,65 @@ import org.apache.commons.lang3.tuple.Pair;
 public class ConsumerCheckPoint {
 
     /**
-     * Represents a range of sequence numbers.
-     * Contains a start and end sequence number.
+     * Represents a range of sequence numbers for tracking message consumption.
+     * Contains a start sequence number, end sequence number, and tracks duplicates.
+     * Used to maintain ordered ranges of consumed message sequences and detect gaps
+     * or overlaps in the sequence.
      */
     @Data
     public static class SeqRange {
         private LongSeq start;
         private LongSeq end;
+        private int duplicated;
+
+        /**
+         * Checks if this range overlaps with another range.
+         *
+         * @param other The other range to check
+         * @return True if there's an overlap, false otherwise
+         */
+        private boolean hasOverlap(SeqRange other) {
+            return other.getStart().seq() <= this.getEnd().seq()
+                    && other.getEnd().seq() >= this.getStart().seq();
+        }
+
+        /**
+         * Merges this range with another range if they overlap.
+         * If they overlap, the start and end sequence numbers will be adjusted
+         * to encompass the entire range, and the duplicated count will be updated.
+         *
+         * @param other The other range to merge with
+         * @return True if the ranges were merged, false otherwise
+         */ 
+        public boolean merge(SeqRange other) {
+            if (hasOverlap(other)) {
+                long overlapStart = Math.max(this.getStart().seq(), other.getStart().seq());
+                long overlapEnd = Math.min(this.getEnd().seq(), other.getEnd().seq());
+                int overlapCount = (int) (overlapEnd - overlapStart + 1);
+                this.duplicated += overlapCount + other.getDuplicated();
+                // Set the new boundaries
+                this.start = this.start.compareTo(other.getStart()) < 0 ? this.getStart() : other.getStart();
+                this.end = this.end.compareTo(other.getEnd()) > 0 ? this.getEnd() : other.getEnd();                
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        /**
+         * Creates a deep copy of this SeqRange instance.
+         * The clone will have the same start and end sequence numbers,
+         * as well as the same duplicated count as the original.
+         *
+         * @return A new SeqRange instance with the same properties as this one
+         */
+        public SeqRange clone() {
+            SeqRange clone = new SeqRange();
+            clone.setStart(this.start);
+            clone.setEnd(this.end);
+            clone.setDuplicated(this.duplicated);
+            return clone;
+        }
 
         @Override
         public String toString() {
@@ -174,12 +226,11 @@ public class ConsumerCheckPoint {
      * @return The count of duplicated messages, or 0 if no duplicates are found
      */
     private long getDuplicatedCount(List<SeqRange> ranges) {
-        long duplicates = 0;
-        
-        // If there's only one range or less, there can't be duplicates
-        if (ranges.size() <= 1) {
+        if (ranges.isEmpty()) {
             return 0;
         }
+        long duplicates = 0;
+        duplicates += ranges.getFirst().getDuplicated();
         // Iterate through consecutive ranges to find duplicates
         for (int i = 1; i < ranges.size(); i++) {
             SeqRange current = ranges.get(i);
@@ -198,6 +249,7 @@ public class ConsumerCheckPoint {
                         duplicates += overlap;
                     }
                 }
+                duplicates += current.getDuplicated();
             }
         }
         

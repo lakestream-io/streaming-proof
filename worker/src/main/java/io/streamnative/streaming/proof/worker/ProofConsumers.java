@@ -93,7 +93,7 @@ public class ProofConsumers {
     public ConsumerCheckPoint checkPoint() {
         ConsumerCheckPoint checkpoint = new ConsumerCheckPoint();
         for (ProofConsumerTask task : tasks) {
-            task.getConsumed().forEach(checkpoint::addKey);
+            task.getTrimmedConsumed().forEach(checkpoint::addKey);
         }
         return checkpoint;
     }
@@ -109,7 +109,7 @@ public class ProofConsumers {
         Map<String, ConsumerCheckPoint> result = new HashMap<>();
         for (ProofConsumerTask task : tasks) {
             ConsumerCheckPoint checkPoint = new ConsumerCheckPoint();
-            task.getConsumed().forEach(checkPoint::addKey);
+            task.getTrimmedConsumed().forEach(checkPoint::addKey);
             result.put(task.getConsumerName(), checkPoint);
         }
         return result;

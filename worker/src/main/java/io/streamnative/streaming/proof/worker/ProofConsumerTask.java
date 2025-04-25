@@ -90,6 +90,34 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
     }
 
     /**
+     * Returns a trimmed version of the consumed sequence ranges by merging adjacent ranges.
+     * This method processes the raw consumed sequence ranges and combines adjacent ranges
+     * that can be merged, resulting in a more compact representation of the consumed data.
+     *
+     * The method is synchronized to ensure thread-safety when accessing shared data structures.
+     *
+     * @return A map containing the trimmed sequence ranges for each key. The outer map uses
+     *         the message key as its key, while the inner SortedMap uses timestamps as keys
+     *         and merged sequence ranges as values.
+     */
+    public synchronized Map<String, SortedMap<String, ConsumerCheckPoint.SeqRange>> getTrimmedConsumed() {
+        Map<String, SortedMap<String, ConsumerCheckPoint.SeqRange>> merged = new HashMap<>();
+        consumed.forEach((k, v) -> {
+            SortedMap<String, ConsumerCheckPoint.SeqRange> mergedRange = new TreeMap<>();
+            ConsumerCheckPoint.SeqRange range = null;
+            for (Map.Entry<String, ConsumerCheckPoint.SeqRange> entry : v.entrySet()) {
+                ConsumerCheckPoint.SeqRange clone = entry.getValue().clone();
+                if (range == null || !range.merge(clone)) {
+                    range = clone;
+                    mergedRange.put(entry.getKey(), range);
+                }
+            }
+            merged.put(k, mergedRange);
+        });
+        return merged;
+    }
+
+    /**
      * Retrieves the last sequence range for a given key.
      *
      * @param key The message key to look up

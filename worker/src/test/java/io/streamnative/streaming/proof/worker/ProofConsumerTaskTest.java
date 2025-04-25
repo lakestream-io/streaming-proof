@@ -24,6 +24,9 @@ import static org.testng.Assert.assertEquals;
 
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofConsumer;
+import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
+import java.util.Map;
+import java.util.SortedMap;
 import org.testng.annotations.Test;
 
 public class ProofConsumerTaskTest {
@@ -121,6 +124,64 @@ public class ProofConsumerTaskTest {
             assertEquals(consumerTask.getConsumed().get(KEY2).lastEntry().getValue().getEnd().seq(), 4L);
             assertEquals(consumerTask.getConsumed().get(KEY3).lastEntry().getValue().getStart().seq(), 6L);
             assertEquals(consumerTask.getConsumed().get(KEY3).lastEntry().getValue().getEnd().seq(), 6L);
+        }
+    }
+
+    @Test
+    public void testGetTrimmedConsumed() throws Exception {
+        try (ProofConsumerTask consumerTask = new ProofConsumerTask()) {
+            consumerTask.setConsumer(mockConsumer);
+            
+            // Generate messages with overlapping and non-overlapping ranges
+            generateMessage(consumerTask, KEY1, 0L, createMetadata(1L));
+            generateMessage(consumerTask, KEY1, 1L, createMetadata(2L));
+            generateMessage(consumerTask, KEY1, 5L, createMetadata(3L));
+            generateMessage(consumerTask, KEY1, 6L, createMetadata(4L));
+            
+            generateMessage(consumerTask, KEY2, 0L, createMetadata(5L));
+            generateMessage(consumerTask, KEY2, 1L, createMetadata(6L));
+            generateMessage(consumerTask, KEY2, 2L, createMetadata(7L));
+            
+            generateMessage(consumerTask, KEY2, 1L, createMetadata(8L));
+            
+            // Get merged consumed ranges
+            Map<String, SortedMap<String, ConsumerCheckPoint.SeqRange>> merged = consumerTask.getTrimmedConsumed();
+            
+            // Verify results
+            assertEquals(merged.size(), 2);
+            
+            // For KEY1, we should have two ranges: [0-1] and [5-6]
+            assertEquals(merged.get(KEY1).size(), 2);
+            
+            // For KEY2, we should have 1 ranges: [0-2]
+            assertEquals(merged.get(KEY2).size(), 1);
+
+            // Verify the first range for KEY1
+            ConsumerCheckPoint.SeqRange firstRangeKey1 = merged.get(KEY1).firstEntry().getValue();
+            assertEquals(firstRangeKey1.getStart().seq(), 0L);
+            assertEquals(firstRangeKey1.getEnd().seq(), 1L);
+            
+            // Verify the second range for KEY1
+            ConsumerCheckPoint.SeqRange secondRangeKey1 = merged.get(KEY1).lastEntry().getValue();
+            assertEquals(secondRangeKey1.getStart().seq(), 5L);
+            assertEquals(secondRangeKey1.getEnd().seq(), 6L);
+            
+            // Verify the first range for KEY2
+            ConsumerCheckPoint.SeqRange firstRangeKey2 = merged.get(KEY2).firstEntry().getValue();
+            assertEquals(firstRangeKey2.getStart().seq(), 0L);
+            assertEquals(firstRangeKey2.getEnd().seq(), 2L);
+            assertEquals(firstRangeKey2.getDuplicated(), 1);
+
+            generateMessage(consumerTask, KEY2, 1L, createMetadata(8L));
+            generateMessage(consumerTask, KEY2, 2L, createMetadata(9L));
+            generateMessage(consumerTask, KEY2, 3L, createMetadata(10L));
+            generateMessage(consumerTask, KEY2, 4L, createMetadata(11L));
+            merged = consumerTask.getTrimmedConsumed();
+            assertEquals(merged.get(KEY2).size(), 1);
+            firstRangeKey2 = merged.get(KEY2).firstEntry().getValue();
+            assertEquals(firstRangeKey2.getStart().seq(), 0L);
+            assertEquals(firstRangeKey2.getEnd().seq(), 4L);
+            assertEquals(firstRangeKey2.getDuplicated(), 3);
         }
     }
 
