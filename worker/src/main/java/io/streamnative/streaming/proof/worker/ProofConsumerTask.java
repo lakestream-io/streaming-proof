@@ -53,12 +53,6 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
     @Getter
     private final Map<String, SortedMap<String, ConsumerCheckPoint.SeqRange>> consumed = new HashMap<>();
 
-    /** Interval in milliseconds between logging consumed messages */
-    private static final int LOG_INTERVAL_MS = 30000;
-    
-    /** Timestamp of the last logged message */
-    private long lastLogTime = System.currentTimeMillis();
-
     /**
      * Processes a received message and validates its sequence number against the expected order.
      * This method is synchronized to ensure thread-safe updates to the sequence tracking maps.
@@ -72,11 +66,6 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
     @Override
     public synchronized void onMessage(String key, long value, MessageMetadata metadata) {
         LongSeq newMsg = new LongSeq(value, metadata);
-        if (System.currentTimeMillis() - lastLogTime > LOG_INTERVAL_MS) {
-            log.info("[{}] Consumed message | key: {} | new message {} | last seq range: {}",
-                    consumer.name(), key, newMsg, getLastSeq(key));
-            lastLogTime = System.currentTimeMillis();
-        }
         ConsumerCheckPoint.SeqRange lastConsumedRange = getLastSeq(key);
         if (lastConsumedRange == null) {
             newConsumedRange(key, newMsg);
