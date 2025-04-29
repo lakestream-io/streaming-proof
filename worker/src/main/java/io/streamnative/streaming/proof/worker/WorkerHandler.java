@@ -51,12 +51,12 @@ import lombok.extern.slf4j.Slf4j;
  * app.start(8088);
  *
  * // REST API endpoints:
- * // POST /producer/start - Start producers with configuration
- * // POST /consumer/start - Start consumers with configuration
- * // GET /producer/{id}/checkpoint - Get producer statistics
- * // GET /consumer/{id}/checkpoint - Get consumer statistics
- * // POST /producer/{id}/stop - Stop producer group
- * // POST /consumer/{id}/stop - Stop consumer group
+ * // POST /producers/start - Start producers with configuration
+ * // POST /consumers/start - Start consumers with configuration
+ * // GET /producers/checkpoints/{id} - Get producer statistics
+ * // GET /consumers/checkpoints/{id} - Get consumer statistics
+ * // POST /producers/stop/{id} - Stop producer group
+ * // POST /consumers/stop/{id} - Stop consumer group
  * }</pre>
  *
  * @see Worker

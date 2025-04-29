@@ -1,0 +1,484 @@
+# Design Document: Streaming Systems Correctness Verification Framework
+
+- **Author:** Penghui Li
+- **Date:** 2025-02-06
+- **Status:** Implemented
+
+## 1. Abstract
+
+This document outlines the design for a framework dedicated to verifying the correctness guarantees (e.g., at-least-once, exactly-once, ordering) of streaming systems like Apache Kafka and Apache Pulsar. The framework employs a distributed architecture with producers and consumers generating and validating sequenced data streams across multiple keys. It provides real-time monitoring, checkpointing for state comparison, and detailed reporting of any detected violations (message loss, duplicates, out-of-order delivery).
+
+## 2. Goals
+
+*   Provide a reliable and scalable method to verify message delivery guarantees (at-least-once, exactly-once) and ordering for various streaming systems.
+*   Support verification for Kafka-compatible and Pulsar systems through a pluggable driver architecture.
+*   Enable configuration of workload parameters (producers, consumers, keys, message rate, test duration).
+*   Offer real-time monitoring and reporting of verification status and detected errors via REST APIs.
+*   Implement a checkpointing mechanism to compare producer and consumer states for correctness validation.
+*   Provide clear evidence (e.g., sequence numbers, keys) for any detected violations.
+*   Support deployment in containerized environments (Docker, Kubernetes).
+
+## 3. Non-Goals
+
+*   Performance benchmarking of the streaming systems (focus is on correctness, not throughput/latency measurement).
+*   End-to-end application-level correctness verification (focus is on the streaming system's guarantees).
+*   Automated failure injection (though designed to work alongside chaos testing tools).
+*   Verification of complex stream processing logic beyond basic delivery guarantees.
+
+## 4. Background and Motivation
+
+Verifying the correctness of distributed streaming systems, especially under failure conditions or specific configurations, is challenging. Guarantees like "at-least-once", "exactly-once", and "ordering" are critical for many applications but difficult to confirm empirically. Existing testing methods often lack the scale, automation, or detailed reporting needed for thorough validation.
+
+The concept for this framework originated from the development of StreamNative Ursa, which required a robust method to ensure the correctness of streaming systems. This framework aims to provide a standardized, scalable, and automated solution for continuously verifying these guarantees in systems like Apache Kafka, Apache Pulsar, and other compatible platforms, particularly before production deployment or during chaos engineering experiments.
+
+## 5. Proposed Solution: High-Level Design
+
+The core idea is to generate uniquely sequenced messages for distinct keys and verify their reception and order at the consumer side.
+
+### 5.1. Architecture Components
+
+*   **Coordinator:**
+    *   Manages the overall verification lifecycle (start, stop, configuration).
+    *   Orchestrates Worker nodes.
+    *   Assigns producer/consumer tasks and key ranges to Workers.
+    *   Aggregates checkpoints and statistics from Workers.
+    *   Performs cross-worker state comparison for verification.
+    *   Provides a central REST API for control and reporting.
+*   **Worker:**
+    *   Runs on separate nodes/containers for scalability.
+    *   Registers with the Coordinator.
+    *   Executes producer and/or consumer tasks as assigned by the Coordinator.
+    *   Uses specific `ProofDriver` implementations to interact with the target streaming system.
+    *   Tracks local state (last produced/consumed sequence per key, detected errors).
+    *   Provides local checkpoints and statistics to the Coordinator via REST API.
+*   **ProofDriver:**
+    *   An interface ProofDriver.java defining interactions with a specific streaming system (e.g., creating producers/consumers, sending/receiving messages).
+
+### 5.2. Key Concepts
+
+*   **Key:** A partition identifier used to group related messages. Ordering is typically guaranteed within a key/partition in many streaming systems.
+*   **Sequence Number (Seq):** A monotonically increasing number assigned to each message within a specific key. Used to detect loss, duplicates, and out-of-order messages.
+*   **Checkpoint:** A snapshot of the state (e.g., last sequence number produced/consumed per key, error counts) taken periodically by producers and consumers. The Coordinator aggregates these for verification.
+
+### 5.3. Workflow
+
+1.  **Configuration:** User defines the test parameters (driver, features, producers, consumers, keys, rate, etc.) and system configurations (worker endpoints, driver settings) via the Coordinator API (`POST /proofs`, `PUT /configs`).
+2.  **Initialization:** Coordinator starts, loads configuration, and potentially creates the topic in the target system. Workers start and register with the Coordinator.
+3.  **Task Distribution:** Coordinator receives a `POST /proofs` request. It calculates key distribution, assigns producer/consumer tasks to registered Workers, and instructs them to start via Worker APIs (`POST /producer/start`, `POST /consumer/start`).
+4.  **Data Generation & Consumption:**
+    *   Producers (on Workers) generate messages with `(Key, Seq)` pairs and send them via the configured `ProofDriver`. They track the last sent `Seq` for each assigned `Key`.
+    *   Consumers (on Workers) receive messages via the `ProofDriver`. They track the last *valid* `Seq` received for each `Key` and record any duplicates, out-of-order messages, or calculate potential misses based on sequence gaps.
+5.  **Checkpointing & Verification:**
+    *   Coordinator periodically triggers checkpoints (`GET /producer/checkpoint/{id}`, `GET /consumer/checkpoint/{id}` from Workers).
+    *   Coordinator aggregates producer checkpoints to determine the expected state (highest `Seq` produced per `Key`).
+    *   Coordinator aggregates consumer checkpoints (highest *valid* `Seq` consumed per `Key`, error counts).
+    *   Coordinator compares the aggregated producer state ("InCheck" state) with the aggregated consumer state over time. It uses a configurable `timeout` to determine if messages produced in a checkpoint window are eventually consumed correctly. If sequences remain unverified after the timeout, a timeout error is flagged.
+6.  **Reporting:** User queries the Coordinator API (`GET /proofs/{id}`) to get real-time summary statistics (total verified, errors, duplicates, missed, timeouts) and detailed checkpoint information.
+7.  **Termination:** User stops the test via the Coordinator API (`PUT /proofs/{id}/stop`), which propagates stop commands to the Workers (`POST /producer/stop/{id}`, `POST /consumer/stop/{id}`).
+
+### 5.4. Verification Mechanisms
+The streaming-proof framework implements robust verification mechanisms to ensure the correctness of streaming systems. These mechanisms focus on detecting missed messages and duplicated messages, which are critical for validating delivery guarantees.
+
+#### 5.4.1. Checkpoint-Based Verification
+The framework uses a checkpoint model that tracks message sequences for both producers and consumers:
+
+- Producer Checkpoints : Track the latest sequence numbers published for each message key
+- Consumer Checkpoints : Maintain sequence ranges of consumed messages and track anomalies
+#### 5.4.2. Detecting Missed Messages
+Missed message detection works by identifying gaps between consecutive message ranges received by consumers. When a gap is detected between the end of one sequence range and the start of another, those missing sequence numbers represent missed messages.
+
+If a consumer receives these sequence ranges:
+
+- Range 1: [1-5]
+- Range 2: [10-15]
+The system identifies a gap: [6-9]
+
+This indicates messages with sequence numbers 6, 7, 8, and 9 were missed.
+
+#### 5.4.3. Detecting Duplicated Messages
+Duplicate detection works by identifying:
+
+1. Messages with sequence numbers that have already been processed
+2. Overlapping sequence ranges in the consumer's record
+
+If a consumer has already processed sequence number 42 for key "A", and then receives another message with sequence 42 for the same key, it's identified as a duplicate.
+
+For range analysis, if these ranges exist:
+
+- Range 1: [1-10]
+- Range 2: [5-15]
+The system identifies an overlap: [5-10]
+
+This indicates 6 duplicate messages (sequence numbers 5, 6, 7, 8, 9, 10).
+
+#### 5.4.4. Sequence Range Optimization on consumer
+To improve verification efficiency, the framework implements:
+
+1. Range Merging : Adjacent and overlapping sequence ranges are merged to create a more compact representation
+2. Trimming : The trim() method optimizes sequence ranges by combining adjacent ranges where the end of one range + 1 equals the start of the next range
+
+#### 5.4.5. Handling Partition Reassignment
+The framework handles partition reassignment to different consumers through timestamp-based sequence range tracking:
+- **Timestamp-Based Range Creation** : When a consumer processes messages, it creates sequence ranges with timestamps. Each range is identified by the timestamp when it was created.
+- **Sequence Range Continuity** : When a consumer starts processing messages from a newly assigned partition, it creates new sequence ranges with new timestamps. This allows the system to:
+  - Track which consumer processed which message ranges
+  - Identify when partition ownership changed
+  - Detect potential duplicates or missed messages during reassignment
+- **Checkpoint Aggregation** : During verification, the coordinator collects checkpoints from all consumers and merges them based on timestamps:
+  - Ranges are sorted chronologically using the timestamp keys in the SortedMap
+  - The system can identify when a partition was reassigned by analyzing the timestamp gaps
+  - Overlapping ranges from different consumers indicate potential duplicates during rebalancing
+- **Verification During Rebalancing** : The timestamp-based approach ensures that even when partitions are reassigned:
+  - Message sequence integrity can be verified across consumer instances
+  - Duplicates processed by different consumers are detected through overlapping ranges
+  - Missed messages during rebalancing are identified through sequence gaps
+#### 5.4.6. Verification Process
+The verification process follows these steps:
+1. Producers publish messages with sequential values for each key
+2. Consumers receive messages and track sequence ranges
+3. The system periodically collects producer and consumer checkpoints
+4. Checkpoints are analyzed to detect:
+   - Messages that were published but never consumed (missed messages)
+   - Messages that were consumed multiple times (duplicates)
+
+#### 5.4.7. Practical Applications
+These verification mechanisms are crucial for validating:
+- At-least-once delivery : Ensures no messages are missed (no gaps in sequence) and messages are processed in sequence order
+- Exactly-once processing : Ensures no duplicates are processed (not implemented yet)
+
+## 6. API Definitions
+
+The framework exposes REST APIs for control and monitoring.
+
+### 6.1. Coordinator API
+
+*   `POST /proofs`: Create/start a new verification test.
+    *   **Request Body:** (`application/json`) - Defines the parameters for the new test.
+        ```json
+        {
+          "name": "kafka-ordering-test-1",
+          "driver": "kafka-driver-config-name",
+          "drivers": {
+            "admin": "admin-driver-name",
+            "producer": "producer-driver-name",
+            "consumer": "consumer-driver-name"
+          },
+          "features": ["ordering", "at_least_once"],
+          "description": "Verify ordering and at-least-once delivery for Kafka",
+          "topic": "proof-topic-1",
+          "partitions": 10,
+          "producers": 4,
+          "consumers": 4,
+          "msgRate": 1000,
+          "keys": 100,
+          "checkPointInterval": 60,
+          "timeout": 180,
+          "consumeDelay": 0,
+          "duration": 28800
+        }
+        ```
+*   `GET /proofs`: List active tests.
+    *   **Response Body:** (`application/json`) - A list of active proofs.
+        ```json
+        [
+          {
+            "id": "proof-abc-123",
+            "name": "kafka-ordering-test-1",
+            "driver": "kafka-driver-config-name",
+            "features": ["ordering", "at_least_once"],
+            "topic": "proof-topic-1",
+            "status": "RUNNING",
+            "startTime": 1678886400000,
+            "duration": 28800,
+            "msgRate": 1000
+          },
+          {
+            "id": "proof-xyz-789",
+            "name": "pulsar-exactly-once-test",
+            "driver": "pulsar-driver-config-name",
+            "features": ["exactly-once"],
+            "topic": "proof-topic-2",
+            "status": "COMPLETED",
+            "startTime": 1678880000000,
+            "duration": 3600,
+            "msgRate": 500
+          }
+        ]
+        ```
+*   `GET /proofs/{id}`: Get proof summary and results for a specific test.
+    *   **Path Parameter:** `id` (string) - The unique ID of the proof test.
+    *   **Response Body:** (`application/json`) - Summary of the proof, potentially including aggregated results.
+        ```json
+        {
+          "id": "proof-abc-123",
+          "name": "kafka-ordering-test-1",
+          "status": "RUNNING",
+          "results": {
+            "verified": 1500000,
+            "errors": 0,
+            "outOfOrders": 2,
+            "missed": 0,
+            "duplicates": 5,
+            "timeouts": 0,
+            "failedKeys": {
+              "key1": [{ "seq": 42, "metadata": { "offset": 1024 } }]
+            },
+            "missedSeqs": {
+              "key2": [{ "start": { "seq": 100, "metadata": { "offset": 2000 } }, 
+                        "end": { "seq": 105, "metadata": { "offset": 2005 } }, 
+                        "duplicated": 0 }]
+            },
+            "outOfOrderSeqs": {
+              "key3": [[150, 145]]
+            }
+          },
+          "checkpoints": { 
+             "latestProducer": {},
+             "latestConsumer": {}
+          }
+        }
+        ```
+*   `GET /proofs/{id}/details`: Get comprehensive details about a specific test.
+    *   **Path Parameter:** `id` (string) - The unique ID of the proof test.
+    *   **Response Body:** (`application/json`) - Detailed information of proof test.
+        ```json
+        {
+          "proof": {
+            "id": "proof-abc-123",
+            "name": "kafka-ordering-test-1",
+            "driver": "kafka-driver-config-name",
+            "features": ["ordering", "at_least_once"],
+            "topic": "proof-topic-1",
+            "partitions": 10,
+            "producers": 4,
+            "consumers": 4,
+            "msgRate": 1000,
+            "keys": 100,
+            "checkPointInterval": 60,
+            "timeout": 180,
+            "duration": 28800,
+            "startTime": 1678886400000
+          },
+          "summary": {
+            "verified": 1500000,
+            "errors": 0,
+            "outOfOrders": 2,
+            "missed": 0,
+            "duplicates": 5,
+            "timeouts": 0,
+            "failedKeys": {
+              "key1": [{ "seq": 42, "metadata": { "offset": 1024 } }]
+            },
+            "missedSeqs": {
+              "key2": [{ "start": { "seq": 100, "metadata": { "offset": 2000 } }, 
+                        "end": { "seq": 105, "metadata": { "offset": 2005 } }, 
+                        "duplicated": 0 }]
+            },
+            "outOfOrderSeqs": {
+              "key3": [[150, 145]]
+            }
+          },
+          "checkpoints": {
+             "latestProducer": {},
+             "latestConsumer": {}
+          }
+        }
+        ```
+*   `PUT /proofs/{id}/stop`: Stop a running test.
+    *   **Path Parameter:** `id` (string) - The unique ID of the proof test.
+    *   **Response Body:** (`application/json`) - Confirmation status.
+        ```json
+        {
+          "status": "STOP_REQUESTED",
+          "message": "Stop signal sent to proof test proof-abc-123"
+        }
+        ```
+*   `DELETE /proofs/{id}`: Delete a test record.
+    *   **Path Parameter:** `id` (string) - The unique ID of the proof test.
+    *   **Response Body:** (`application/json`) - Confirmation status.
+        ```json
+        {
+          "status": "DELETED",
+          "message": "Proof test record proof-abc-123 deleted"
+        }
+        ```
+*   `GET /configs`: Retrieve current worker and driver configurations.
+    *   **Response Body:** (`application/json`) - The current configuration.
+        ```json
+        {
+          "workers": {
+            "worker-1": "http://10.0.1.10:8080",
+            "worker-2": "http://10.0.1.11:8080"
+          },
+          "drivers": {
+            "kafka-driver-config-name": {
+              "type": "kafka",
+              "configs": {
+                "bootstrap.servers": "kafka-broker:9092",
+                "security.protocol": "SASL_SSL",
+              }
+            },
+            "pulsar-driver-config-name": {
+              "type": "pulsar",
+              "configs": {
+                "serviceUrl": "pulsar://pulsar-broker:6650",
+              }
+            }
+          }
+        }
+        ```
+*   `PUT /configs`: Add/update configurations (replaces the entire configuration).
+    *   **Request Body:** (`application/json`)
+        ```json
+        {
+          "workers": {
+            "worker-1": "http://10.0.1.10:8080",
+            "worker-2": "http://10.0.1.11:8080",
+            "worker-3": "http://10.0.1.12:8080"
+          },
+          "drivers": {
+            "kafka-driver-config-name": {
+              "type": "kafka",
+              "configs": {
+                "bootstrap.servers": "kafka-broker-new:9092",
+                "security.protocol": "SASL_SSL"
+              }
+            }
+          }
+        }
+        ```
+*   `DELETE /configs`: Delete configurations (clears all configurations).
+    *   **Response Body:** (`application/json`) - Confirmation status.
+        ```json
+        {
+          "status": "CLEARED",
+          "message": "All worker and driver configurations have been cleared."
+        }
+        ```
+### 6.2. Worker API
+
+*   `POST /producers/start`: Start producer instances on the worker.
+    *   **Request Body:** (`application/json`) - Configuration for the producer task.
+        ```json
+        {
+          "id": "proof-abc-123",
+          "topic": "proof-topic-1",
+          "producers": 4,
+          "keys": 100,
+          "msgRate": 1000,
+          "driverName": "kafka",
+          "driver": {
+            "driverType": "kafka",
+            "driverConfigs": {
+              "bootstrap.servers": "kafka:9092",
+              "client.id": "streaming-proof-producer"
+            }
+          }
+        }
+        ```
+*   `POST /consumers/start`: Start consumer instances on the worker.
+    *   **Request Body:** (`application/json`) - Configuration for the consumer task.
+        ```json
+        {
+          "id": "proof-abc-123",
+          "topic": "proof-topic-1",
+          "partitions": 5,
+          "consumers": 3,
+          "consumeDelayMs": 0,
+          "driverName": "kafka-driver-name",
+          "driver": {
+            "driverType": "kafka",
+            "driverConfigs": {
+              "driverType": "kafka",
+              "driverConfigs": {
+                "bootstrap.servers": "localhost:9092",
+                "client.id": "streaming-proof-consumer"
+              }
+            }
+          }
+        }
+        ```
+*   `GET /producers/checkpoints/{id}`: Get the current producer checkpoint state.
+    *   **Path Parameter:** `id` (string) - The `producerId` assigned during start.
+    *   **Response Body:** (`application/json`)
+        ```json
+        {
+           "published": {
+               "key0": {
+                   "seq": 1500,
+                   "metadata": {
+                       "offset": 1500,
+                       "ledgerId": 123,
+                       "entryId": 456,
+                       "partition": 0
+                   }
+               },
+               "key1": {
+                   "seq": 1498,
+                   "metadata": {
+                       "offset": 1498,
+                       "ledgerId": 123,
+                       "entryId": 455,
+                       "partition": 0
+                   }
+               },
+           },
+           "errors": {
+               "key0": 0,
+               "key1": 2,
+           }
+        }
+        ```
+*   `GET /consumers/checkpoints/{id}`: Get the current consumer checkpoint state.
+    *   **Path Parameter:** `id` (string) - The `consumerId` assigned during start.
+    *   **Response Body:** (`application/json`) - The ConsumerCheckPoint object for this consumer instance.
+        ```json
+        {
+           "consumed": {
+              "key0": {
+                 "2023-04-15T10:30:00": {
+                    "start": {
+                       "seq": 1000,
+                       "metadata": { "offset": 1234 }
+                    },
+                    "end": {
+                       "seq": 1499,
+                       "metadata": { "offset": 1733 }
+                    },
+                    "duplicated": 0
+                 }
+              },
+              "key1": {
+              }
+           },
+           "missedSeqs": {
+              "key0": [
+                 {
+                    "start": { "seq": 1500, "metadata": { "offset": 1733 } },
+                    "end": { "seq": 1505, "metadata": { "offset": 1740 } },
+                    "duplicated": 0
+                 }
+              ]
+           },
+           "duplicatedCount": {
+              "key0": 3,
+              "key1": 0
+           },
+           "outOfOrderSeqs": {
+              "key0": [
+                 [1200, 1198]
+              ]
+           }
+        }
+        ```
+
+        The ConsumerCheckPoint tracks:
+        - `consumed`: Map of sequence ranges for each key, with timestamps as inner keys
+        - `missedSeqs`: Detected gaps in sequence numbers for each key
+        - `duplicatedCount`: Count of duplicated messages per key
+        - `outOfOrderSeqs`: Pairs of sequence numbers received out of order
+*   `POST /producers/stop/{id}`: Stop producer instances.
+    *   **Path Parameter:** `id` (string) - The `proofId`.
+
+*   `POST /consumers/stop/{id}`: Stop consumer instances.
+    *   **Path Parameter:** `id` (string) - The `proofId`.

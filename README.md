@@ -1,6 +1,6 @@
 # Streaming Proof
 
-Streaming Proof is a robust testing framework designed to verify ordering and delivery guarantees in distributed streaming systems like Apache Kafka, Apache Pulsar, and other messaging platforms. It offers a streamlined approach to validate the correctness of streaming systems through automated testing and monitoring.
+Streaming Proof is a robust testing framework designed to verify ordering and delivery guarantees in distributed streaming systems like Apache Kafka, Apache Pulsar, and other messaging platforms. It offers a streamlined approach to validate the correctness of streaming systems through automated testing and monitoring. Please check the [design document](doc/The_framework_for_streaming_correctness_verification.md) for more details.
 
 **Key Benefits**:
 - Simple yet powerful correctness verification at scale
