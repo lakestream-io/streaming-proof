@@ -1,6 +1,6 @@
 # Streaming Proof
 
-Streaming Proof is a robust testing framework designed to verify ordering and delivery guarantees in distributed streaming systems like Apache Kafka, Apache Pulsar, and other messaging platforms. It offers a streamlined approach to validate the correctness of streaming systems through automated testing and monitoring. Please check the [design document](doc/The_framework_for_streaming_correctness_verification.md) for more details.
+Streaming Proof is a robust testing framework designed to verify ordering and delivery guarantees in distributed streaming systems like Apache Kafka, Apache Pulsar, and other messaging platforms. It offers a streamlined approach to validate the correctness of streaming systems through automated testing and monitoring. With Streaming Proof, you can easily verify that your streaming system meets its promised delivery guarantees. For a deeper understanding of the framework, please check the [design document](doc/The_framework_for_streaming_correctness_verification.md).
 
 **Key Benefits**:
 - Simple yet powerful correctness verification at scale
@@ -49,7 +49,7 @@ Here is the example to show the proof status:
 - **duplicates**: Number of duplicate messages detected
 - **timeouts**: Number of verification attempts that exceeded the configured timeout period
 
-And the checkpoints section will also show you the details of each message key verification.
+The checkpoints section provides detailed information about the verification status of each message key, allowing you to track the progress and health of your streaming system at a granular level.
 
 **Supported Streaming Systems**:
 - Apache Kafka, or any Kafka API compatible systems
@@ -82,9 +82,11 @@ The workflow [Publish image to Docker hub](https://github.com/streamnative/strea
 
 If you want to publish a custom tag image, you can run the above workflow manually with your branch name and tag name.
 
-## Try with docker-compose
+## Quick Start with Docker Compose
 
-1. Start docker compose:
+Follow these simple steps to get Streaming Proof up and running quickly with Docker Compose:
+
+1. Start the services with docker-compose:
 
 ```bash
 cd deploy/docker-compose/kafka
@@ -170,8 +172,10 @@ data:
       },
       "drivers": {
       }
+    }
+```
 
-2. Create a NodePool for streaming-proof which disable auto-scaling and uses non-spot instance:
+2. Create a NodePool for streaming-proof which disables auto-scaling and uses non-spot instances:
 
 ```yaml
 apiVersion: karpenter.sh/v1
@@ -246,7 +250,7 @@ spec:
 kubectl apply -f <service.yaml>
 ```
 
-4. Create a sts for coordinator:
+4. Create a StatefulSet for the coordinator:
 
 ```yaml
 apiVersion: apps/v1
@@ -315,7 +319,7 @@ spec:
 kubectl apply -f <coordinator.yaml>
 ```
 
-5. Create a sts for workers:
+5. Create a StatefulSet for the workers:
 
 ```yaml
 apiVersion: apps/v1
@@ -351,7 +355,6 @@ spec:
                   app: streaming-proof
                   component: streaming-proof-worker
               topologyKey: failure-domain.beta.kubernetes.io/zone
-    spec:
       containers:
       - args:
         - |
@@ -390,7 +393,7 @@ kubectl apply -f <worker.yaml>
 
 6. Verify the deployment:
 
-```
+```bash
 kubectl get pods | grep "streaming-proof"
 ```
 
