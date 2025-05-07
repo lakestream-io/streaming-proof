@@ -46,22 +46,22 @@
         <picocli.version>4.7.7</picocli.version>
         <log4j.version>2.22.1</log4j.version>
         <lombok.version>1.18.38</lombok.version>
-        <slf4j.version>2.0.9</slf4j.version>
-        <jackson.version>2.16.1</jackson.version>
+        <slf4j.version>2.0.11</slf4j.version>
+        <jackson.version>2.17.0</jackson.version>
         <testng.version>7.11.0</testng.version>
         <http.client.version>2.12.4</http.client.version>
         <kafka.client.version>3.7.1</kafka.client.version>
         <pulsar.client.version>4.0.4</pulsar.client.version>
         <commons.lang3.version>3.17.0</commons.lang3.version>
-        <maven-checkstyle-plugin.version>3.1.2</maven-checkstyle-plugin.version>
+        <maven-checkstyle-plugin.version>3.3.1</maven-checkstyle-plugin.version>
         <maven-surefire-plugin.version>3.5.3</maven-surefire-plugin.version>
-        <puppycrawl.checkstyle.version>8.37</puppycrawl.checkstyle.version>
-        <spotbugs-maven-plugin.version>4.4.1</spotbugs-maven-plugin.version>
-        <license-maven-plugin.version>3.0</license-maven-plugin.version>
-        <maven-assembly-plugin.version>3.5.0</maven-assembly-plugin.version>
-        <maven-dependency-plugin.version>3.5.0</maven-dependency-plugin.version>
-        <dockerfile-maven.version>0.43.4</dockerfile-maven.version>
-        <kafka.version>3.7.0</kafka.version>
+        <puppycrawl.checkstyle.version>10.23.1</puppycrawl.checkstyle.version>
+        <spotbugs-maven-plugin.version>4.9.3.0</spotbugs-maven-plugin.version>
+        <license-maven-plugin.version>4.3</license-maven-plugin.version>
+        <maven-assembly-plugin.version>3.7.1</maven-assembly-plugin.version>
+        <maven-dependency-plugin.version>3.8.1</maven-dependency-plugin.version>
+        <dockerfile-maven.version>0.46.0</dockerfile-maven.version>
+        <kafka.version>3.7.1</kafka.version>
         <curator.version>5.8.0</curator.version>
         <awaitility.version>4.3.0</awaitility.version>
         <mockito.version>5.17.0</mockito.version>
@@ -188,6 +188,26 @@
     </dependencyManagement>
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.4.1</version>
+                <executions>
+                    <execution>
+                        <id>enforce-maven</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireMavenVersion>
+                                    <version>3.6.3</version>
+                                </requireMavenVersion>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
