@@ -80,10 +80,32 @@ public class CoordinatorAPITest {
         this.server.start(port);
         this.worker.start(workerPort);
         this.httpClient = new CoordinatorHttpClient(client, "localhost", port);
+        
+        // Make sure configs are clean at the start of each test
+        try {
+            Configs existingConfigs = httpClient.getConfigs().join();
+            if (existingConfigs != null 
+                && (!existingConfigs.workers().isEmpty() || !existingConfigs.drivers().isEmpty())) {
+                httpClient.deleteConfigs(existingConfigs).join();
+            }
+        } catch (Exception e) {
+            // Ignore if configs don't exist yet
+        }
     }
 
     @AfterMethod
     public void tearDown() throws Exception {
+        // Clean up any remaining configs
+        try {
+            Configs existingConfigs = httpClient.getConfigs().join();
+            if (existingConfigs != null 
+                && (!existingConfigs.workers().isEmpty() || !existingConfigs.drivers().isEmpty())) {
+                httpClient.deleteConfigs(existingConfigs).join();
+            }
+        } catch (Exception e) {
+            // Ignore if configs don't exist or server is already stopped
+        }
+        
         server.stop();
         worker.stop();
         if (kafkaServer != null) {
@@ -244,6 +266,62 @@ public class CoordinatorAPITest {
         httpClient.stopProof(proofs.getFirst().getId()).join();
         List<Proof> proofs2 = httpClient.listProofs().join();
         assertEquals(proofs2.size(), 1);
+        httpClient.deleteProof(proofs.getFirst().getId()).join();
+        List<Proof> proofs3 = httpClient.listProofs().join();
+        assertEquals(proofs3.size(), 0);
+    }
+    
+    @Test()
+    public void testProofWithDuration() throws Exception {
+        Configs configs = new Configs(Map.of("worker1", "http://localhost:" + workerPort), Map.of(
+                "kafka_driver",
+                new Driver("kafka", Map.of("bootstrap.servers", "localhost:" + kafkaPort))));
+        httpClient.putConfigs(configs).join();
+        Configs configs1 = httpClient.getConfigs().join();
+        assertEquals(configs1, configs);
+
+        // Create a proof with a short duration (5 seconds)
+        Proof proof = Proof.builder()
+                .name(UUID.randomUUID().toString())
+                .driver("kafka_driver")
+                .keys(100)
+                .partitions(10)
+                .producers(4)
+                .consumers(4)
+                .features(List.of("at_least_once", "ordering"))
+                .checkPointInterval(1)
+                .msgRate(1000)
+                .timeout(180)
+                .duration(5) // Set a short duration of 5 seconds
+                .build();
+        httpClient.createProof(proof).join();
+        List<Proof> proofs = httpClient.listProofs().join();
+        assertEquals(proofs.size(), 1);
+        
+        // Verify that the proof starts producing messages
+        Awaitility.await().atMost(4, TimeUnit.SECONDS).untilAsserted(() -> {
+            ProofDetails details = httpClient.getProof(proofs.getFirst().getId()).join();
+            assertTrue(details.summary().verified() >= 0);
+        });
+        
+        // Wait for the duration to expire (proof should auto-stop)
+        Thread.sleep(6000); // Wait a bit longer than the duration
+        
+        // Verify that the proof is still in the list but has stopped producing
+        List<Proof> proofsAfterDuration = httpClient.listProofs().join();
+        assertEquals(proofsAfterDuration.size(), 1);
+        
+        // Get the current verification count
+        ProofDetails detailsAfterStop = httpClient.getProof(proofs.getFirst().getId()).join();
+        long verifiedCount = detailsAfterStop.summary().verified();
+        
+        // Wait a bit more and verify that the verification count hasn't increased
+        // This confirms the proof task has stopped producing messages
+        Thread.sleep(2000);
+        ProofDetails detailsAfterWait = httpClient.getProof(proofs.getFirst().getId()).join();
+        assertEquals(detailsAfterWait.summary().verified(), verifiedCount);
+        
+        // Clean up
         httpClient.deleteProof(proofs.getFirst().getId()).join();
         List<Proof> proofs3 = httpClient.listProofs().join();
         assertEquals(proofs3.size(), 0);

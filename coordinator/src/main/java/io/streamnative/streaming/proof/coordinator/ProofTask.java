@@ -245,6 +245,18 @@ public class ProofTask {
     private void scheduleCheckpoint() {
         executor.scheduleAtFixedRate(() -> {
             try {
+                // Check if the proof task has reached its duration limit
+                if (proof.getDuration() > 0) {
+                    long elapsedSeconds = Duration.ofMillis(System.currentTimeMillis() - proof.getStartTime())
+                            .getSeconds();
+                    if (elapsedSeconds >= proof.getDuration()) {
+                        log.info("Stopping proof task {} after reaching the specified duration of {} seconds", 
+                                proof.getId(), proof.getDuration());
+                        stop();
+                        return;
+                    }
+                }
+                
                 Pair<ProducerCheckpoint, ConsumerCheckPoint> checkpoints = aggregateCheckpoints();
                 ProofTask.this.latestProducerCheckpoint = checkpoints.getLeft();
                 ProofTask.this.latestConsumerCheckpoint = checkpoints.getRight();
@@ -370,6 +382,6 @@ public class ProofTask {
             }
         });
         executor.shutdown();
-        System.out.println("ProofTask stopped");
+        log.info("ProofTask {} stopped", proof.getId());
     }
 }
