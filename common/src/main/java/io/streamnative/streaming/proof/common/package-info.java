@@ -17,57 +17,57 @@
  * under the License.
  */
 /**
- * Base package for the streaming proof system that validates messaging system guarantees
- * and performance characteristics through distributed testing.
+ * Core package for the streaming proof verification framework that validates messaging system
+ * guarantees through distributed sequence tracking.
  *
- * <p>This package provides core interfaces and abstractions for:
+ * <p>This package provides the foundation for messaging system verification with:
  * <ul>
- *   <li>Message Production - Interfaces and base classes for message generators</li>
- *   <li>Message Consumption - Consumer abstractions for message verification</li>
- *   <li>Driver Integration - Extensible framework for different messaging systems</li>
- *   <li>Verification Logic - Tools for validating messaging guarantees</li>
+ *   <li><strong>System Abstraction:</strong> Unified interfaces for different messaging platforms</li>
+ *   <li><strong>Verification Primitives:</strong> Sequence-based tracking for guarantee validation</li>
+ *   <li><strong>Driver Architecture:</strong> Extensible framework for messaging system integration</li>
+ *   <li><strong>Metadata Handling:</strong> System-agnostic position tracking for verification</li>
  * </ul>
  *
- * <p>Key components:
+ * <p>Key interfaces and components:
  * <ul>
- *   <li>{@link io.streamnative.streaming.proof.common.ProofProducer} - Message production interface</li>
- *   <li>{@link io.streamnative.streaming.proof.common.ProofConsumer} - Message consumption interface</li>
- *   <li>{@link io.streamnative.streaming.proof.common.ProofDriver} - Messaging system driver interface</li>
- *   <li>{@link io.streamnative.streaming.proof.common.MessageListener} - Message verification callback</li>
+ *   <li>{@link io.streamnative.streaming.proof.common.ProofDriver} - Messaging system abstraction layer</li>
+ *   <li>{@link io.streamnative.streaming.proof.common.ProofProducer} - Sequence-generating message producer</li>
+ *   <li>{@link io.streamnative.streaming.proof.common.ProofConsumer} - Message consumer with verification</li>
+ *   <li>{@link io.streamnative.streaming.proof.common.MessageListener} - Sequence tracking and verification</li>
+ *   <li>{@link io.streamnative.streaming.proof.common.MessageMetadata} - System-agnostic position tracking</li>
  * </ul>
  *
- * <p>Supported messaging guarantees:
+ * <p>Verification capabilities:
  * <ul>
- *   <li>Exactly-once delivery</li>
- *   <li>At-least-once delivery</li>
- *   <li>Message ordering</li>
- *   <li>Performance under load</li>
+ *   <li><strong>Exactly-once processing:</strong> Detecting duplicate message delivery</li>
+ *   <li><strong>At-least-once delivery:</strong> Identifying message loss through sequence gaps</li>
+ *   <li><strong>Ordering guarantees:</strong> Verifying sequence integrity within partitions</li>
+ *   <li><strong>Cross-partition consistency:</strong> Validating global ordering properties</li>
+ *   <li><strong>Performance characteristics:</strong> Measuring throughput and latency under load</li>
  * </ul>
  *
- * <p>Example usage:
- * <pre>{@code
- * // Implement a custom proof producer
- * public class CustomProofProducer implements ProofProducer {
- *     @Override
- *     public CompletableFuture<Void> sendAsync(String key, long value) {
- *         // Implementation for message production
- *     }
- * }
+ * <p>Architecture overview:
+ * <pre>
+ *   ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+ *   │ ProofDriver │────▶│ProofProducer│────▶│ Messaging   │
+ *   └─────────────┘     └─────────────┘     │ System      │
+ *          │                                 │ (Kafka,     │
+ *          │                                 │  Pulsar)    │
+ *          │            ┌─────────────┐     │             │
+ *          └───────────▶│ProofConsumer│◀────│             │
+ *                       └─────────────┘     └─────────────┘
+ *                              │
+ *                              ▼
+ *                      ┌─────────────┐
+ *                      │MessageListener
+ *                      └─────────────┘
+ * </pre>
  *
- * // Implement a custom proof consumer
- * public class CustomProofConsumer implements ProofConsumer {
- *     private final MessageListener listener;
- *
- *     public CustomProofConsumer(MessageListener listener) {
- *         this.listener = listener;
- *     }
- *
- *     // Implementation for message consumption
- * }
- * }</pre>
- *
+ * @see io.streamnative.streaming.proof.common.ProofDriver
  * @see io.streamnative.streaming.proof.common.ProofProducer
  * @see io.streamnative.streaming.proof.common.ProofConsumer
- * @see io.streamnative.streaming.proof.common.ProofDriver
+ * @see io.streamnative.streaming.proof.common.MessageListener
+ * @see io.streamnative.streaming.proof.coordinator.Coordinator
+ * @see io.streamnative.streaming.proof.worker.Worker
  */
 package io.streamnative.streaming.proof.common;

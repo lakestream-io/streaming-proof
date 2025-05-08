@@ -23,19 +23,38 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.core.JsonProcessingException;
 
 /**
- * A record class that encapsulates metadata associated with messages in the streaming proof system.
- * This immutable record primarily tracks the offset information for messages, which is crucial for
- * message tracking and delivery guarantee verification.
+ * An immutable record that encapsulates message metadata for verification tracking.
+ * 
+ * <p>MessageMetadata captures system-specific positioning information that enables:
+ * <ul>
+ *   <li>Tracking message delivery order across distributed systems</li>
+ *   <li>Comparing message positions to detect reordering</li>
+ *   <li>Identifying message sources through partition information</li>
+ *   <li>Supporting both Kafka-style offsets and Pulsar-style ledger/entry IDs</li>
+ * </ul>
  *
- * @param offset The position of the message in the message log. A value of -1
- *              indicates an invalid or uninitialized offset.
- * @param ledgerId The ID of the ledger containing the message in Pulsar. A value of -1
- *                indicates this field is not applicable or uninitialized.
- * @param entryId The position of the message within its ledger in Pulsar. A value of -1
- *               indicates this field is not applicable or uninitialized.
+ * <p>The metadata structure is designed to be flexible across different messaging systems:
+ * <ul>
+ *   <li>For Kafka: primarily uses offset and partition fields</li>
+ *   <li>For Pulsar: primarily uses ledgerId and entryId fields</li>
+ *   <li>For other systems: can be extended with additional fields as needed</li>
+ * </ul>
  *
- * @see LongSeq
- * @see ProofConsumer
+ * <p>The {@link #isAfter(MessageMetadata)} method provides a system-agnostic way to
+ * compare message positions, which is essential for verifying ordering guarantees.
+ *
+ * @param offset The position of the message in a linear log (Kafka-style).
+ *               A value of -1 indicates an invalid or uninitialized offset.
+ * @param ledgerId The ID of the ledger containing the message (Pulsar-style).
+ *                 A value of -1 indicates this field is not applicable.
+ * @param entryId The position of the message within its ledger (Pulsar-style).
+ *                A value of -1 indicates this field is not applicable.
+ * @param partition The partition ID where the message was stored.
+ *                  May be null if not applicable to the messaging system.
+ *
+ * @see ProofProducer#sendAsync(String, long)
+ * @see MessageListener#onMessage(String, long, MessageMetadata)
+ * @see io.streamnative.streaming.proof.common.records.ConsumerCheckPoint
  */
 public record MessageMetadata(
         @JsonInclude(Include.NON_NULL)

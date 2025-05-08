@@ -17,35 +17,40 @@
  * under the License.
  */
 /**
- * Coordinator implementation for the streaming proof system that manages and validates
- * messaging system guarantees across distributed workers.
+ * Central coordination package for the streaming proof verification framework that orchestrates
+ * distributed verification tasks across worker nodes.
  *
- * <p>The coordinator package provides:
+ * <p>The coordinator serves as the control plane for the verification framework:
  * <ul>
- *   <li>HTTP REST API endpoints for managing proof tests and configurations</li>
- *   <li>Distributed worker coordination and task management</li>
- *   <li>Message delivery verification and guarantee validation</li>
- *   <li>System-wide configuration management</li>
+ *   <li><strong>Task Management:</strong> Creating, configuring, and monitoring verification tasks</li>
+ *   <li><strong>Worker Orchestration:</strong> Distributing producers and consumers across workers</li>
+ *   <li><strong>Checkpoint Collection:</strong> Aggregating sequence checkpoints from all consumers</li>
+ *   <li><strong>Guarantee Verification:</strong> Analyzing checkpoints to detect messaging violations</li>
+ *   <li><strong>REST API:</strong> Providing HTTP endpoints for task management and monitoring</li>
  * </ul>
  *
- * <p>Example usage:
- * <pre>{@code
- * // Start the coordinator service
- * CoordinatorStarter starter = new CoordinatorStarter();
- * starter.start(8080);
+ * <p>Key components:
+ * <ul>
+ *   <li>{@link io.streamnative.streaming.proof.coordinator.Coordinator} - Central orchestration service</li>
+ *   <li>{@link io.streamnative.streaming.proof.coordinator.ProofTask} - Individual verification task</li>
+ *   <li>{@link io.streamnative.streaming.proof.coordinator.CoordinatorHandler} - REST API handler</li>
+ *   <li>{@link io.streamnative.streaming.proof.coordinator.WorkerHttpClient} - Worker communication</li>
+ * </ul>
  *
- * // Create a new proof test via REST API
- * POST /proofs
- * {
- *   "name": "kafka-ordering-test",
- *   "driver": "kafka",
- *   "features": ["ordering", "at_least_once"],
- *   "topic": "test-topic"
- * }
- * }</pre>
+ * <p>Verification workflow:
+ * <ol>
+ *   <li>Create a verification task with specific messaging guarantees to test</li>
+ *   <li>Coordinator provisions topic and distributes producers/consumers across workers</li>
+ *   <li>Producers generate sequentially numbered messages with unique keys</li>
+ *   <li>Consumers track received sequences and report checkpoints to coordinator</li>
+ *   <li>Coordinator analyzes checkpoints to verify messaging guarantees</li>
+ *   <li>Results are summarized with detailed diagnostics for any detected issues</li>
+ * </ol>
+ *
  *
  * @see io.streamnative.streaming.proof.coordinator.Coordinator
- * @see io.streamnative.streaming.proof.coordinator.CoordinatorHandler
  * @see io.streamnative.streaming.proof.coordinator.ProofTask
+ * @see io.streamnative.streaming.proof.common.ProofDriver
+ * @see io.streamnative.streaming.proof.worker.Worker
  */
 package io.streamnative.streaming.proof.coordinator;

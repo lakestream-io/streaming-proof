@@ -26,27 +26,35 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Manages producer and consumer groups for streaming proof tests on a worker node.
- * This class acts as a container for multiple producer and consumer instances,
- * providing lifecycle management and monitoring capabilities.
- *
- * <p>The Worker class is responsible for:
+ * Manages producer and consumer instances for streaming proof verification on a worker node.
+ * 
+ * <p>The Worker is a distributed component that:
  * <ul>
- *   <li>Managing multiple producer and consumer groups</li>
- *   <li>Starting and stopping producer/consumer instances</li>
- *   <li>Collecting checkpoints for verification</li>
- *   <li>Thread-safe operation management</li>
- *   <li>Caching driver instances for efficient resource usage</li>
+ *   <li>Manages multiple concurrent producer and consumer groups</li>
+ *   <li>Creates, configures, and monitors messaging clients</li>
+ *   <li>Collects detailed checkpoints for verification analysis</li>
+ *   <li>Provides thread-safe operation in multi-tenant environments</li>
+ *   <li>Optimizes resource usage through driver instance caching</li>
+ *   <li>Supports horizontal scaling across multiple worker nodes</li>
+ * </ul>
+ *
+ * <p>Workers operate as part of a distributed verification system where:
+ * <ul>
+ *   <li>Each worker can be deployed in a different zone/region</li>
+ *   <li>Multiple verification tasks can run concurrently on each worker</li>
+ *   <li>Producers generate sequentially numbered messages with unique keys</li>
+ *   <li>Consumers track received sequences using range-based checkpoints</li>
+ *   <li>The coordinator periodically collects these checkpoints for analysis</li>
  * </ul>
  *
  * <p>Each producer and consumer group is identified by a unique ID, allowing
- * multiple test scenarios to run concurrently on the same worker node.
+ * multiple verification scenarios to run concurrently on the same worker node.
  *
  * @see ProofProducers
  * @see ProofConsumers
- * @see ProducerCheckpoint
- * @see ConsumerCheckPoint
- * @see DriverCache
+ * @see io.streamnative.streaming.proof.common.records.ProducerCheckpoint
+ * @see io.streamnative.streaming.proof.common.records.ConsumerCheckPoint
+ * @see io.streamnative.streaming.proof.coordinator.Coordinator
  */
 public class Worker {
 

@@ -34,9 +34,29 @@ import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 
 /**
- * Pulsar implementation of the ProofDriver interface.
- * This driver manages Pulsar topics and creates producers and consumers
- * for testing messaging system guarantees.
+ * Pulsar implementation of the ProofDriver interface that manages Pulsar resources
+ * and creates producers and consumers for streaming proof verification.
+ *
+ * <p>This driver provides:
+ * <ul>
+ *   <li>Topic management with namespace and tenant handling</li>
+ *   <li>Producer creation with at-least-once delivery guarantees</li>
+ *   <li>Consumer creation with subscription and acknowledgment management</li>
+ *   <li>Message ID tracking for reliable verification</li>
+ *   <li>Support for Pulsar's authentication and authorization mechanisms</li>
+ * </ul>
+ *
+ * <p>The driver leverages Pulsar's features to enable:
+ * <ul>
+ *   <li>Sequence-based verification of delivery guarantees</li>
+ *   <li>Key-based message routing to partitions</li>
+ *   <li>Message ID-based tracing for debugging delivery issues</li>
+ *   <li>Subscription management for scalable consumption</li>
+ * </ul>
+ *
+ * @see io.streamnative.streaming.proof.common.ProofDriver
+ * @see io.streamnative.streaming.proof.driver.pulsar.PulsarAtLeastOnceProofProducer
+ * @see io.streamnative.streaming.proof.driver.pulsar.PulsarAtLeastOnceProofConsumer
  */
 @Slf4j
 public class PulsarProofDriver implements ProofDriver {

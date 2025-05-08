@@ -33,21 +33,47 @@ import lombok.Data;
 import org.apache.commons.lang3.tuple.Pair;
 
 /**
- * Tracks and manages sequence ranges for consumed messages.
- * This class is responsible for:
- * - Maintaining sequence ranges for different message keys
- * - Detecting missed sequences (gaps in the sequence)
- * - Identifying duplicated messages (overlaps in sequences)
- * - Tracking out-of-order sequences
+ * Tracks and manages sequence ranges for consumed messages to verify messaging system guarantees.
+ * 
+ * <p>This class is the core verification component that:
+ * <ul>
+ *   <li>Maintains timestamp-based sequence ranges for each message key</li>
+ *   <li>Detects missed messages through sequence gaps</li>
+ *   <li>Identifies duplicated messages through overlapping sequence ranges</li>
+ *   <li>Tracks out-of-order message delivery</li>
+ *   <li>Handles partition reassignment through timestamp-based range tracking</li>
+ *   <li>Optimizes storage through range merging and trimming</li>
+ * </ul>
+ * 
+ * <p>The checkpoint uses a sophisticated range-based approach that efficiently tracks
+ * large volumes of messages while providing precise verification of delivery guarantees.
+ * When the Coordinator aggregates checkpoints from multiple consumers, it can detect
+ * system-wide issues like message loss or duplication.
+ * 
+ * @see io.streamnative.streaming.proof.common.MessageListener
+ * @see io.streamnative.streaming.proof.common.ProofConsumer
  */
 @Data
 public class ConsumerCheckPoint {
 
     /**
      * Represents a range of sequence numbers for tracking message consumption.
-     * Contains a start sequence number, end sequence number, and tracks duplicates.
-     * Used to maintain ordered ranges of consumed message sequences and detect gaps
-     * or overlaps in the sequence.
+     * 
+     * <p>This class efficiently tracks contiguous ranges of message sequences by storing:
+     * <ul>
+     *   <li>Start sequence - The first sequence number in the range</li>
+     *   <li>End sequence - The last sequence number in the range</li>
+     *   <li>Duplicate count - Number of duplicate messages detected within the range</li>
+     *   <li>Metadata - System-specific information for tracing and debugging</li>
+     * </ul>
+     * 
+     * <p>Sequence ranges enable efficient verification of large message volumes by:
+     * <ul>
+     *   <li>Compactly representing contiguous sequences</li>
+     *   <li>Allowing gap detection between ranges</li>
+     *   <li>Supporting range merging for optimization</li>
+     *   <li>Tracking duplicates through range overlaps</li>
+     * </ul>
      */
     @Data
     public static class SeqRange {

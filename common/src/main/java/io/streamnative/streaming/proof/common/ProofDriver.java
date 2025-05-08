@@ -22,42 +22,31 @@ import java.io.Closeable;
 import java.util.Map;
 
 /**
- * A driver interface for messaging systems in the streaming proof framework.
- * This interface provides the necessary operations to manage topics and create
- * producers and consumers for testing messaging system guarantees.
- *
- * <p>The driver acts as an abstraction layer between the streaming proof system
- * and the underlying messaging system (e.g., Kafka, Pulsar). It handles:
+ * A driver interface for messaging systems in the streaming proof verification framework.
+ * 
+ * <p>ProofDriver provides a unified abstraction layer over different messaging systems
+ * (like Kafka, Pulsar) to enable standardized verification of messaging guarantees.
+ * It handles:
  * <ul>
- *   <li>System initialization and configuration</li>
- *   <li>Topic lifecycle management</li>
- *   <li>Producer and consumer creation</li>
- *   <li>System-specific configuration management</li>
+ *   <li>System initialization with messaging-specific configurations</li>
+ *   <li>Topic lifecycle management with appropriate partitioning</li>
+ *   <li>Producer creation with at-least-once delivery semantics</li>
+ *   <li>Consumer creation with configurable consumption behavior</li>
+ *   <li>Message metadata extraction for verification tracing</li>
  * </ul>
  *
- * <p>Example usage:
- * <pre>{@code
- * ProofDriver driver = new KafkaProofDriver();
- * Map<String, Object> configs = Map.of(
- *     "bootstrap.servers", "localhost:9092",
- *     "client.id", "streaming-proof"
- * );
- * 
- * // Initialize the driver
- * driver.init(configs);
- * 
- * // Create a test topic
- * driver.createTopic("test-topic", 8);
- * 
- * // Create producer and consumer
- * ProofProducer producer = driver.createProducer("test-topic", producerConfigs);
- * ProofConsumer consumer = driver.createConsumer("test-topic", consumerConfigs, listener);
- * }</pre>
+ * <p>The driver architecture enables:
+ * <ul>
+ *   <li>System-agnostic verification of messaging guarantees</li>
+ *   <li>Consistent testing methodology across different messaging platforms</li>
+ *   <li>Isolation of system-specific implementation details</li>
+ *   <li>Extensibility to support additional messaging systems</li>
+ * </ul>
+ *
  *
  * @see ProofProducer
  * @see ProofConsumer
  * @see MessageListener
- * @see KafkaProofDriver
  */
 public interface ProofDriver extends Closeable {
 

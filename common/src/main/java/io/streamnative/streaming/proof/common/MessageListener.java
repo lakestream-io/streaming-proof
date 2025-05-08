@@ -19,28 +19,61 @@
 package io.streamnative.streaming.proof.common;
 
 /**
- * A listener interface for handling messages in the streaming proof system.
- * Implementations of this interface receive messages from a {@link ProofConsumer}
- * and can perform message validation, ordering checks, and other verification tasks.
+ * Core verification interface that processes received messages and tracks sequence ranges.
+ * 
+ * <p>MessageListener is the central component for verifying messaging guarantees by:
+ * <ul>
+ *   <li>Receiving messages with their key, sequence value, and metadata</li>
+ *   <li>Maintaining sequence ranges for each key to detect gaps or duplicates</li>
+ *   <li>Tracking message ordering to verify sequence integrity</li>
+ *   <li>Building checkpoints that capture the current verification state</li>
+ *   <li>Detecting violations of messaging guarantees in real-time</li>
+ * </ul>
  *
- * <p>The listener is notified for each message consumed from the messaging system,
- * receiving both the message key and a sequential value. The sequential value is
- * typically used to verify message ordering and detect duplicates or missing messages.
+ * <p>The sequence-based verification methodology enables validation of:
+ * <ul>
+ *   <li><strong>At-least-once delivery:</strong> Verified by ensuring no gaps exist in sequence ranges</li>
+ *   <li><strong>Exactly-once processing:</strong> Verified by detecting any overlapping sequence ranges</li>
+ *   <li><strong>Ordering guarantees:</strong> Verified by ensuring sequences are received in ascending order</li>
+ *   <li><strong>Partition isolation:</strong> Verified by tracking sequence ranges per partition</li>
+ * </ul>
+ *
+ * <p>Implementations typically use efficient data structures like range sets to track
+ * received sequences with minimal memory overhead, even for high-volume message streams.
  *
  * @see ProofConsumer
  * @see MessageMetadata
+ * @see io.streamnative.streaming.proof.common.records.ConsumerCheckPoint
+ * @see io.streamnative.streaming.proof.worker.DefaultMessageListener
  */
 public interface MessageListener {
 
     /**
-     * Called when a message is received from the messaging system.
+     * Processes a received message for verification tracking.
      *
-     * @param key The message key, used for message grouping and partition assignment
-     * @param value A sequential value that can be used to verify message ordering
-     *              and detect duplicates or missing messages within a key's sequence
-     * @param metadata Additional message information including offset and other
-     *                system-specific details
-     * @see MessageMetadata
+     * <p>This method is called by the {@link ProofConsumer} implementation whenever a message
+     * is received from the underlying messaging system. The implementation should:
+     * <ul>
+     *   <li>Track the sequence value for the given key</li>
+     *   <li>Update internal range sets to reflect the received sequence</li>
+     *   <li>Detect and log any sequence gaps, duplicates, or ordering violations</li>
+     *   <li>Store metadata for checkpoint creation and verification</li>
+     * </ul>
+     *
+     * <p>Thread-safety considerations:
+     * <ul>
+     *   <li>This method may be called concurrently from multiple consumer threads</li>
+     *   <li>Implementations must use thread-safe data structures for sequence tracking</li>
+     *   <li>Checkpoint creation should be synchronized to ensure consistency</li>
+     * </ul>
+     *
+     * @param key The message key that identifies the sequence stream
+     * @param value The sequential value within the key's stream (should be monotonically increasing)
+     * @param metadata System-specific positioning information for verification and debugging
+     * 
+     * @see MessageMetadata#isAfter(MessageMetadata)
+     * @see io.streamnative.streaming.proof.common.records.ConsumerCheckPoint
+     * @see io.streamnative.streaming.proof.worker.DefaultMessageListener
      */
     void onMessage(String key, long value, MessageMetadata metadata);
 }

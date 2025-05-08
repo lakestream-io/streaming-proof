@@ -43,39 +43,25 @@ import org.apache.kafka.common.serialization.StringSerializer;
 
 /**
  * Kafka implementation of the ProofDriver interface that manages Kafka resources
- * and creates producers and consumers for streaming proof tests.
+ * and creates producers and consumers for streaming proof verification.
  *
- * <p>This driver provides functionality for:
+ * <p>This driver provides:
  * <ul>
- *   <li>Topic management (creation and deletion)</li>
+ *   <li>Topic management with configurable partitioning</li>
  *   <li>Producer creation with at-least-once delivery guarantees</li>
- *   <li>Consumer creation with configurable message handling</li>
- *   <li>Zone-aware client ID management</li>
+ *   <li>Consumer creation with partition assignment and rebalance handling</li>
+ *   <li>Offset management for reliable message tracking</li>
+ *   <li>Zone-aware client ID management for distributed deployment</li>
  * </ul>
  *
- * <p>The driver uses string keys and long values for messages, supporting:
+ * <p>The driver uses string keys and long sequential values for messages, enabling:
  * <ul>
- *   <li>Sequential message tracking</li>
- *   <li>Key-based message routing</li>
- *   <li>Partition-level parallelism</li>
+ *   <li>Sequence-based verification of delivery guarantees</li>
+ *   <li>Key-based message routing and partition assignment</li>
+ *   <li>Offset-based message tracing for debugging delivery issues</li>
+ *   <li>Partition-level parallelism for scalable testing</li>
  * </ul>
  *
- * <p>Example usage:
- * <pre>{@code
- * Map<String, Object> configs = new HashMap<>();
- * configs.put("bootstrap.servers", "localhost:9092");
- * configs.put("client.id", "proof-driver-{zone.id}");
- *
- * KafkaProofDriver driver = new KafkaProofDriver();
- * driver.init(configs);
- *
- * // Create a topic with 8 partitions
- * driver.createTopic("test-topic", 8);
- *
- * // Create producer and consumer
- * ProofProducer producer = driver.createProducer("test-topic", producerConfigs);
- * ProofConsumer consumer = driver.createConsumer("test-topic", consumerConfigs, listener);
- * }</pre>
  *
  * @see ProofDriver
  * @see KafkaAtLeastOnceProofProducer

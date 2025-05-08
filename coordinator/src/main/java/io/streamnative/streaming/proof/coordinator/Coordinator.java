@@ -32,41 +32,31 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.RandomStringUtils;
 
 /**
- * The Coordinator class manages the lifecycle and execution of streaming proof tests.
- * It acts as the central component that coordinates workers, manages configurations,
- * and orchestrates proof tasks across the distributed system.
- *
- * <p>The coordinator is responsible for:
+ * The Coordinator orchestrates distributed verification of messaging system guarantees.
+ * 
+ * <p>As the central control component, the Coordinator:
  * <ul>
- *   <li>Managing system-wide configurations for workers and drivers</li>
- *   <li>Creating and managing proof tasks</li>
- *   <li>Coordinating test execution across distributed workers</li>
- *   <li>Monitoring and reporting test progress and results</li>
+ *   <li>Manages system-wide configurations for workers and messaging drivers</li>
+ *   <li>Creates and manages proof verification tasks</li>
+ *   <li>Distributes workloads across worker nodes</li>
+ *   <li>Aggregates checkpoints to verify system-wide guarantees</li>
+ *   <li>Detects violations of messaging system guarantees</li>
+ *   <li>Reports verification results with detailed diagnostics</li>
  * </ul>
  *
- * <p>Example usage:
- * <pre>{@code
- * Coordinator coordinator = new Coordinator();
- * 
- * // Configure the system
- * Configs configs = new Configs(
- *     Map.of("worker1", "http://worker1:8080"),
- *     Map.of("kafka", new Driver("kafka", kafkaConfigs))
- * );
- * coordinator.updateConfigs(configs);
- * 
- * // Create and run a proof test
- * Proof proof = Proof.builder()
- *     .name("ordering-test")
- *     .driver("kafka")
- *     .features(List.of("ordering"))
- *     .build();
- * coordinator.createProof(proof);
- * }</pre>
+ * <p>The Coordinator implements a distributed verification architecture where:
+ * <ul>
+ *   <li>Multiple workers can be deployed across different zones/regions</li>
+ *   <li>Each worker can run multiple producers and consumers</li>
+ *   <li>Checkpoints are aggregated to detect cross-worker issues</li>
+ *   <li>Different messaging systems can be verified using the same framework</li>
+ * </ul>
+ *
  *
  * @see ProofTask
  * @see Configs
  * @see Proof
+ * @see io.streamnative.streaming.proof.worker.Worker
  */
 @Slf4j
 @Getter

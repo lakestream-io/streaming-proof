@@ -44,35 +44,32 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.asynchttpclient.Dsl;
 
 /**
- * Manages the execution and monitoring of a single streaming proof test.
- * This class coordinates the producers and consumers across multiple workers,
- * tracks message delivery progress, and verifies messaging guarantees.
- *
- * <p>The task is responsible for:
+ * Manages a single streaming proof verification task across distributed workers.
+ * 
+ * <p>ProofTask is the operational core of the verification framework, responsible for:
  * <ul>
  *   <li>Initializing and managing the messaging system driver</li>
+ *   <li>Creating and configuring topics with appropriate partitioning</li>
  *   <li>Distributing producers and consumers across worker nodes</li>
  *   <li>Collecting and aggregating checkpoints from all workers</li>
- *   <li>Verifying message delivery guarantees</li>
- *   <li>Tracking test progress and failures</li>
+ *   <li>Verifying message delivery guarantees through checkpoint analysis</li>
+ *   <li>Detecting violations like message loss, duplication, or reordering</li>
+ *   <li>Providing detailed diagnostics for any detected issues</li>
  * </ul>
  *
- * <p>Example usage:
- * <pre>{@code
- * Proof proof = Proof.builder()
- *     .name("ordering-test")
- *     .driver("kafka")
- *     .topic("test-topic")
- *     .build();
- * Configs configs = new Configs(...);
+ * <p>The verification process works by:
+ * <ul>
+ *   <li>Producers send sequentially numbered messages with unique keys</li>
+ *   <li>Consumers track received sequences using range-based checkpoints</li>
+ *   <li>The coordinator periodically collects and aggregates these checkpoints</li>
+ *   <li>Aggregated checkpoints are analyzed to detect guarantee violations</li>
+ *   <li>Results are summarized with detailed diagnostics for any issues</li>
+ * </ul>
+ *
  * 
- * ProofTask task = new ProofTask(proof, configs);
- * task.start();
- * 
- * // Later...
- * task.stop();
- * task.remove();
- * }</pre>
+ * @see io.streamnative.streaming.proof.common.records.Proof
+ * @see io.streamnative.streaming.proof.common.records.ConsumerCheckPoint
+ * @see io.streamnative.streaming.proof.common.records.ProducerCheckpoint
  */
 @Slf4j
 @Getter

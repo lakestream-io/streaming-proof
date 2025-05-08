@@ -21,41 +21,29 @@ package io.streamnative.streaming.proof.common;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * A producer interface for the streaming proof system that generates and sends
- * messages to verify messaging system guarantees. This interface extends
- * {@link AutoCloseable} to ensure proper resource cleanup.
+ * A producer interface for the streaming proof verification framework that generates
+ * and sends sequentially numbered messages to verify messaging system guarantees.
  *
- * <p>The producer generates sequential values for each key to enable verification
- * of message ordering and delivery guarantees. Each message consists of:
+ * <p>The ProofProducer is responsible for:
  * <ul>
- *   <li>A string key that identifies the message sequence</li>
- *   <li>A sequential value that represents the message's position in its key's sequence</li>
+ *   <li>Generating sequential values for each message key</li>
+ *   <li>Sending messages with at-least-once delivery semantics</li>
+ *   <li>Tracking message metadata for verification purposes</li>
+ *   <li>Supporting high-throughput asynchronous operations</li>
+ *   <li>Providing proper resource management through AutoCloseable</li>
  * </ul>
  *
- * <p>The asynchronous nature of the interface allows for high-throughput testing
- * and better resource utilization. Failed sends are reported through the
- * CompletableFuture's exceptional completion.
+ * <p>Each message consists of:
+ * <ul>
+ *   <li>A string key that identifies the message sequence and determines routing</li>
+ *   <li>A sequential long value that represents the message's position in its key's sequence</li>
+ *   <li>System-specific metadata captured on successful delivery</li>
+ * </ul>
  *
- * <p>Example usage:
- * <pre>{@code
- * ProofProducer producer = driver.createProducer("test-topic", configs);
- * 
- * // Send messages with sequential values for a key
- * String key = "test-key";
- * for (long i = 0; i < 1000; i++) {
- *     producer.sendAsync(key, i)
- *             .whenComplete((v, e) -> {
- *                 if (e != null) {
- *                     // Handle send failure
- *                     handleError(e);
- *                 }
- *             });
- * }
- * }</pre>
  *
  * @see ProofDriver
- * @see KafkaProofProducer
- * @see ProofProducerTask
+ * @see MessageMetadata
+ * @see io.streamnative.streaming.proof.common.records.ProducerCheckpoint
  */
 public interface ProofProducer extends AutoCloseable {
 
