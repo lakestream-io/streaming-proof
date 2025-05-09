@@ -29,6 +29,8 @@ import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
 import io.streamnative.streaming.proof.common.records.Proof;
 import io.streamnative.streaming.proof.common.records.ProofSummary;
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -45,7 +47,7 @@ import org.asynchttpclient.Dsl;
 
 /**
  * Manages a single streaming proof verification task across distributed workers.
- * 
+ *
  * <p>ProofTask is the operational core of the verification framework, responsible for:
  * <ul>
  *   <li>Initializing and managing the messaging system driver</li>
@@ -66,7 +68,7 @@ import org.asynchttpclient.Dsl;
  *   <li>Results are summarized with detailed diagnostics for any issues</li>
  * </ul>
  *
- * 
+ *
  * @see io.streamnative.streaming.proof.common.records.Proof
  * @see io.streamnative.streaming.proof.common.records.ConsumerCheckPoint
  * @see io.streamnative.streaming.proof.common.records.ProducerCheckpoint
@@ -77,44 +79,44 @@ public class ProofTask {
 
     /** The proof test configuration */
     private final Proof proof;
-    
+
     /** Executor for scheduling periodic checkpoint verification */
     private final ScheduledExecutorService executor;
-    
+
     /** System-wide configuration for workers and drivers */
     private final Configs configs;
-    
+
     /** The messaging system driver implementation */
     private final ProofDriver proofDriver;
-    
+
     /** List of HTTP clients for communicating with worker nodes */
     private final List<WorkerHttpClient> clients;
-    
+
     /** Current checkpoint being verified */
     private ProducerCheckpoint inCheck = new ProducerCheckpoint();
-    
+
     /** Last successfully verified producer checkpoint */
     private ProducerCheckpoint lastVerifiedProducerCheckpoint = new ProducerCheckpoint();
-    
+
     /** Last successfully verified consumer checkpoint */
     private ConsumerCheckPoint lastVerifiedConsumerCheckpoint = new ConsumerCheckPoint();
-    
+
     /** Latest producer checkpoint received */
     private ProducerCheckpoint latestProducerCheckpoint = new ProducerCheckpoint();
-    
+
     /** Latest consumer checkpoint received */
     @Setter(AccessLevel.PACKAGE)
     private ConsumerCheckPoint latestConsumerCheckpoint = new ConsumerCheckPoint();
-    
+
     /** Last failed producer checkpoint */
     private ProducerCheckpoint lastFailedProducerCheckpoint = new ProducerCheckpoint();
-    
+
     /** Last failed consumer checkpoint */
     private ConsumerCheckPoint lastFailedConsumerCheckpoint = new ConsumerCheckPoint();
-    
+
     /** Number of checkpoint verification timeouts */
     private int timeouts;
-    
+
     /** Timestamp of when the current checkpoint verification started */
     private long checkPointInCheckTimeStamps;
 
@@ -154,7 +156,9 @@ public class ProofTask {
         startProducers();
         scheduleCheckpoint();
         log.info("Started the proof {}", proof);
-        proof.setStartTime(System.currentTimeMillis());
+        String formattedTimestamp = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+                .format(LocalDateTime.now());
+        proof.setStartTime(formattedTimestamp);
     }
 
     /**
@@ -243,17 +247,23 @@ public class ProofTask {
         executor.scheduleAtFixedRate(() -> {
             try {
                 // Check if the proof task has reached its duration limit
-                if (proof.getDuration() > 0) {
-                    long elapsedSeconds = Duration.ofMillis(System.currentTimeMillis() - proof.getStartTime())
-                            .getSeconds();
+                if (proof.getDuration() > 0 && proof.getStartTime() != null) {
+                    // Parse the formatted timestamp back to a LocalDateTime
+                    LocalDateTime startDateTime = LocalDateTime.parse(
+                            proof.getStartTime(), DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+
+                    // Calculate elapsed time
+                    long elapsedSeconds = Duration.between(
+                            startDateTime, LocalDateTime.now()).getSeconds();
+
                     if (elapsedSeconds >= proof.getDuration()) {
-                        log.info("Stopping proof task {} after reaching the specified duration of {} seconds", 
+                        log.info("Stopping proof task {} after reaching the specified duration of {} seconds",
                                 proof.getId(), proof.getDuration());
                         stop();
                         return;
                     }
                 }
-                
+
                 Pair<ProducerCheckpoint, ConsumerCheckPoint> checkpoints = aggregateCheckpoints();
                 ProofTask.this.latestProducerCheckpoint = checkpoints.getLeft();
                 ProofTask.this.latestConsumerCheckpoint = checkpoints.getRight();
@@ -267,8 +277,8 @@ public class ProofTask {
                     LongSeq expectedSeq = entry.getValue();
                     LongSeq actualSeq = ProofTask.this.latestConsumerCheckpoint.getLastSeq(entry.getKey());
                     if (actualSeq == null || actualSeq.compareTo(expectedSeq) < 0) {
-                        log.info("[{}] checkpoint verify in progress | {} | {} <= {} ", 
-                            proof.getId(), entry.getKey(), expectedSeq.seq(), 
+                        log.info("[{}] checkpoint verify in progress | {} | {} <= {} ",
+                            proof.getId(), entry.getKey(), expectedSeq.seq(),
                             actualSeq == null ? -1L : actualSeq.seq());
                         fulfilled = false;
                         break;

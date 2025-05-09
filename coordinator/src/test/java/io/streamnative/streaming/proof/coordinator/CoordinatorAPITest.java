@@ -19,6 +19,7 @@
 package io.streamnative.streaming.proof.coordinator;
 
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
@@ -80,11 +81,11 @@ public class CoordinatorAPITest {
         this.server.start(port);
         this.worker.start(workerPort);
         this.httpClient = new CoordinatorHttpClient(client, "localhost", port);
-        
+
         // Make sure configs are clean at the start of each test
         try {
             Configs existingConfigs = httpClient.getConfigs().join();
-            if (existingConfigs != null 
+            if (existingConfigs != null
                 && (!existingConfigs.workers().isEmpty() || !existingConfigs.drivers().isEmpty())) {
                 httpClient.deleteConfigs(existingConfigs).join();
             }
@@ -98,14 +99,14 @@ public class CoordinatorAPITest {
         // Clean up any remaining configs
         try {
             Configs existingConfigs = httpClient.getConfigs().join();
-            if (existingConfigs != null 
+            if (existingConfigs != null
                 && (!existingConfigs.workers().isEmpty() || !existingConfigs.drivers().isEmpty())) {
                 httpClient.deleteConfigs(existingConfigs).join();
             }
         } catch (Exception e) {
             // Ignore if configs don't exist or server is already stopped
         }
-        
+
         server.stop();
         worker.stop();
         if (kafkaServer != null) {
@@ -270,7 +271,7 @@ public class CoordinatorAPITest {
         List<Proof> proofs3 = httpClient.listProofs().join();
         assertEquals(proofs3.size(), 0);
     }
-    
+
     @Test()
     public void testProofWithDuration() throws Exception {
         Configs configs = new Configs(Map.of("worker1", "http://localhost:" + workerPort), Map.of(
@@ -297,34 +298,80 @@ public class CoordinatorAPITest {
         httpClient.createProof(proof).join();
         List<Proof> proofs = httpClient.listProofs().join();
         assertEquals(proofs.size(), 1);
-        
+
         // Verify that the proof starts producing messages
         Awaitility.await().atMost(4, TimeUnit.SECONDS).untilAsserted(() -> {
             ProofDetails details = httpClient.getProof(proofs.getFirst().getId()).join();
             assertTrue(details.summary().verified() >= 0);
         });
-        
+
         // Wait for the duration to expire (proof should auto-stop)
         Thread.sleep(6000); // Wait a bit longer than the duration
-        
+
         // Verify that the proof is still in the list but has stopped producing
         List<Proof> proofsAfterDuration = httpClient.listProofs().join();
         assertEquals(proofsAfterDuration.size(), 1);
-        
+
         // Get the current verification count
         ProofDetails detailsAfterStop = httpClient.getProof(proofs.getFirst().getId()).join();
         long verifiedCount = detailsAfterStop.summary().verified();
-        
+
         // Wait a bit more and verify that the verification count hasn't increased
         // This confirms the proof task has stopped producing messages
         Thread.sleep(2000);
         ProofDetails detailsAfterWait = httpClient.getProof(proofs.getFirst().getId()).join();
         assertEquals(detailsAfterWait.summary().verified(), verifiedCount);
-        
+
         // Clean up
         httpClient.deleteProof(proofs.getFirst().getId()).join();
         List<Proof> proofs3 = httpClient.listProofs().join();
         assertEquals(proofs3.size(), 0);
+    }
+
+    @Test
+    public void testHumanReadableStartTime() throws Exception {
+        // Set up configs
+        Configs configs = new Configs(Map.of("worker1", "http://localhost:" + workerPort), Map.of("kafka_driver",
+                new Driver("kafka", Map.of("bootstrap.servers", "localhost:" + kafkaPort))));
+        httpClient.putConfigs(configs).join();
+
+        // Create a proof
+        Proof proof = Proof.builder()
+                .name(UUID.randomUUID().toString())
+                .driver("kafka_driver")
+                .keys(100)
+                .partitions(10)
+                .producers(4)
+                .consumers(4)
+                .features(List.of("at_least_once", "ordering"))
+                .checkPointInterval(5)
+                .msgRate(1000)
+                .timeout(180)
+                .build();
+
+        // Create the proof (this will start it and set the startTime)
+        httpClient.createProof(proof).join();
+
+        // Get the proof details
+        List<Proof> proofs = httpClient.listProofs().join();
+        assertEquals(proofs.size(), 1);
+
+        // Verify that startTime is set and is a human-readable string
+        String startTime = proofs.getFirst().getStartTime();
+        assertNotNull(startTime, "startTime should not be null");
+
+        // Verify the format matches ISO_LOCAL_DATE_TIME
+        try {
+            java.time.LocalDateTime parsedDateTime = java.time.LocalDateTime.parse(
+                    startTime, java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+            assertNotNull(parsedDateTime, "startTime should be parseable as a LocalDateTime");
+        } catch (Exception e) {
+            fail("startTime should be in ISO_LOCAL_DATE_TIME format, but was: " + startTime);
+        }
+
+        // Clean up
+        httpClient.stopProof(proofs.getFirst().getId()).join();
+        httpClient.deleteProof(proofs.getFirst().getId()).join();
     }
 
     private static int getFreePort() {

@@ -62,7 +62,7 @@ public class Proof {
     /** Human-readable name for the proof test */
     private String name;
 
-    /** 
+    /**
      * The messaging system driver to use for this proof.
      * The driver configuration is stored separately in {@link Configs}.
      */
@@ -74,7 +74,7 @@ public class Proof {
      */
     private Drivers drivers;
 
-    /** 
+    /**
      * List of messaging guarantees to validate.
      * Supported features include: exactly-once, at-least-once, ordering
      */
@@ -86,49 +86,49 @@ public class Proof {
     /** The topic name to use for message production and consumption */
     private String topic;
 
-    /** 
+    /**
      * Number of partitions for the topic.
      * Higher partition count enables greater parallelism but may affect ordering guarantees.
      */
     @Builder.Default
     private int partitions = 10;
 
-    /** 
+    /**
      * Number of producer instances to create.
      * Multiple producers can increase throughput and test concurrent message production.
      */
     @Builder.Default
     private int producers = 4;
 
-    /** 
+    /**
      * Number of consumer instances to create.
      * Multiple consumers enable parallel message processing and consumption pattern testing.
      */
     @Builder.Default
     private int consumers = 4;
 
-    /** 
+    /**
      * Target message production rate in messages per second.
      * Used to control the load on the messaging system.
      */
     @Builder.Default
     private int msgRate = 1000;
 
-    /** 
+    /**
      * Number of unique message keys to use.
      * Affects message distribution across partitions and ordering guarantees.
      */
     @Builder.Default
     private int keys = 100;
 
-    /** 
+    /**
      * Interval between checkpoints in seconds.
      * Checkpoints track message delivery progress and verify guarantees.
      */
     @Builder.Default
     private int checkPointInterval = 60;
 
-    /** 
+    /**
      * Maximum time in seconds to wait for message verification.
      * Test fails if verification exceeds this timeout.
      */
@@ -143,13 +143,13 @@ public class Proof {
     @Builder.Default
     private int consumeDelay = 0;
 
-    /** 
+    /**
      * Total duration of the proof test in seconds.
      * Default is 8 hours (28800 seconds).
      */
     @Builder.Default
     private int duration = 28800;
 
-    /** Timestamp when the proof test started */
-    private long startTime;
+    /** Human-readable timestamp when the proof test started */
+    private String startTime;
 }
