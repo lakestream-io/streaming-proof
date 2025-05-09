@@ -18,7 +18,6 @@
  */
 package io.streamnative.streaming.proof.driver.kafka;
 
-import io.netty.util.concurrent.DefaultThreadFactory;
 import io.streamnative.streaming.proof.common.MessageListener;
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofConsumer;
@@ -28,9 +27,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -82,11 +78,8 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
     /** The underlying Kafka consumer instance */
     private final KafkaConsumer<String, Long> consumer;
 
-    /** Executor service for running the consumer polling loop */
-    private final ExecutorService executor;
-    
-    /** Future representing the running consumer task */
-    private final Future<?> consumerTask;
+    /** Thread for running the consumer polling loop */
+    private final Thread consumerThread;
     
     /** Flag indicating whether the consumer is in the process of closing */
     private volatile boolean closing = false;
@@ -111,71 +104,76 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
             MessageListener callback) {
         this.name = name;
         this.consumer = consumer;
-        this.executor = Executors.newSingleThreadExecutor(new DefaultThreadFactory("proof-consumer"));
         this.autoCommit =
                 Boolean.parseBoolean(
                         (String)
                                 consumerConfig.getOrDefault(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false"));
-        this.consumerTask =
-                this.executor.submit(
-                        () -> {                            
-                            while (!closing) {
-                                try {
-                                    if (consumeDelayMs > 0) {
-                                        prioritizePartitionsBasedOnLag();
-                                    }
-                                    ConsumerRecords<String, Long> records =
-                                            consumer.poll(Duration.ofSeconds(30));
-                                    Map<TopicPartition, OffsetAndMetadata> offsetMap = new HashMap<>();
-                                    Map<String, List<Long>> offsetRange = new HashMap<>();
-                                    for (ConsumerRecord<String, Long> record : records) {
-                                        if (consumeDelayMs > 0) {
-                                            long timestampDiff = System.currentTimeMillis() - record.timestamp();
-                                            if (timestampDiff < consumeDelayMs) {
-                                                long sleepTime = consumeDelayMs - timestampDiff;
-                                                log.debug("[{}] Sleeping for {} ms after consuming message",
-                                                        name, sleepTime);
-                                                Thread.sleep(sleepTime);
-                                            }
-                                        }
-                                        callback.onMessage(record.key(), record.value(),
-                                                new MessageMetadata(record.offset(), record.partition()));
-
-                                        offsetMap.put(
-                                                new TopicPartition(record.topic(), record.partition()),
-                                                new OffsetAndMetadata(record.offset() + 1));
-                                        offsetRange.compute(record.topic() + "-" + record.partition(),
-                                                (k, v) -> {
-                                                    if (v == null) {
-                                                        v = List.of(record.offset(), record.offset());
-                                                    } else {
-                                                        v = List.of(v.getFirst(), record.offset());
-                                                    }
-                                                    return v;
-                                                });
-                                    }
-
-                                    offsetRange.forEach((topic, range) -> log.debug(
-                                            "[{}] Polled messages in offset range {}-{} from topic {}",
-                                            name,
-                                            range.getFirst(),
-                                            range.get(1),
-                                            topic));
-
-                                    if (!autoCommit && !offsetMap.isEmpty()) {
-                                        // Async commit all messages polled so far
-                                        consumer.commitAsync(offsetMap, (offsets,
-                                                                         exception) -> {
-                                            if (exception != null) {
-                                                log.error("Failed to commit offsets", exception);
-                                            }
-                                        });
-                                    }
-                                } catch (Exception e) {
-                                    log.error("exception occur while consuming message", e);
+        
+        // Create and start a virtual thread for the consumer polling loop
+        this.consumerThread = Thread.ofVirtual()
+                .name("proof-consumer-" + name)
+                .start(() -> {
+                    try {
+                        while (!closing) {
+                            try {
+                                if (consumeDelayMs > 0) {
+                                    prioritizePartitionsBasedOnLag();
                                 }
+                                ConsumerRecords<String, Long> records =
+                                        consumer.poll(Duration.ofSeconds(30));
+                                Map<TopicPartition, OffsetAndMetadata> offsetMap = new HashMap<>();
+                                Map<String, List<Long>> offsetRange = new HashMap<>();
+                                for (ConsumerRecord<String, Long> record : records) {
+                                    if (consumeDelayMs > 0) {
+                                        long timestampDiff = System.currentTimeMillis() - record.timestamp();
+                                        if (timestampDiff < consumeDelayMs) {
+                                            long sleepTime = consumeDelayMs - timestampDiff;
+                                            log.debug("[{}] Sleeping for {} ms after consuming message",
+                                                    name, sleepTime);
+                                            Thread.sleep(sleepTime);
+                                        }
+                                    }
+                                    callback.onMessage(record.key(), record.value(),
+                                            new MessageMetadata(record.offset(), record.partition()));
+
+                                    offsetMap.put(
+                                            new TopicPartition(record.topic(), record.partition()),
+                                            new OffsetAndMetadata(record.offset() + 1));
+                                    offsetRange.compute(record.topic() + "-" + record.partition(),
+                                            (k, v) -> {
+                                                if (v == null) {
+                                                    v = List.of(record.offset(), record.offset());
+                                                } else {
+                                                    v = List.of(v.getFirst(), record.offset());
+                                                }
+                                                return v;
+                                            });
+                                }
+
+                                offsetRange.forEach((topic, range) -> log.debug(
+                                        "[{}] Polled messages in offset range {}-{} from topic {}",
+                                        name,
+                                        range.getFirst(),
+                                        range.get(1),
+                                        topic));
+
+                                if (!autoCommit && !offsetMap.isEmpty()) {
+                                    // Async commit all messages polled so far
+                                    consumer.commitAsync(offsetMap, (offsets,
+                                                                                 exception) -> {
+                                        if (exception != null) {
+                                            log.error("Failed to commit offsets", exception);
+                                        }
+                                    });
+                                }
+                            } catch (Exception e) {
+                                log.error("[{}] Exception occurred while consuming message", name, e);
                             }
-                        });
+                        }
+                    } catch (Throwable t) {
+                        log.error("[{}] Fatal error in consumer thread", name, t);
+                    }
+                });
     }
     
     /**
@@ -242,8 +240,7 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
      * <p>This method:
      * <ul>
      *   <li>Signals the polling loop to stop</li>
-     *   <li>Shuts down the executor service</li>
-     *   <li>Waits for the consumer task to complete</li>
+     *   <li>Waits for the consumer thread to complete</li>
      *   <li>Closes the underlying Kafka consumer</li>
      * </ul>
      *
@@ -251,16 +248,16 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
      */
     @Override
     public void close() throws Exception {
-        this.executor.execute(() -> {
-            closing = true;
-            executor.shutdown();
-            try {
-                consumerTask.get();
-            } catch (Exception e) {
-                log.error("Error while waiting for consumer task to complete", e);
-            }
-            consumer.close();
-        });
+        closing = true;
+        try {
+            // Wait for the consumer thread to complete
+            consumerThread.interrupt(); // Interrupt the polling loop if it's waiting for new messages
+            consumerThread.join();
+        } catch (Exception e) {
+            log.error("[{}] Error while waiting for consumer thread to complete", name, e);
+        }
+        consumer.close();
+        log.info("[{}] Consumer closed successfully", name);
     }
 
     @Override

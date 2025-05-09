@@ -119,7 +119,10 @@ public class Worker {
      */
     public void stopConsumers(String id) {
         ProofConsumers consumer = consumers.get(id);
-        consumer.stop();
+        if (consumer != null) {
+            consumer.stop();
+            consumers.remove(id);
+        }
     }
 
     /**
