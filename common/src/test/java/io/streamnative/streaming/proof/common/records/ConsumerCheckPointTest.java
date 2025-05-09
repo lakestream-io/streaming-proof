@@ -507,6 +507,66 @@ public class ConsumerCheckPointTest {
         assertEquals(duplicatedCount.get(key).longValue(), 11L);
     }
     
+    @Test
+    public void testWriteDuplicatesSeqsCalculation() {
+        // 1. Add regular consumed ranges
+        checkPoint.addKey(TEST_KEY_1, createRangeMap("1", 1L, 10L));
+        checkPoint.addKey(TEST_KEY_1, createRangeMap("3", 15L, 20L));
+        
+        // 2. Add write duplicates or out of order ranges
+        Map<String, ConsumerCheckPoint.SeqRange> writeDupsMap = new HashMap<>();
+        ConsumerCheckPoint.SeqRange dupRange1 = new ConsumerCheckPoint.SeqRange();
+        dupRange1.setStart(new LongSeq(3L, new MessageMetadata(-1L)));
+        dupRange1.setEnd(new LongSeq(5L, new MessageMetadata(-1L)));
+        writeDupsMap.put("4", dupRange1);
+        
+        ConsumerCheckPoint.SeqRange dupRange2 = new ConsumerCheckPoint.SeqRange();
+        dupRange2.setStart(new LongSeq(16L, new MessageMetadata(-1L)));
+        dupRange2.setEnd(new LongSeq(18L, new MessageMetadata(-1L)));
+        writeDupsMap.put("2", dupRange2);
+        
+        // Add a range that won't be contained in any consumed range
+        ConsumerCheckPoint.SeqRange dupRange3 = new ConsumerCheckPoint.SeqRange();
+        dupRange3.setStart(new LongSeq(25L, new MessageMetadata(-1L)));
+        dupRange3.setEnd(new LongSeq(30L, new MessageMetadata(-1L)));
+        writeDupsMap.put("5", dupRange3);
+        
+        checkPoint.addWriteDupsOrOutOrder(TEST_KEY_1, writeDupsMap);
+        
+        // Calculate to populate writeDuplicatesSeqs
+        checkPoint.calculate();
+        
+        // Verify results
+        Map<String, List<ConsumerCheckPoint.SeqRange>> writeDups = checkPoint.getWriteDuplicatesSeqs();
+        
+        // Should have detected duplicates for TEST_KEY_1
+        assertNotNull(writeDups.get(TEST_KEY_1));
+        
+        // Should have found 2 containing ranges (for dupRange1 and dupRange2)
+        assertEquals(writeDups.get(TEST_KEY_1).size(), 2);
+        
+        // Verify the first range (1-10) contains dupRange1 (3-5)
+        boolean foundFirstRange = false;
+        boolean foundSecondRange = false;
+        
+        for (ConsumerCheckPoint.SeqRange range : writeDups.get(TEST_KEY_1)) {
+            if (range.getStart().seq() == 1L && range.getEnd().seq() == 10L) {
+                foundFirstRange = true;
+            } else if (range.getStart().seq() == 15L && range.getEnd().seq() == 20L) {
+                foundSecondRange = true;
+            }
+        }
+        
+        assertTrue(foundFirstRange, "Should find the range 1-10 containing duplicate range 3-5");
+        assertTrue(foundSecondRange, "Should find the range 15-20 containing duplicate range 16-18");
+        
+        // Verify that dupRange3 (25-30) was not detected as a duplicate since it's not contained in any consumed range
+        for (ConsumerCheckPoint.SeqRange range : writeDups.get(TEST_KEY_1)) {
+            assertFalse(range.getStart().seq() == 25L && range.getEnd().seq() == 30L, 
+                    "Should not find range 25-30 as it's not contained in any consumed range");
+        }
+    }
+    
     private Map<String, ConsumerCheckPoint.SeqRange> createRangeMap(String orderKey, Long start, Long end) {
         Map<String, ConsumerCheckPoint.SeqRange> rangeMap = new HashMap<>();
         ConsumerCheckPoint.SeqRange range = new ConsumerCheckPoint.SeqRange();

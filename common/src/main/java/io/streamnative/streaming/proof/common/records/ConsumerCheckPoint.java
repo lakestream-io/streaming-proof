@@ -92,6 +92,11 @@ public class ConsumerCheckPoint {
                     && other.getEnd().seq() >= this.getStart().seq();
         }
 
+        public boolean contains(SeqRange other) {
+            return this.getStart().seq() <= other.getStart().seq()
+                    && this.getEnd().seq() >= other.getEnd().seq();
+        }
+
         /**
          * Merges this range with another range if they overlap.
          * If they overlap, the start and end sequence numbers will be adjusted
@@ -148,6 +153,14 @@ public class ConsumerCheckPoint {
     private final Map<String, SortedMap<String, SeqRange>> consumed = new HashMap<>();
 
     /**
+     * Map storing sequence ranges for messages that are either duplicated at the producer side
+     * or received out of order (with a lower sequence number but higher offset or message ID).
+     * The outer map's key is the message key.
+     * The inner map's key is the timestamp as a formatted date/time string.
+     */
+    private final Map<String, SortedMap<String, SeqRange>> writeDupsOrOutOrder = new HashMap<>();
+
+    /**
      * Map storing optimized and merged sequence ranges for each key.
      * This is a transient field that is recalculated during processing.
      * It contains the same sequence data as the 'consumed' map but with
@@ -163,6 +176,8 @@ public class ConsumerCheckPoint {
     private volatile Map<String, Long> duplicatedCount = Collections.emptyMap();
     /** Map storing out-of-order sequence ranges for each key */
     private volatile Map<String, List<Pair<Long, Long>>> outOfOrderSeqs = Collections.emptyMap();
+    /** Map storing write duplicates sequence ranges from producer for each key */
+    private volatile Map<String, List<SeqRange>> writeDuplicatesSeqs = Collections.emptyMap();
 
     /**
      * Adds sequence ranges for a specific key.
@@ -182,6 +197,16 @@ public class ConsumerCheckPoint {
         });
     }
 
+    public void addWriteDupsOrOutOrder(String key, Map<String, SeqRange> consumedRange) {
+        writeDupsOrOutOrder.compute(key, (k, v) -> {
+            if (v == null) {
+                v = new TreeMap<>();
+            }
+            v.putAll(consumedRange);
+            return v;
+        });
+    }
+
     /**
      * Merges another ConsumerCheckPoint into this one.
      * All sequence ranges from the other checkpoint will be added to this one.
@@ -190,6 +215,7 @@ public class ConsumerCheckPoint {
      */
     public void merge(ConsumerCheckPoint checkPoint) {
         checkPoint.consumed.forEach(this::addKey);
+        checkPoint.writeDupsOrOutOrder.forEach(this::addWriteDupsOrOutOrder);
     }
 
     /**
@@ -217,6 +243,7 @@ public class ConsumerCheckPoint {
     public void calculate() {
         Map<String, List<SeqRange>> missedSeqs = new HashMap<>();
         Map<String, Long> duplicatedCount = new HashMap<>();
+        Map<String, List<SeqRange>> writeDups = new HashMap<>();
         trim();
         consumed.forEach((key, value) -> {
             List<SeqRange> values = value.values().stream().toList();
@@ -230,9 +257,26 @@ public class ConsumerCheckPoint {
                 missedSeqs.put(key, missed);
             }
         });
-
         this.missedSeqs = missedSeqs;
         this.duplicatedCount = duplicatedCount;
+        this.writeDupsOrOutOrder.forEach((key, value) -> {
+            value.forEach((ts, range) -> {
+                if (mergedConsumed.containsKey(key)) {
+                    mergedConsumed.get(key).forEach(r -> {
+                        if (r.contains(range)) {
+                            writeDups.compute(key, (k, v) -> {
+                                if (v == null) {
+                                    v = new ArrayList<>();
+                                }
+                                v.add(r);
+                                return v;
+                            });
+                        }
+                    });
+                }
+            });
+        });
+        this.writeDuplicatesSeqs = writeDups;
     }
 
     /**

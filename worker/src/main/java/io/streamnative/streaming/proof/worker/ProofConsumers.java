@@ -94,6 +94,7 @@ public class ProofConsumers {
         ConsumerCheckPoint checkpoint = new ConsumerCheckPoint();
         for (ProofConsumerTask task : tasks) {
             task.getTrimmedConsumed().forEach(checkpoint::addKey);
+            task.getWriteDupsOrOutOrder().forEach(checkpoint::addWriteDupsOrOutOrder);
         }
         return checkpoint;
     }
@@ -110,6 +111,7 @@ public class ProofConsumers {
         for (ProofConsumerTask task : tasks) {
             ConsumerCheckPoint checkPoint = new ConsumerCheckPoint();
             task.getTrimmedConsumed().forEach(checkPoint::addKey);
+            task.getWriteDupsOrOutOrder().forEach(checkPoint::addWriteDupsOrOutOrder);
             result.put(task.getConsumerName(), checkPoint);
         }
         return result;

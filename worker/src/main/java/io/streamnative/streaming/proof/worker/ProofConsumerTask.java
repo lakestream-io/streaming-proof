@@ -54,6 +54,15 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
     private final Map<String, SortedMap<String, ConsumerCheckPoint.SeqRange>> consumed = new HashMap<>();
 
     /**
+     * Map storing sequence ranges for messages that are either duplicated at the producer side
+     * or received out of order (with a lower sequence number but higher offset or message ID).
+     * The outer map's key is the message key.
+     * The inner map's key is the timestamp as a formatted date/time string.
+     */
+    @Getter
+    private final Map<String, SortedMap<String, ConsumerCheckPoint.SeqRange>> writeDupsOrOutOrder = new HashMap<>();
+
+    /**
      * Processes a received message and validates its sequence number against the expected order.
      * This method is synchronized to ensure thread-safe updates to the sequence tracking maps.
      *
@@ -71,16 +80,26 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
             newConsumedRange(key, newMsg);
             return;
         }
-        long seq = lastConsumedRange.getEnd() == null
-                ? lastConsumedRange.getStart().seq()
-                : lastConsumedRange.getEnd().seq();
+
+        LongSeq lastConsumedSeq = lastConsumedRange.getEnd();
     
-        if (value <= seq) {
-            long dups = seq - value + 1;
-            log.info("[{}] Duplicated message detected | key: {} | new message: {} | last seq range: {} | dups: {}",
-                    consumer.name(), key, newMsg, getLastSeq(key), dups);
-            newConsumedRange(key, newMsg);
-        } else if (value - seq > 1) {
+        if (value <= lastConsumedSeq.seq()) {
+            if (metadata.isAfter(lastConsumedSeq.metadata())) {
+                // Handle duplicated writes from the producer side
+                ConsumerCheckPoint.SeqRange lastSeqFromProducerDups = getLastWriteDupOrOutOrder(key);
+                if (lastSeqFromProducerDups == null || value - lastSeqFromProducerDups.getEnd().seq() > 1) {
+                    newWriteDupsOrOutOrderRange(key, newMsg);
+                } else {
+                    lastSeqFromProducerDups.setEnd(newMsg);
+                }
+            } else {
+                // Handle message redeliveries to the consumer side
+                long dups = lastConsumedSeq.seq() - value + 1;
+                log.info("[{}] Duplicated message detected | key: {} | new message: {} | last seq range: {} | dups: {}",
+                        consumer.name(), key, newMsg, getLastSeq(key), dups);
+                newConsumedRange(key, newMsg);
+            }
+        } else if (value - lastConsumedSeq.seq() > 1) {
             log.info("[{}] Range gap detected | key: {} | new message: {} | last seq range: {}",
                     consumer.name(), key, newMsg, getLastSeq(key));
             newConsumedRange(key, newMsg);
@@ -133,6 +152,16 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
         return consumed.get(key).lastEntry().getValue();
     }
 
+    private ConsumerCheckPoint.SeqRange getLastWriteDupOrOutOrder(String key) {
+        if (!writeDupsOrOutOrder.containsKey(key)) {
+            return null;
+        }
+        if (writeDupsOrOutOrder.get(key).isEmpty()) {
+            return null;
+        }
+        return writeDupsOrOutOrder.get(key).lastEntry().getValue();
+    }
+
     /**
      * Creates a new sequence range for a key starting with the given message.
      * This is called when:
@@ -156,6 +185,33 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
             // Format the current timestamp as a readable date/time string
             String timestamp = java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME
                     .format(java.time.LocalDateTime.now());
+            v.put(timestamp, range);
+            return v;
+        });
+    }
+
+    /**
+     * Creates a new sequence range which duplicated from the producer side or out-of-order messages.
+     * This is called when:
+     * - A duplicate message is detected but with a higher offset or message ID
+     * - A message is received out of order (with a lower sequence number but higher offset or message ID)
+     *
+     * @param key The message key
+     * @param newMsg The message to start the new range with
+     */
+    private void newWriteDupsOrOutOrderRange(String key, LongSeq newMsg) {
+        log.info("[{}] New write dups or out of order range | key: {} | new message: {} | last seq range: {}",
+                consumer.name(), key, newMsg, getLastSeq(key));
+        ConsumerCheckPoint.SeqRange range = new ConsumerCheckPoint.SeqRange();
+        range.setStart(newMsg);
+        range.setEnd(newMsg);
+        writeDupsOrOutOrder.compute(key, (k, v) -> {
+            if (v == null) {
+                v = new TreeMap<>();    
+            }
+            // Format the current timestamp as a readable date/time string
+            String timestamp = java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME
+                   .format(java.time.LocalDateTime.now());
             v.put(timestamp, range);
             return v;
         });

@@ -350,10 +350,16 @@ public class ProofTask {
                         .mapToInt(Long::intValue)
                         .sum(),
                 lastVerifiedConsumerCheckpoint.getDuplicatedCount().values().stream().reduce(0L, Long::sum),
+                lastVerifiedConsumerCheckpoint.getWriteDuplicatesSeqs().values().stream()
+                        .flatMap(ranges -> ranges.stream()
+                                .map(range -> range.getEnd().seq() - range.getStart().seq() - 1))
+                        .mapToInt(Long::intValue)
+                        .sum(),
                 this.getTimeouts(),
                 failedKeys,
                 lastVerifiedConsumerCheckpoint.getMissedSeqs(),
-                lastVerifiedConsumerCheckpoint.getOutOfOrderSeqs());
+                lastVerifiedConsumerCheckpoint.getOutOfOrderSeqs(),
+                lastVerifiedConsumerCheckpoint.getWriteDuplicatesSeqs());
     }
 
     /**
