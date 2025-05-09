@@ -24,8 +24,6 @@ import io.streamnative.streaming.proof.common.records.NewProducers;
 import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -42,8 +40,9 @@ import java.util.concurrent.atomic.AtomicLong;
  *   <li>Aggregated producer statistics collection</li>
  * </ul>
  *
- * <p>The class uses a single executor thread to coordinate message production across
- * all producer tasks, ensuring controlled message rates and fair task scheduling.
+ * <p>The class uses a virtual thread to coordinate message production across
+ * all producer tasks, ensuring controlled message rates and fair task scheduling
+ * with minimal resource overhead.
  *
  * <p>Example usage:
  * <pre>{@code
@@ -56,13 +55,13 @@ import java.util.concurrent.atomic.AtomicLong;
  *     5000,             // messages per second
  *     kafkaDriver       // messaging system driver
  * );
- * 
+ *
  * ProofProducers producers = new ProofProducers(config);
  * producers.start();
- * 
+ *
  * // Later, check production progress
  * CheckPoint checkpoint = producers.checkPoint();
- * 
+ *
  * // Finally, stop all producers
  * producers.stop();
  * }</pre>
@@ -75,22 +74,22 @@ public class ProofProducers {
 
     /** Configuration for creating new producers */
     private final NewProducers newProducers;
-    
+
     /** The messaging system driver instance */
     private final ProofDriver driver;
-    
+
     /** List of running producer tasks */
     private final List<ProofProducerTask> tasks;
-    
-    /** Single-threaded executor for coordinated message production */
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    
+
+    /** Virtual thread for the producer task */
+    private Thread producerThread;
+
     /** Counter for round-robin task selection */
     private final AtomicLong index = new AtomicLong(0);
-    
+
     /** Flag controlling the producer group's lifecycle */
     private final AtomicBoolean running = new AtomicBoolean(true);
-    
+
     /** Rate limiter for controlling message production speed */
     private final UniformRateLimiter rateLimiter;
 
@@ -150,13 +149,15 @@ public class ProofProducers {
 
     /**
      * Stops all producer tasks and releases associated resources.
-     * This method ensures graceful shutdown of the executor and all producer tasks.
+     * This method ensures graceful shutdown of the virtual thread and all producer tasks.
      *
      * @throws RuntimeException if an error occurs while closing producers
      */
     public void stop() {
         running.set(false);
-        executor.shutdown();
+        if (producerThread != null) {
+            producerThread.interrupt();
+        }
         try {
             for (ProofProducerTask task : tasks) {
                 task.close();
@@ -170,15 +171,22 @@ public class ProofProducers {
      * Starts the producer group and begins message production.
      * Messages are produced at the configured rate using the rate limiter,
      * with tasks selected in round-robin fashion.
+     *
+     * Uses a virtual thread for lightweight concurrency.
      */
     public void start() {
         init();
-        executor.execute(() -> {
+        Runnable producerTask = () -> {
             while (running.get()) {
                 final long intendedSendTime = rateLimiter.acquire();
                 UniformRateLimiter.uninterruptibleSleepNs(intendedSendTime);
                 tasks.get((int) (index.getAndIncrement() % tasks.size())).sendAsync();
             }
-        });
+        };
+
+        // Start the producer task on a virtual thread
+        producerThread = Thread.ofVirtual()
+                .name("proof-producer-" + newProducers.id())
+                .start(producerTask);
     }
 }
