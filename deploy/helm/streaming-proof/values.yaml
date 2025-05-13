@@ -40,15 +40,16 @@ frontend:
     port: 80
 
 configs:
-  workers:
-    worker.1: "http://streaming-proof-worker-0.streaming-proof-worker-headless.streaming-proof.svc.cluster.local:8088"
-    worker.2: "http://streaming-proof-worker-1.streaming-proof-worker-headless.streaming-proof.svc.cluster.local:8088"
-    worker.3: "http://streaming-proof-worker-2.streaming-proof-worker-headless.streaming-proof.svc.cluster.local:8088"
-
-  drivers:
-    serverless:
-      driverType: "pulsar"
-      driverConfigs:
-        pulsar.service.url: "pulsar+ssl://xxx:6651"
-        pulsar.admin.url: "https://xxx"
-        pulsar.auth.token: "xxx"
+  demo.yaml |
+    workers:
+      worker.1: "http://streaming-proof-worker-0.streaming-proof-worker-headless.streaming-proof.svc.cluster.local:8088"
+      worker.2: "http://streaming-proof-worker-1.streaming-proof-worker-headless.streaming-proof.svc.cluster.local:8088"
+      worker.3: "http://streaming-proof-worker-2.streaming-proof-worker-headless.streaming-proof.svc.cluster.local:8088"
+  
+    drivers:
+      serverless:
+        driverType: "pulsar"
+        driverConfigs:
+          pulsar.service.url: "pulsar+ssl://xxx:6651"
+          pulsar.admin.url: "https://xxx"
+          pulsar.auth.token: "xxx"
