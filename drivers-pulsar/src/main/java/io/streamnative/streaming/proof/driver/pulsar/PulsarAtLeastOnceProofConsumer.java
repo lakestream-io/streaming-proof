@@ -18,14 +18,10 @@
  */
 package io.streamnative.streaming.proof.driver.pulsar;
 
-import io.netty.util.concurrent.DefaultThreadFactory;
 import io.streamnative.streaming.proof.common.MessageListener;
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.client.api.Consumer;
@@ -51,7 +47,7 @@ import org.apache.pulsar.client.api.SubscriptionType;
  *   <li>Graceful shutdown support</li>
  * </ul>
  *
- * <p>The consumer uses a single-threaded executor to receive messages continuously and
+ * <p>The consumer uses a virtual thread to receive messages continuously and
  * delivers them to the provided {@link MessageListener} callback. It tracks message
  * offsets and supports asynchronous acknowledgments to Pulsar.
  */
@@ -64,8 +60,8 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
     /** The underlying Pulsar consumer instance */
     private final Consumer<Long> consumer;
 
-    /** Executor service for running the consumer receive loop */
-    private final ExecutorService executor;
+    /** Thread for running the consumer receive loop */
+    private final Thread consumerThread;
 
     /** Flag indicating whether the consumer is in the process of closing */
     private final AtomicBoolean closing = new AtomicBoolean(false);
@@ -106,10 +102,10 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
         this.consumer = consumerBuilder.subscribe();
         log.info("[{}] Created Pulsar consumer for topic: {}", name, topic);
 
-        this.executor = Executors.newSingleThreadExecutor(
-                new DefaultThreadFactory("pulsar-proof-consumer-" + name));
-
-        this.executor.submit(this::consumeMessages);
+        // Create and start a virtual thread for the consumer receive loop
+        this.consumerThread = Thread.ofVirtual()
+                .name("pulsar-proof-consumer-" + name)
+                .start(this::consumeMessages);
     }
 
     /**
@@ -165,7 +161,7 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
      * <p>This method:
      * <ul>
      *   <li>Signals the receiving loop to stop</li>
-     *   <li>Shuts down the executor service</li>
+     *   <li>Waits for the consumer thread to complete</li>
      *   <li>Closes the underlying Pulsar consumer</li>
      * </ul>
      *
@@ -176,14 +172,12 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
         if (closing.compareAndSet(false, true)) {
             log.info("[{}] Closing Pulsar consumer", name);
 
-            executor.shutdown();
             try {
-                if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
-                    executor.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                executor.shutdownNow();
-                Thread.currentThread().interrupt();
+                // Interrupt the consumer thread if it's waiting for new messages
+                consumerThread.interrupt();
+                consumerThread.join();
+            }  catch (Exception e) {
+                log.error("[{}] Error while waiting for consumer thread to complete", name, e);
             }
 
             if (consumer != null) {
