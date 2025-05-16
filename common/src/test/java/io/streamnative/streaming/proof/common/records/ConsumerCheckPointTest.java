@@ -148,18 +148,18 @@ public class ConsumerCheckPointTest {
         assertFalse(checkPoint.getMissedSeqs().containsKey(TEST_KEY_1));
         assertFalse(checkPoint.getDuplicatedCount().containsKey(TEST_KEY_1));
     }
-    
+
     @Test
     public void testDuplicateCountWithFullyOverlap() {
         checkPoint.addKey(TEST_KEY_1, createRangeMap("1", 1L, 10L));
         checkPoint.addKey(TEST_KEY_1, createRangeMap("15", 5L, 8L));
-        
+
         checkPoint.calculate();
-        
+
         assertNotNull(checkPoint.getDuplicatedCount().get(TEST_KEY_1));
         assertEquals(checkPoint.getDuplicatedCount().get(TEST_KEY_1).longValue(), 4L);
     }
-    
+
     @Test
     public void testDuplicateCountWithMultipleOverlaps() {
         // Add multiple overlapping ranges to test more complex scenarios
@@ -167,28 +167,28 @@ public class ConsumerCheckPointTest {
         checkPoint.addKey(TEST_KEY_1, createRangeMap("5", 5L, 15L));
         checkPoint.addKey(TEST_KEY_1, createRangeMap("12", 12L, 20L));
         checkPoint.addKey(TEST_KEY_1, createRangeMap("25", 18L, 22L));
-        
+
         checkPoint.calculate();
-        
+
         // Verify duplicates are correctly counted
         // Overlaps: 5-10 (6 messages) + 12-15 (4 messages) + 18-20 (3 messages) = 13 messages
         assertNotNull(checkPoint.getDuplicatedCount().get(TEST_KEY_1));
         assertEquals(checkPoint.getDuplicatedCount().get(TEST_KEY_1).longValue(), 13L);
     }
-    
+
     @Test
     public void testDuplicateCountWithCompletelyContainedRanges() {
         // Test when one range is completely contained within another
         checkPoint.addKey(TEST_KEY_1, createRangeMap("1", 1L, 20L));
         checkPoint.addKey(TEST_KEY_1, createRangeMap("5", 5L, 10L));
-        
+
         checkPoint.calculate();
-        
+
         // The range 5-10 (6 messages) is completely contained within 1-20
         assertNotNull(checkPoint.getDuplicatedCount().get(TEST_KEY_1));
         assertEquals(checkPoint.getDuplicatedCount().get(TEST_KEY_1).longValue(), 6L);
     }
-    
+
     @Test
     public void testDuplicateCountWithMultipleContainedRanges() {
         // Test with multiple contained ranges
@@ -196,14 +196,14 @@ public class ConsumerCheckPointTest {
         checkPoint.addKey(TEST_KEY_1, createRangeMap("5", 5L, 10L));
         checkPoint.addKey(TEST_KEY_1, createRangeMap("15", 15L, 20L));
         checkPoint.addKey(TEST_KEY_1, createRangeMap("25", 25L, 28L));
-        
+
         checkPoint.calculate();
-        
+
         // Contained ranges: 5-10 (6 messages) + 15-20 (6 messages) + 25-28 (4 messages) = 16 messages
         assertNotNull(checkPoint.getDuplicatedCount().get(TEST_KEY_1));
         assertEquals(checkPoint.getDuplicatedCount().get(TEST_KEY_1).longValue(), 16L);
     }
-    
+
     @Test
     public void testCalculateMultipleMissedSequences() {
         // Create ranges with multiple gaps between them
@@ -218,21 +218,21 @@ public class ConsumerCheckPointTest {
         // Verify missed sequences
         assertNotNull(checkPoint.getMissedSeqs().get(TEST_KEY_1));
         assertEquals(checkPoint.getMissedSeqs().get(TEST_KEY_1).size(), 3);
-        
+
+        // Get the list of missed sequences once
+        List<ConsumerCheckPoint.SeqRange> missedRanges = checkPoint.getMissedSeqs().get(TEST_KEY_1);
+
         // First gap: 6-9
-        List<ConsumerCheckPoint.SeqRange> firstGap = checkPoint.getMissedSeqs().get(TEST_KEY_1);
-        assertEquals(firstGap.getFirst().getStart().seq(), 5L);
-        assertEquals(firstGap.getFirst().getEnd().seq(), 10L);
-        
+        assertEquals(missedRanges.get(0).getStart().seq(), 5L);
+        assertEquals(missedRanges.get(0).getEnd().seq(), 10L);
+
         // Second gap: 16-19
-        List<ConsumerCheckPoint.SeqRange> secondGap = checkPoint.getMissedSeqs().get(TEST_KEY_1);
-        assertEquals(secondGap.get(1).getStart().seq(), 15L);
-        assertEquals(secondGap.get(1).getEnd().seq(), 20L);
-        
+        assertEquals(missedRanges.get(1).getStart().seq(), 15L);
+        assertEquals(missedRanges.get(1).getEnd().seq(), 20L);
+
         // Third gap: 26-29
-        List<ConsumerCheckPoint.SeqRange> thirdGap = checkPoint.getMissedSeqs().get(TEST_KEY_1);
-        assertEquals(thirdGap.get(2).getStart().seq(), 25L);
-        assertEquals(thirdGap.get(2).getEnd().seq(), 30L);
+        assertEquals(missedRanges.get(2).getStart().seq(), 25L);
+        assertEquals(missedRanges.get(2).getEnd().seq(), 30L);
 
         // Test adding a range that overlaps with an existing range
         checkPoint.addKey(TEST_KEY_1, createRangeMap("35", 10L, 40L));
@@ -241,19 +241,19 @@ public class ConsumerCheckPointTest {
         // Overlap between range [10-15] [20-25] [30-35] and [10-40] is 18 messages
         assertEquals(checkPoint.getDuplicatedCount().get(TEST_KEY_1).longValue(), 18L);
     }
-    
+
     @Test
     public void testDuplicateCountWithAdjacentRanges() {
         // Test with adjacent ranges (no overlap)
         checkPoint.addKey(TEST_KEY_1, createRangeMap("1", 1L, 5L));
         checkPoint.addKey(TEST_KEY_1, createRangeMap("6", 6L, 10L));
-        
+
         checkPoint.calculate();
-        
+
         // Adjacent ranges should not count as duplicates
         assertFalse(checkPoint.getDuplicatedCount().containsKey(TEST_KEY_1));
     }
-    
+
     @Test
     public void testTrimRedundantRanges() {
         // Add all ranges to the checkpoint
@@ -261,21 +261,21 @@ public class ConsumerCheckPointTest {
         checkPoint.addKey(TEST_KEY_1, createRangeMap("2", 21L, 30L));
         checkPoint.addKey(TEST_KEY_1, createRangeMap("5", 5L, 10L));
         checkPoint.addKey(TEST_KEY_1, createRangeMap("15", 15L, 18L));
-        
+
         // Before trimming, we should have 4 ranges
         assertEquals(checkPoint.getConsumed().get(TEST_KEY_1).size(), 4);
-        
+
         // Calculate which will trigger the trim method
         checkPoint.calculate();
-        
+
         // After trimming, we should have fewer ranges
         // Note: Since the trim method modifies the list in-place, we need to check the size
         // of the consumed map after calculation
-        
+
         // The trim method should have removed the contained ranges
         // We need to verify that only the main range remains
         assertEquals(checkPoint.getMergedConsumed().get(TEST_KEY_1).size(), 1);
-        
+
         // Verify that the remaining range is the main range
         ConsumerCheckPoint.SeqRange remainingRange = checkPoint.getConsumed().get(TEST_KEY_1).firstEntry().getValue();
         assertEquals(remainingRange.getStart().seq(), 1L);
@@ -290,13 +290,13 @@ public class ConsumerCheckPointTest {
     public void testTrimWithNonContainedRanges() {
         checkPoint.addKey(TEST_KEY_1, createRangeMap("1", 1L, 10L));
         checkPoint.addKey(TEST_KEY_1, createRangeMap("20", 20L, 30L));
-        
+
         // Before trimming, we should have 2 ranges
         assertEquals(checkPoint.getConsumed().get(TEST_KEY_1).size(), 2);
-        
+
         // Calculate which will trigger the trim method
         checkPoint.calculate();
-        
+
         // After trimming, we should still have 2 ranges since neither is contained within the other
         assertEquals(checkPoint.getConsumed().get(TEST_KEY_1).size(), 2);
     }
@@ -305,150 +305,150 @@ public class ConsumerCheckPointTest {
     public void testEmptyCheckpoint() {
         // Verify behavior with empty checkpoint
         assertNull(checkPoint.getLastSeq(TEST_KEY_1));
-        
+
         // Calculate on empty checkpoint
         checkPoint.calculate();
-        
+
         // Verify no missed sequences or duplicates
         assertFalse(checkPoint.getMissedSeqs().containsKey(TEST_KEY_1));
         assertFalse(checkPoint.getDuplicatedCount().containsKey(TEST_KEY_1));
     }
-    
+
     @Test
     public void testMergeWithEmptyCheckpoint() {
         // Create first checkpoint with a range
         checkPoint.addKey(TEST_KEY_1, createRangeMap("1", 1L, 5L));
-        
+
         // Create empty checkpoint
         ConsumerCheckPoint emptyCheckPoint = new ConsumerCheckPoint();
-        
+
         // Merge the checkpoints
         checkPoint.merge(emptyCheckPoint);
-        
+
         // Verify the merge didn't change anything
         assertEquals(checkPoint.getConsumed().get(TEST_KEY_1).size(), 1);
         assertEquals(checkPoint.getConsumed().get(TEST_KEY_1).get("1").getStart().seq(), 1L);
         assertEquals(checkPoint.getConsumed().get(TEST_KEY_1).get("1").getEnd().seq(), 5L);
-        
+
         // Now merge in the other direction
         emptyCheckPoint.merge(checkPoint);
-        
+
         // Verify the empty checkpoint now has the data
         assertEquals(emptyCheckPoint.getConsumed().get(TEST_KEY_1).size(), 1);
         assertEquals(emptyCheckPoint.getConsumed().get(TEST_KEY_1).get("1").getStart().seq(), 1L);
         assertEquals(emptyCheckPoint.getConsumed().get(TEST_KEY_1).get("1").getEnd().seq(), 5L);
     }
-    
+
     @Test
     public void testMergeOverlappingRanges() {
         // Create first checkpoint with a range
         checkPoint.addKey(TEST_KEY_1, createRangeMap("1", 1L, 10L));
-        
+
         // Create second checkpoint with an overlapping range
         ConsumerCheckPoint otherCheckPoint = new ConsumerCheckPoint();
         otherCheckPoint.addKey(TEST_KEY_1, createRangeMap("5", 5L, 15L));
-        
+
         // Merge the checkpoints
         checkPoint.merge(otherCheckPoint);
-        
+
         // Verify the merge
         assertEquals(checkPoint.getConsumed().get(TEST_KEY_1).size(), 2);
-        
+
         // Calculate which will trigger the trim method
         checkPoint.calculate();
-        
+
         // After merging and trimming, we should have a single continuous range
         assertEquals(checkPoint.getMergedConsumed().get(TEST_KEY_1).size(), 1);
         assertEquals(checkPoint.getMergedConsumed().get(TEST_KEY_1).getFirst().getStart().seq(), 1L);
         assertEquals(checkPoint.getMergedConsumed().get(TEST_KEY_1).getFirst().getEnd().seq(), 15L);
     }
-    
+
     @Test
     public void testTrimEdgeCases() {
         // Test with empty map
         checkPoint.trim();
         assertTrue(checkPoint.getMergedConsumed().isEmpty());
-        
+
         // Test with single range
         checkPoint.addKey(TEST_KEY_1, createRangeMap("1", 1L, 5L));
         checkPoint.trim();
-        
+
         assertEquals(checkPoint.getMergedConsumed().get(TEST_KEY_1).size(), 1);
         assertEquals(checkPoint.getMergedConsumed().get(TEST_KEY_1).getFirst().getStart().seq(), 1L);
         assertEquals(checkPoint.getMergedConsumed().get(TEST_KEY_1).getFirst().getEnd().seq(), 5L);
     }
-    
+
     @Test
     public void testSeqRangeMerge() {
         // Create a base range
         ConsumerCheckPoint.SeqRange range1 = new ConsumerCheckPoint.SeqRange();
         range1.setStart(new LongSeq(5, MessageMetadata.empty()));
         range1.setEnd(new LongSeq(10, MessageMetadata.empty()));
-        
+
         // Case 1: Merge with overlapping range (extends end)
         ConsumerCheckPoint.SeqRange range2 = new ConsumerCheckPoint.SeqRange();
         range2.setStart(new LongSeq(8, MessageMetadata.empty()));
         range2.setEnd(new LongSeq(15, MessageMetadata.empty()));
-        
+
         assertTrue(range1.merge(range2));
         assertEquals(range1.getStart().seq(), 5L);
         assertEquals(range1.getEnd().seq(), 15L);
         // Verify duplicated count: overlap is from 8 to 10 (3 values)
         assertEquals(range1.getDuplicated(), 3);
-        
+
         // Reset range1 for next test
         range1.setStart(new LongSeq(5, MessageMetadata.empty()));
         range1.setEnd(new LongSeq(10, MessageMetadata.empty()));
         range1.setDuplicated(0);
-        
+
         // Case 2: Merge with overlapping range (extends start)
         ConsumerCheckPoint.SeqRange range3 = new ConsumerCheckPoint.SeqRange();
         range3.setStart(new LongSeq(1, MessageMetadata.empty()));
         range3.setEnd(new LongSeq(7, MessageMetadata.empty()));
-        
+
         assertTrue(range1.merge(range3));
         assertEquals(range1.getStart().seq(), 1L);
         assertEquals(range1.getEnd().seq(), 10L);
         // Verify duplicated count: overlap is from 5 to 7 (3 values)
         assertEquals(range1.getDuplicated(), 3);
-        
+
         // Reset range1 for next test
         range1.setStart(new LongSeq(5, MessageMetadata.empty()));
         range1.setEnd(new LongSeq(10, MessageMetadata.empty()));
         range1.setDuplicated(0);
-        
+
         // Case 3: Merge with contained range (no change to bounds)
         ConsumerCheckPoint.SeqRange range4 = new ConsumerCheckPoint.SeqRange();
         range4.setStart(new LongSeq(6, MessageMetadata.empty()));
         range4.setEnd(new LongSeq(9, MessageMetadata.empty()));
-        
+
         assertTrue(range1.merge(range4));
         assertEquals(range1.getStart().seq(), 5L);
         assertEquals(range1.getEnd().seq(), 10L);
         // Verify duplicated count: overlap is from 6 to 9 (4 values)
         assertEquals(range1.getDuplicated(), 4);
-        
+
         // Case 4: Merge with non-overlapping range (should fail)
         ConsumerCheckPoint.SeqRange range5 = new ConsumerCheckPoint.SeqRange();
         range5.setStart(new LongSeq(20, MessageMetadata.empty()));
         range5.setEnd(new LongSeq(25, MessageMetadata.empty()));
-        
+
         assertFalse(range1.merge(range5));
         assertEquals(range1.getStart().seq(), 5L);
         assertEquals(range1.getEnd().seq(), 10L);
         // Verify duplicated count remains unchanged
         assertEquals(range1.getDuplicated(), 4);
-        
+
         // Case 5: Test with ranges that have existing duplicated counts
         range1.setStart(new LongSeq(5, MessageMetadata.empty()));
         range1.setEnd(new LongSeq(10, MessageMetadata.empty()));
         range1.setDuplicated(2);
-        
+
         ConsumerCheckPoint.SeqRange range6 = new ConsumerCheckPoint.SeqRange();
         range6.setStart(new LongSeq(8, MessageMetadata.empty()));
         range6.setEnd(new LongSeq(15, MessageMetadata.empty()));
         range6.setDuplicated(3);
-        
+
         assertTrue(range1.merge(range6));
         assertEquals(range1.getStart().seq(), 5L);
         assertEquals(range1.getEnd().seq(), 15L);
@@ -460,12 +460,12 @@ public class ConsumerCheckPointTest {
     public void testGetDuplicatedCountIncludesRangeDuplicates() {
         // Create a ConsumerCheckPoint instance
         ConsumerCheckPoint checkPoint = new ConsumerCheckPoint();
-        
+
         // Create a key and timestamp for our test
         String key = "testKey";
         String timestamp1 = "2023-01-01T10:00:00";
         String timestamp2 = "2023-01-01T10:01:00";
-        
+
         // Create two ranges with some overlap
         ConsumerCheckPoint.SeqRange range1 = new ConsumerCheckPoint.SeqRange();
         range1.setStart(new LongSeq(1, MessageMetadata.empty()));
@@ -487,18 +487,18 @@ public class ConsumerCheckPointTest {
         range2.setEnd(new LongSeq(15, MessageMetadata.empty()));
         // Set a pre-existing duplicated count in the range
         range2.setDuplicated(3);
-        
+
         // Add ranges to the checkpoint
         rangeMap.put(timestamp2, range2);
         checkPoint.addKey(key, rangeMap);
-        
+
         // Calculate duplicates
         checkPoint.calculate();
-        
+
         // Verify results
         duplicatedCount = checkPoint.getDuplicatedCount();
         assertTrue(duplicatedCount.containsKey(key));
-        
+
         // Expected duplicates:
         // - 3 from overlap between ranges (sequences 8, 9, 10)
         // - 5 from range1's pre-existing duplicated count
@@ -506,67 +506,67 @@ public class ConsumerCheckPointTest {
         // Total: 11
         assertEquals(duplicatedCount.get(key).longValue(), 11L);
     }
-    
+
     @Test
     public void testWriteDuplicatesSeqsCalculation() {
         // 1. Add regular consumed ranges
         checkPoint.addKey(TEST_KEY_1, createRangeMap("1", 1L, 10L));
         checkPoint.addKey(TEST_KEY_1, createRangeMap("3", 15L, 20L));
-        
+
         // 2. Add write duplicates or out of order ranges
         Map<String, ConsumerCheckPoint.SeqRange> writeDupsMap = new HashMap<>();
         ConsumerCheckPoint.SeqRange dupRange1 = new ConsumerCheckPoint.SeqRange();
         dupRange1.setStart(new LongSeq(3L, new MessageMetadata(-1L)));
         dupRange1.setEnd(new LongSeq(5L, new MessageMetadata(-1L)));
         writeDupsMap.put("4", dupRange1);
-        
+
         ConsumerCheckPoint.SeqRange dupRange2 = new ConsumerCheckPoint.SeqRange();
         dupRange2.setStart(new LongSeq(16L, new MessageMetadata(-1L)));
         dupRange2.setEnd(new LongSeq(18L, new MessageMetadata(-1L)));
         writeDupsMap.put("2", dupRange2);
-        
+
         // Add a range that won't be contained in any consumed range
         ConsumerCheckPoint.SeqRange dupRange3 = new ConsumerCheckPoint.SeqRange();
         dupRange3.setStart(new LongSeq(25L, new MessageMetadata(-1L)));
         dupRange3.setEnd(new LongSeq(30L, new MessageMetadata(-1L)));
         writeDupsMap.put("5", dupRange3);
-        
+
         checkPoint.addWriteDupsOrOutOrder(TEST_KEY_1, writeDupsMap);
-        
+
         // Calculate to populate writeDuplicatesSeqs
         checkPoint.calculate();
-        
+
         // Verify results
         Map<String, List<ConsumerCheckPoint.SeqRange>> writeDups = checkPoint.getWriteDuplicatesSeqs();
-        
+
         // Should have detected duplicates for TEST_KEY_1
         assertNotNull(writeDups.get(TEST_KEY_1));
-        
+
         // Should have found 2 containing ranges (for dupRange1 and dupRange2)
         assertEquals(writeDups.get(TEST_KEY_1).size(), 2);
-        
-        // Verify the first range (1-10) contains dupRange1 (3-5)
-        boolean foundFirstRange = false;
-        boolean foundSecondRange = false;
-        
+
+        // Verify the duplicate ranges are correctly identified
+        boolean foundFirstDupRange = false;
+        boolean foundSecondDupRange = false;
+
         for (ConsumerCheckPoint.SeqRange range : writeDups.get(TEST_KEY_1)) {
-            if (range.getStart().seq() == 1L && range.getEnd().seq() == 10L) {
-                foundFirstRange = true;
-            } else if (range.getStart().seq() == 15L && range.getEnd().seq() == 20L) {
-                foundSecondRange = true;
+            if (range.getStart().seq() == 3L && range.getEnd().seq() == 5L) {
+                foundFirstDupRange = true;
+            } else if (range.getStart().seq() == 16L && range.getEnd().seq() == 18L) {
+                foundSecondDupRange = true;
             }
         }
-        
-        assertTrue(foundFirstRange, "Should find the range 1-10 containing duplicate range 3-5");
-        assertTrue(foundSecondRange, "Should find the range 15-20 containing duplicate range 16-18");
-        
+
+        assertTrue(foundFirstDupRange, "Should find the duplicate range 3-5");
+        assertTrue(foundSecondDupRange, "Should find the duplicate range 16-18");
+
         // Verify that dupRange3 (25-30) was not detected as a duplicate since it's not contained in any consumed range
         for (ConsumerCheckPoint.SeqRange range : writeDups.get(TEST_KEY_1)) {
-            assertFalse(range.getStart().seq() == 25L && range.getEnd().seq() == 30L, 
+            assertFalse(range.getStart().seq() == 25L && range.getEnd().seq() == 30L,
                     "Should not find range 25-30 as it's not contained in any consumed range");
         }
     }
-    
+
     private Map<String, ConsumerCheckPoint.SeqRange> createRangeMap(String orderKey, Long start, Long end) {
         Map<String, ConsumerCheckPoint.SeqRange> rangeMap = new HashMap<>();
         ConsumerCheckPoint.SeqRange range = new ConsumerCheckPoint.SeqRange();
