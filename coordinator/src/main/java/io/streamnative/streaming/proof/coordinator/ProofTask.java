@@ -154,11 +154,11 @@ public class ProofTask {
         proofDriver.createTopic(proof.getTopic(), proof.getPartitions());
         startConsumers();
         startProducers();
-        scheduleCheckpoint();
-        log.info("Started the proof {}", proof);
         String formattedTimestamp = DateTimeFormatter.ISO_LOCAL_DATE_TIME
                 .format(LocalDateTime.now());
         proof.setStartTime(formattedTimestamp);
+        scheduleCheckpoint();
+        log.info("Started the proof {}", proof);
     }
 
     /**
