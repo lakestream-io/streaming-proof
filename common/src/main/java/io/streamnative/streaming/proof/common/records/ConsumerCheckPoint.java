@@ -158,7 +158,6 @@ public class ConsumerCheckPoint {
      * The outer map's key is the message key.
      * The inner map's key is the timestamp as a formatted date/time string.
      */
-    @JsonIgnore
     private final Map<String, SortedMap<String, SeqRange>> writeDupsOrOutOrder = new HashMap<>();
 
     /**
