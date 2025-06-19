@@ -21,6 +21,7 @@ package io.streamnative.streaming.proof.worker;
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.records.Driver;
 import io.streamnative.streaming.proof.driver.kafka.KafkaProofDriver;
+import io.streamnative.streaming.proof.driver.mqtt.MqttProofDriver;
 import io.streamnative.streaming.proof.driver.pulsar.PulsarProofDriver;
 import java.io.Closeable;
 import java.util.Map;
@@ -45,6 +46,8 @@ public class DriverCache implements Closeable {
             driver = new KafkaProofDriver();
         } else if ("pulsar".equals(d.driverType())) {
             driver = new PulsarProofDriver();
+        } else if ("mqtt".equals(d.driverType())) {
+            driver = new MqttProofDriver();
         } else {
             throw new IllegalArgumentException("Unsupported driver: " + d.driverType());
         }
