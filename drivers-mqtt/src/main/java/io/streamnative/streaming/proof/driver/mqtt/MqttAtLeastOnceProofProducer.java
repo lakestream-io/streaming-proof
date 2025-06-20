@@ -25,7 +25,9 @@ import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5PublishResult;
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofProducer;
 import java.util.concurrent.CompletableFuture;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 public class MqttAtLeastOnceProofProducer implements ProofProducer {
 
     private final Mqtt5AsyncClient client;
@@ -65,6 +67,9 @@ public class MqttAtLeastOnceProofProducer implements ProofProducer {
 
     @Override
     public void close() throws Exception {
-        //
+        if (client != null) {
+            client.disconnect();
+        }
+        log.info("[{}] Producer closed successfully", topic);
     }
 }

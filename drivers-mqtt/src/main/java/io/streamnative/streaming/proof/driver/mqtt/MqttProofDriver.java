@@ -233,12 +233,6 @@ public class MqttProofDriver implements ProofDriver {
     @Override
     public void close() {
         try {
-            if (consumerClient != null) {
-                consumerClient.disconnect();
-            }
-            if (producerClient != null) {
-                producerClient.disconnect();
-            }
             if (admin != null) {
                 admin.close();
             }

@@ -45,8 +45,8 @@ public class MqttAtLeastOnceProofConsumerTest {
         String consumerName = "test-consumer";
 
         MqttAtLeastOnceProofConsumer consumer = new MqttAtLeastOnceProofConsumer(
-                client, consumerName, "", messageListener);
-        
+                client, consumerName, "topic", messageListener);
+
         // Act
         consumer.close();
         

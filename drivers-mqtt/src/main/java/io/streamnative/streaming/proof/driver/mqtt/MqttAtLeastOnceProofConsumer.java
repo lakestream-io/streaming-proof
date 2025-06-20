@@ -34,47 +34,53 @@ import lombok.extern.slf4j.Slf4j;
 public class MqttAtLeastOnceProofConsumer implements ProofConsumer {
 
     private final String name;
+    private final String topic;
     private final Mqtt5BlockingClient client;
+    private final MessageListener callback;
 
     private volatile boolean closing = false;
-    
-    final Mqtt5BlockingClient.Mqtt5Publishes publishes;
 
     public MqttAtLeastOnceProofConsumer(Mqtt5BlockingClient client,
                                         String name, String topic, MessageListener callback) {
         this.name = name;
+        this.topic = topic;
         this.client = client;
-        this.publishes = client.publishes(MqttGlobalPublishFilter.ALL);
-        this.client.subscribeWith()
-                .topicFilter(topic)
-                .qos(MqttQos.AT_LEAST_ONCE)
-                .send();
-        try {
-            while (!closing) {
-                try {
-                    final Optional<Mqtt5Publish> receive = publishes.receive(30, TimeUnit.SECONDS);
-                    if (receive.isEmpty()) {
-                        continue; // No messages received, continue polling
-                    }
-                    final Mqtt5Publish mqtt5Publish = receive.get();
-                    String payload = new String(mqtt5Publish.getPayloadAsBytes());
-                    String key = payload.split(":")[0];
-                    long value = Long.parseLong(payload.split(":")[1]);
-                    callback.onMessage(key, value, MessageMetadata.empty());
-                    mqtt5Publish.acknowledge();
-                } catch (Exception e) {
-                    log.error("[{}] Exception occurred while consuming message", name, e);
-                }
-            }
-        } catch (Throwable t) {
-            log.error("[{}] Fatal error in consumer thread", name, t);
-        }
+        this.callback = callback;
     }
 
+    public void start() {
+        try (Mqtt5BlockingClient.Mqtt5Publishes publishes = client.publishes(MqttGlobalPublishFilter.ALL)) {
+            this.client.subscribeWith().topicFilter(topic).qos(MqttQos.AT_LEAST_ONCE).send();
+            try {
+                while (!closing) {
+                    try {
+                        final Optional<Mqtt5Publish> receive = publishes.receive(30, TimeUnit.SECONDS);
+                        if (receive.isEmpty()) {
+                            continue; // No messages received, continue polling
+                        }
+                        final Mqtt5Publish mqtt5Publish = receive.get();
+                        String payload = new String(mqtt5Publish.getPayloadAsBytes());
+                        String key = payload.split(":")[0];
+                        long value = Long.parseLong(payload.split(":")[1]);
+                        callback.onMessage(key, value, MessageMetadata.empty());
+                        mqtt5Publish.acknowledge();
+                    } catch (Exception e) {
+                        log.error("[{}] Exception occurred while consuming message", name, e);
+                    }
+                }
+            } catch (Throwable t) {
+                log.error("[{}] Fatal error in consumer thread", name, t);
+            }
+        }
+        log.info("[{}] Consumer started successfully", name);
+    }
 
     @Override
     public void close() throws Exception {
         closing = true;
+        if (client != null) {
+            client.disconnect();
+        }
         log.info("[{}] Consumer closed successfully", name);
     }
 
