@@ -20,6 +20,7 @@ package io.streamnative.streaming.proof.coordinator;
 
 import io.streamnative.streaming.proof.common.LongSeq;
 import io.streamnative.streaming.proof.common.ProofDriver;
+import io.streamnative.streaming.proof.common.WebhookNotificationService;
 import io.streamnative.streaming.proof.common.WorkerHttpClient;
 import io.streamnative.streaming.proof.common.records.Configs;
 import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
@@ -91,6 +92,9 @@ public class ProofTask {
 
     /** List of HTTP clients for communicating with worker nodes */
     private final List<WorkerHttpClient> clients;
+    
+    /** Service for sending webhook notifications */
+    private final WebhookNotificationService webhookService;
 
     /** Current checkpoint being verified */
     private ProducerCheckpoint inCheck = new ProducerCheckpoint();
@@ -134,6 +138,7 @@ public class ProofTask {
         this.configs = configs;
         this.clients = new ArrayList<>(configs.workers().size());
         this.proofDriver = driver;
+        this.webhookService = new WebhookNotificationService();
         configs.workers().forEach((k, v) -> {
             WorkerHttpClient client = new WorkerHttpClient(Dsl.asyncHttpClient(), v);
             clients.add(client);
@@ -259,6 +264,8 @@ public class ProofTask {
                     if (elapsedSeconds >= proof.getDuration()) {
                         log.info("Stopping proof task {} after reaching the specified duration of {} seconds",
                                 proof.getId(), proof.getDuration());
+                        // Send webhook notification for duration completion
+                        sendDurationCompletionNotification();
                         stop();
                         return;
                     }
@@ -382,6 +389,29 @@ public class ProofTask {
     }
 
     /**
+     * Sends webhook notification when proof duration is completed.
+     */
+    private void sendDurationCompletionNotification() {
+        if (proof.getWebhookConfig() != null && proof.getWebhookConfig().isEnabled()) {
+            try {
+                webhookService.sendProofTimeoutNotification(proof)
+                    .whenComplete((result, throwable) -> {
+                        if (throwable != null) {
+                            log.error("Failed to send duration completion webhook notification for proof {}", 
+                                    proof.getId(), throwable);
+                        } else {
+                            log.info("Successfully sent duration completion webhook notification for proof {}", 
+                                    proof.getId());
+                        }
+                    });
+            } catch (Exception e) {
+                log.error("Error sending duration completion webhook notification for proof {}", 
+                        proof.getId(), e);
+            }
+        }
+    }
+
+    /**
      * Stops the proof test execution.
      * Stops all producers and shuts down the executor service.
      */
@@ -395,6 +425,12 @@ public class ProofTask {
             }
         });
         executor.shutdown();
+        
+        // Close webhook service
+        if (webhookService != null) {
+            webhookService.close();
+        }
+        
         log.info("ProofTask {} stopped", proof.getId());
     }
 }

@@ -18,6 +18,7 @@
  */
 package io.streamnative.streaming.proof.common.records;
 
+import io.streamnative.streaming.proof.common.WebhookConfig;
 import java.util.List;
 import lombok.Builder;
 import lombok.Data;
@@ -152,4 +153,7 @@ public class Proof {
 
     /** Human-readable timestamp when the proof test started */
     private String startTime;
+    
+    /** Webhook configuration for notifications */
+    private WebhookConfig webhookConfig;
 }

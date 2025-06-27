@@ -1,0 +1,20 @@
+{
+  "name": "kafka-webhook-example",
+  "description": "Example proof test with Slack webhook notification",
+  "driver": "kafka",
+  "features": ["exactly-once", "ordering"],
+  "topic": "webhook-test-topic",
+  "partitions": 8,
+  "producers": 4,
+  "consumers": 4,
+  "msgRate": 1000,
+  "keys": 100,
+  "checkPointInterval": 30,
+  "timeout": 120,
+  "duration": 3600,
+  "webhookConfig": {
+    "url": "https://example.invalid/redacted-slack-webhook",
+    "type": "slack",
+    "enabled": true
+  }
+}

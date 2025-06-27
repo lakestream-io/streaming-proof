@@ -1,0 +1,20 @@
+{
+  "name": "pulsar-discord-webhook-example",
+  "description": "Example proof test with Discord webhook notification",
+  "driver": "pulsar",
+  "features": ["at-least-once"],
+  "topic": "discord-test-topic",
+  "partitions": 4,
+  "producers": 2,
+  "consumers": 2,
+  "msgRate": 500,
+  "keys": 50,
+  "checkPointInterval": 60,
+  "timeout": 180,
+  "duration": 1800,
+  "webhookConfig": {
+    "url": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+    "type": "discord",
+    "enabled": true
+  }
+}
