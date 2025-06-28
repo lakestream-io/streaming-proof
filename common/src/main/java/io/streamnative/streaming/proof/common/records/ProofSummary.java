@@ -19,10 +19,6 @@
 package io.streamnative.streaming.proof.common.records;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import io.streamnative.streaming.proof.common.LongSeq;
-import java.util.List;
-import java.util.Map;
-import org.apache.commons.lang3.tuple.Pair;
 
 /**
  * A summary record that captures the results and statistics of a streaming proof test execution.
@@ -72,9 +68,5 @@ public record ProofSummary(long verified,
                            int missed,
                            long duplicates,
                            long writeDuplicates,
-                           int timeouts,
-                           Map<String, List<LongSeq>> failedKeys,
-                           Map<String, List<ConsumerCheckPoint.SeqRange>> missedSeqs,
-                           Map<String, List<Pair<Long, Long>>> outOfOrderSeqs,
-                           Map<String, List<ConsumerCheckPoint.SeqRange>> writeDuplicatesSeqs) {
+                           int timeouts) {
 }

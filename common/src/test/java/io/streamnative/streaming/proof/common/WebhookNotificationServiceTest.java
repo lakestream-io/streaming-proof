@@ -92,11 +92,7 @@ class WebhookNotificationServiceTest {
                 0,      // missed
                 0L,     // duplicates
                 0L,     // writeDuplicates
-                0,      // timeouts
-                null,   // failedKeys
-                null,   // missedSeqs
-                null,   // outOfOrderSeqs
-                null    // writeDuplicatesSeqs
+                0       // timeouts
         );
         
         when(mockHttpClient.executeRequest(any(Request.class))).thenReturn(mockFuture);

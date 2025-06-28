@@ -19,6 +19,10 @@
 package io.streamnative.streaming.proof.common.records;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import io.streamnative.streaming.proof.common.LongSeq;
+import java.util.List;
+import java.util.Map;
+import org.apache.commons.lang3.tuple.Pair;
 
 /**
  * A comprehensive record that encapsulates the complete state and results of a streaming proof test.
@@ -30,6 +34,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *   <li>Configuration reference through the {@link Proof} component</li>
  *   <li>High-level results through the {@link ProofSummary} component</li>
  *   <li>Detailed verification data through the {@link Checkpoints} component</li>
+ *   <li>Detailed error and sequence information for debugging and analysis</li>
  * </ul>
  *
  * <p>Example usage:
@@ -37,7 +42,11 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * ProofDetails details = new ProofDetails(
  *     proof,           // test configuration
  *     summary,         // execution results
- *     checkpoints      // verification data
+ *     checkpoints,     // verification data
+ *     failedKeys,      // detailed error information
+ *     missedSeqs,      // missed sequence ranges
+ *     outOfOrderSeqs,  // out-of-order sequence pairs
+ *     writeDuplicatesSeqs // duplicate sequence ranges
  * );
  * }</pre>
  *
@@ -47,6 +56,14 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *               counts of verified messages, errors, and timing statistics
  * @param checkpoints Detailed checkpoint information tracking message processing
  *                   progress and verification states across producers and consumers
+ * @param failedKeys Detailed mapping of failed keys and their associated sequence numbers,
+ *                   providing granular error information for debugging
+ * @param missedSeqs Mapping of consumer identifiers to ranges of missed sequence numbers,
+ *                   indicating potential message loss patterns
+ * @param outOfOrderSeqs Mapping of consumer identifiers to pairs of out-of-order sequence numbers,
+ *                       showing specific ordering violations
+ * @param writeDuplicatesSeqs Mapping of producer identifiers to ranges of duplicate sequence numbers,
+ *                            indicating write-side duplication patterns
  *
  * @see Proof
  * @see ProofSummary
@@ -55,5 +72,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ProofDetails(Proof proof,
                            ProofSummary summary,
-                           Checkpoints checkpoints) {
+                           Checkpoints checkpoints,
+                           Map<String, List<LongSeq>> failedKeys,
+                           Map<String, List<ConsumerCheckPoint.SeqRange>> missedSeqs,
+                           Map<String, List<Pair<Long, Long>>> outOfOrderSeqs,
+                           Map<String, List<ConsumerCheckPoint.SeqRange>> writeDuplicatesSeqs) {
 }

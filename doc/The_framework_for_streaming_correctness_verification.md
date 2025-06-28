@@ -207,7 +207,7 @@ The framework exposes REST APIs for control and monitoring.
         ```
 *   `GET /proofs/{id}`: Get proof summary and results for a specific test.
     *   **Path Parameter:** `id` (string) - The unique ID of the proof test.
-    *   **Response Body:** (`application/json`) - Summary of the proof, potentially including aggregated results.
+    *   **Response Body:** (`application/json`) - Summary of the proof with high-level statistics.
         ```json
         {
           "id": "proof-abc-123",
@@ -219,18 +219,8 @@ The framework exposes REST APIs for control and monitoring.
             "outOfOrders": 2,
             "missed": 0,
             "duplicates": 5,
-            "timeouts": 0,
-            "failedKeys": {
-              "key1": [{ "seq": 42, "metadata": { "offset": 1024 } }]
-            },
-            "missedSeqs": {
-              "key2": [{ "start": { "seq": 100, "metadata": { "offset": 2000 } }, 
-                        "end": { "seq": 105, "metadata": { "offset": 2005 } }, 
-                        "duplicated": 0 }]
-            },
-            "outOfOrderSeqs": {
-              "key3": [[150, 145]]
-            }
+            "writeDuplicates": 0,
+            "timeouts": 0
           },
           "checkpoints": { 
              "latestProducer": {},
@@ -240,7 +230,7 @@ The framework exposes REST APIs for control and monitoring.
         ```
 *   `GET /proofs/{id}/details`: Get comprehensive details about a specific test.
     *   **Path Parameter:** `id` (string) - The unique ID of the proof test.
-    *   **Response Body:** (`application/json`) - Detailed information of proof test.
+    *   **Response Body:** (`application/json`) - Detailed information of proof test including comprehensive error details.
         ```json
         {
           "proof": {
@@ -265,22 +255,33 @@ The framework exposes REST APIs for control and monitoring.
             "outOfOrders": 2,
             "missed": 0,
             "duplicates": 5,
-            "timeouts": 0,
-            "failedKeys": {
-              "key1": [{ "seq": 42, "metadata": { "offset": 1024 } }]
-            },
-            "missedSeqs": {
-              "key2": [{ "start": { "seq": 100, "metadata": { "offset": 2000 } }, 
-                        "end": { "seq": 105, "metadata": { "offset": 2005 } }, 
-                        "duplicated": 0 }]
-            },
-            "outOfOrderSeqs": {
-              "key3": [[150, 145]]
-            }
+            "writeDuplicates": 0,
+            "timeouts": 0
           },
           "checkpoints": {
+             "inCheck": {},
              "latestProducer": {},
-             "latestConsumer": {}
+             "latestConsumer": {},
+             "verifiedProducer": {},
+             "verifiedConsumer": {},
+             "failedProducer": {},
+             "failedConsumer": {}
+          },
+          "failedKeys": {
+            "key1": [{ "seq": 42, "metadata": { "offset": 1024 } }]
+          },
+          "missedSeqs": {
+            "key2": [{ "start": { "seq": 100, "metadata": { "offset": 2000 } }, 
+                      "end": { "seq": 105, "metadata": { "offset": 2005 } }, 
+                      "duplicated": 0 }]
+          },
+          "outOfOrderSeqs": {
+            "key3": [[150, 145]]
+          },
+          "writeDuplicatesSeqs": {
+            "key4": [{ "start": { "seq": 200, "metadata": { "offset": 3000 } }, 
+                      "end": { "seq": 205, "metadata": { "offset": 3005 } }, 
+                      "duplicated": 0 }]
           }
         }
         ```
@@ -482,3 +483,39 @@ The framework exposes REST APIs for control and monitoring.
 
 *   `POST /consumers/stop/{id}`: Stop consumer instances.
     *   **Path Parameter:** `id` (string) - The `proofId`.
+
+## 7. Data Structure Design
+
+The framework uses a two-tier data structure approach to provide both high-level summaries and detailed error information:
+
+### 7.1. ProofSummary
+The `ProofSummary` provides high-level statistics for quick monitoring and overview:
+- `verified`: Total number of messages successfully verified
+- `errors`: Count of errors encountered during message processing
+- `outOfOrders`: Number of messages received out of their expected sequence
+- `missed`: Count of messages that were expected but never received
+- `duplicates`: Number of messages that were received multiple times
+- `writeDuplicates`: Number of write-side duplicate messages
+- `timeouts`: Count of timeout events during message processing
+
+### 7.2. ProofDetails
+The `ProofDetails` provides comprehensive information including:
+- `proof`: The original test configuration
+- `summary`: The ProofSummary object with high-level statistics
+- `checkpoints`: Complete checkpoint information from all producers and consumers
+- `failedKeys`: Detailed mapping of failed keys and their associated sequence numbers
+- `missedSeqs`: Mapping of consumer identifiers to ranges of missed sequence numbers
+- `outOfOrderSeqs`: Mapping of consumer identifiers to pairs of out-of-order sequence numbers
+- `writeDuplicatesSeqs`: Mapping of producer identifiers to ranges of duplicate sequence numbers
+
+### 7.3. Design Rationale
+This separation provides several benefits:
+- **Performance**: The summary endpoint (`GET /proofs/{id}`) returns quickly with essential statistics
+- **Scalability**: Detailed error information is only computed when explicitly requested
+- **Clarity**: Clear distinction between high-level monitoring and detailed debugging information
+- **Flexibility**: Different use cases can access appropriate levels of detail
+
+### 7.4. Usage Guidelines
+- Use `GET /proofs/{id}` for real-time monitoring and dashboard displays
+- Use `GET /proofs/{id}/details` for detailed analysis, debugging, and comprehensive reporting
+- The detailed endpoint is particularly useful for investigating specific error patterns and sequence violations

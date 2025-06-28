@@ -195,6 +195,11 @@ public class Coordinator {
      */
     public ProofDetails getProofDetails(String proofID) {
         ProofTask task = proofs.get(proofID);
+        return task.getDetails();
+    }
+
+    public ProofDetails getProofSummary(String proofID) {
+        ProofTask task = proofs.get(proofID);
         Checkpoints checkpoints = new Checkpoints(
                 task.getInCheck(),
                 task.getLatestProducerCheckpoint(),
@@ -203,12 +208,7 @@ public class Coordinator {
                 task.getLastVerifiedConsumerCheckpoint(),
                 task.getLastFailedProducerCheckpoint(),
                 task.getLastFailedConsumerCheckpoint());
-        return new ProofDetails(task.getProof(), task.getSummary(), checkpoints);
-    }
-
-    public ProofDetails getProofSummary(String proofID) {
-        ProofTask task = proofs.get(proofID);
-        return new ProofDetails(task.getProof(), task.getSummary(), null);
+        return new ProofDetails(task.getProof(), task.getSummary(), checkpoints, null, null, null, null);
     }
 
     /**

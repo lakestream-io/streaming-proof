@@ -22,12 +22,14 @@ import io.streamnative.streaming.proof.common.LongSeq;
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.WebhookNotificationService;
 import io.streamnative.streaming.proof.common.WorkerHttpClient;
+import io.streamnative.streaming.proof.common.records.Checkpoints;
 import io.streamnative.streaming.proof.common.records.Configs;
 import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
 import io.streamnative.streaming.proof.common.records.NewConsumers;
 import io.streamnative.streaming.proof.common.records.NewProducers;
 import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
 import io.streamnative.streaming.proof.common.records.Proof;
+import io.streamnative.streaming.proof.common.records.ProofDetails;
 import io.streamnative.streaming.proof.common.records.ProofSummary;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -339,17 +341,6 @@ public class ProofTask {
     public ProofSummary getSummary() {
         long verified = this.getLastVerifiedProducerCheckpoint().getPublished().values().stream()
                 .mapToLong(LongSeq::seq).sum();
-        Map<String, List<LongSeq>> failedKeys = new HashMap<>();
-        if (failed) {
-            latestConsumerCheckpoint.calculate();
-            inCheck.getPublished().forEach((k, v) -> {
-                LongSeq consumerLongSeq = latestConsumerCheckpoint.getLastSeq(k);
-                if (consumerLongSeq != null
-                        && v.compareTo(consumerLongSeq) > 0) {
-                    failedKeys.put(k, List.of(v, consumerLongSeq));
-                }
-            });
-        }
         ConsumerCheckPoint lastVerifiedConsumerCheckpoint = this.getLastVerifiedConsumerCheckpoint();
         lastVerifiedConsumerCheckpoint.calculate();
         return new ProofSummary(
@@ -372,7 +363,44 @@ public class ProofTask {
                                 .map(range -> range.getEnd().seq() - range.getStart().seq() - 1))
                         .mapToInt(Long::intValue)
                         .sum(),
-                this.getTimeouts(),
+                this.getTimeouts());
+    }
+
+    /**
+     * Generates detailed proof test execution results including summary and detailed error information.
+     *
+     * @return A ProofDetails containing comprehensive verification data
+     */
+    public ProofDetails getDetails() {
+        ProofSummary summary = getSummary();
+        Map<String, List<LongSeq>> failedKeys = new HashMap<>();
+        if (failed) {
+            latestConsumerCheckpoint.calculate();
+            inCheck.getPublished().forEach((k, v) -> {
+                LongSeq consumerLongSeq = latestConsumerCheckpoint.getLastSeq(k);
+                if (consumerLongSeq != null
+                        && v.compareTo(consumerLongSeq) > 0) {
+                    failedKeys.put(k, List.of(v, consumerLongSeq));
+                }
+            });
+        }
+        ConsumerCheckPoint lastVerifiedConsumerCheckpoint = this.getLastVerifiedConsumerCheckpoint();
+        lastVerifiedConsumerCheckpoint.calculate();
+        
+        Checkpoints checkpoints = new Checkpoints(
+                this.inCheck,
+                this.latestProducerCheckpoint,
+                this.latestConsumerCheckpoint,
+                this.getLastVerifiedProducerCheckpoint(),
+                lastVerifiedConsumerCheckpoint,
+                this.lastFailedProducerCheckpoint,
+                this.lastFailedConsumerCheckpoint
+        );
+        
+        return new ProofDetails(
+                proof,
+                summary,
+                checkpoints,
                 failedKeys,
                 lastVerifiedConsumerCheckpoint.getMissedSeqs(),
                 lastVerifiedConsumerCheckpoint.getOutOfOrderSeqs(),
