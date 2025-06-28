@@ -144,7 +144,7 @@ The verification process follows these steps:
 #### 5.4.7. Practical Applications
 These verification mechanisms are crucial for validating:
 - At-least-once delivery : Ensures no messages are missed (no gaps in sequence) and messages are processed in sequence order
-- Exactly-once processing : Ensures no duplicates are processed (not implemented yet)
+- Exactly-once processing : Ensures no duplicates are processed through embedded transactional processors
 
 ## 6. API Definitions
 
@@ -519,3 +519,101 @@ This separation provides several benefits:
 - Use `GET /proofs/{id}` for real-time monitoring and dashboard displays
 - Use `GET /proofs/{id}/details` for detailed analysis, debugging, and comprehensive reporting
 - The detailed endpoint is particularly useful for investigating specific error patterns and sequence violations
+
+## 8. Exactly-Once Semantics Verification
+
+The streaming-proof framework supports verification of Kafka's exactly-once transaction semantics through embedded transactional processors. This feature ensures that messages are processed exactly once, with no duplicates or data loss.
+
+### 8.1. How It Works
+
+When the `exactly_once` feature is enabled, the framework automatically:
+
+1. **Producers write to input topic**: `{topic}_transactional`
+2. **Embedded transactional processor**: Reads from input topic and writes to output topic atomically
+3. **Consumers read from output topic**: `{topic}` for verification
+4. **Verification**: Standard `ProofConsumerTask` verifies exactly-once semantics
+
+```
+Producer → {topic}_transactional → TransactionalProcessor → {topic} → Consumer
+```
+
+### 8.2. Usage
+
+#### 8.2.1. Enable Exactly-Once in Proof Configuration
+
+```json
+{
+  "name": "kafka-exactly-once-test",
+  "driver": "kafka",
+  "features": ["exactly_once"],
+  "topic": "test-topic",
+  "partitions": 10,
+  "producers": 4,
+  "consumers": 4,
+  "msgRate": 1000
+}
+```
+
+#### 8.2.2. Coordinator API Test
+
+```java
+@Test
+public void testExactlyOnceVerification() throws Exception {
+    Proof proof = Proof.builder()
+        .name("exactly-once-test")
+        .driver("kafka_driver")
+        .features(List.of("exactly_once"))  // Enable exactly-once
+        .keys(100)
+        .partitions(10)
+        .producers(4)
+        .consumers(4)
+        .build();
+    
+    // Framework automatically handles transactional processing
+    httpClient.createProof(proof).join();
+}
+```
+
+### 8.3. What Gets Verified
+
+The exactly-once verification tests:
+
+- **Atomicity**: Consumer offsets and producer messages are committed together
+- **No duplicates**: Each message appears exactly once in the output topic
+- **No data loss**: All input messages appear in the output topic
+- **Partition ordering**: Messages maintain their partition ordering
+- **Transaction isolation**: Only committed transactions are visible to consumers
+
+### 8.4. Implementation Details
+
+- **Automatic setup**: No manual configuration of transactional processors needed
+- **Embedded processors**: One transactional processor per producer instance
+- **Same partition processing**: Maintains message ordering within partitions
+- **Standard verification**: Existing consumer verification logic unchanged
+- **Kafka-specific**: Only works with Kafka driver
+
+### 8.5. Architecture Components for Exactly-Once
+
+#### 8.5.1. KafkaExactlyOnceProofProducer
+- Embeds a `KafkaTransactionalProcessor` instance
+- Sends messages to the input topic (`{topic}_transactional`)
+- Automatically starts the embedded processor for read-process-write operations
+
+#### 8.5.2. KafkaTransactionalProcessor
+- Implements the read-process-write pattern for exactly-once semantics
+- Consumes from input topic and produces to output topic atomically
+- Commits consumer offsets and producer messages in the same transaction
+- Ensures proper transaction lifecycle (start before consume, commit after write)
+
+#### 8.5.3. Topic Flow
+- **Input Topic**: `{topic}_transactional` - where producers send messages
+- **Output Topic**: `{topic}` - where consumers read verified messages
+- **Automatic Creation**: Both topics are created automatically when exactly-once is enabled
+
+### 8.6. Benefits
+
+- **Simple configuration**: Just add `exactly_once` to features list
+- **Framework integration**: Works seamlessly with existing proof tests
+- **True exactly-once testing**: Tests the complete read-process-write pattern
+- **Production-like**: Uses the same patterns as real exactly-once applications
+- **Type-safe architecture**: Eliminates fragile reflection-based instantiation

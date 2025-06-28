@@ -158,7 +158,14 @@ public class ProofTask {
      * </ul>
      */
     public void start() {
+        // Create output topic (consumers read from this)
         proofDriver.createTopic(proof.getTopic(), proof.getPartitions());
+        
+        // For exactly-once verification, also create input topic for transactional processing
+        if (proof.getFeatures().contains("exactly_once")) {
+            proofDriver.createTopic(proof.getTopic() + "_transactional", proof.getPartitions());
+        }
+        
         startConsumers();
         startProducers();
         String formattedTimestamp = DateTimeFormatter.ISO_LOCAL_DATE_TIME
@@ -230,7 +237,8 @@ public class ProofTask {
                     keyCount,
                     msgRate,
                     driverName,
-                    configs.drivers().get(driverName)
+                    configs.drivers().get(driverName),
+                    proof.getFeatures().contains("exactly_once")
             );
             try {
                 clients.get(i).startProducers(record).join();

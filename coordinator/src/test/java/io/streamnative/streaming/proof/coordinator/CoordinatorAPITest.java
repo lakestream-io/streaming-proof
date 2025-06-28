@@ -75,6 +75,8 @@ public class CoordinatorAPITest {
         props.put("log.dirs", kafkaLogDir);
         props.put("default.replication.factor", 1);
         props.put("offsets.topic.replication.factor", "1");
+        props.put("transaction.state.log.replication.factor", "1");
+        props.put("transaction.state.log.min.isr", "1");
         KafkaConfig config = new KafkaConfig(props);
         kafkaServer = new KafkaServer(config, Time.SYSTEM, scala.Option.empty(), false);
         kafkaServer.startup();
@@ -372,6 +374,43 @@ public class CoordinatorAPITest {
         // Clean up
         httpClient.stopProof(proofs.getFirst().getId()).join();
         httpClient.deleteProof(proofs.getFirst().getId()).join();
+    }
+
+    @Test()
+    public void testExactlyOnceVerification() throws Exception {
+        Configs configs = new Configs(Map.of("worker1", "http://localhost:" + workerPort), Map.of("kafka_driver",
+                new Driver("kafka", Map.of("bootstrap.servers", "localhost:" + kafkaPort))));
+        httpClient.putConfigs(configs).join();
+        Configs configs1 = httpClient.getConfigs().join();
+        assertEquals(configs1, configs);
+        
+        Proof proof = Proof.builder()
+                .name(UUID.randomUUID().toString())
+                .driver("kafka_driver")
+                .keys(100)
+                .partitions(10)
+                .producers(4)
+                .consumers(4)
+                .features(List.of("exactly_once")) // Test exactly-once semantics
+                .checkPointInterval(5)
+                .msgRate(1000)
+                .timeout(180)
+                .build();
+        httpClient.createProof(proof).join();
+        List<Proof> proofs = httpClient.listProofs().join();
+        assertEquals(proofs.size(), 1);
+        
+        Awaitility.await().atMost(1, TimeUnit.MINUTES).untilAsserted(() -> {
+            ProofDetails details = httpClient.getProof(proofs.getFirst().getId()).join();
+            assertTrue(details.summary().verified() > 0);
+        });
+        
+        httpClient.stopProof(proofs.getFirst().getId()).join();
+        List<Proof> proofs2 = httpClient.listProofs().join();
+        assertEquals(proofs2.size(), 1);
+        httpClient.deleteProof(proofs.getFirst().getId()).join();
+        List<Proof> proofs3 = httpClient.listProofs().join();
+        assertEquals(proofs3.size(), 0);
     }
 
     private static int getFreePort() {

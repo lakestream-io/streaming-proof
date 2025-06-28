@@ -55,9 +55,10 @@ public class Util {
      * <ul>
      *   <li>{@code at_least_once}: Validates at-least-once message delivery semantics</li>
      *   <li>{@code ordering}: Validates message ordering guarantees</li>
+     *   <li>{@code exactly_once}: Validates exactly-once semantics using transactional processors</li>
      * </ul>
      */
-    public static final Set<String> SUPPORTED_PROOF_FEATS = Set.of("at_least_once", "ordering");
+    public static final Set<String> SUPPORTED_PROOF_FEATS = Set.of("at_least_once", "ordering", "exactly_once");
 
     /**
      * REST API endpoints for proof management operations.
@@ -108,4 +109,5 @@ public class Util {
     public static final String CONSUMER_CHECKPOINTS_DETAILS = "/consumers/checkpoints/{id}/details";
     /** Endpoint to stop a running consumer */
     public static final String STOP_CONSUMER = "/consumers/stop/{id}";
+
 }

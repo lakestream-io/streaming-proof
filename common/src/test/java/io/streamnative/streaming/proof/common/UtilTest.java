@@ -65,9 +65,10 @@ public class UtilTest {
     public void testSupportedProofFeatures() {
         // Verify that the SUPPORTED_PROOF_FEATS set contains the expected values
         Set<String> supportedFeatures = Util.SUPPORTED_PROOF_FEATS;
-        assertEquals(supportedFeatures.size(), 2);
+        assertEquals(supportedFeatures.size(), 3);
         assertTrue(supportedFeatures.contains("at_least_once"));
         assertTrue(supportedFeatures.contains("ordering"));
+        assertTrue(supportedFeatures.contains("exactly_once"));
     }
 
     @Test

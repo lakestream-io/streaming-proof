@@ -29,30 +29,43 @@ import io.streamnative.streaming.proof.common.ProofProducer;
  * and manage producer instances that will generate test messages with specific patterns
  * and rates.
  *
+ * <p>When {@code transactional} is true, each producer will:
+ * <ul>
+ *   <li>Write messages to input topic ({topic}_transactional)</li>
+ *   <li>Start an embedded transactional processor</li>
+ *   <li>The processor will read from input topic and write to output topic ({topic}) atomically</li>
+ *   <li>Consumers will read from output topic for exactly-once verification</li>
+ * </ul>
+ *
  * <p>Example usage:
  * <pre>{@code
  * Driver kafkaDriver = new Driver("kafka", kafkaConfigs);
  * NewProducers producers = new NewProducers(
  *     "proof-123",      // unique identifier
- *     "test-topic",     // topic to produce to
+ *     "test-topic",     // topic name (output topic)
  *     4,                // number of producer instances
  *     100,              // number of unique message keys
  *     1000,             // message rate (msgs/sec)
- *     kafkaDriver       // messaging system driver
+ *     "kafka",          // driver name
+ *     kafkaDriver,      // messaging system driver
+ *     true              // enable transactional processing
  * );
  * }</pre>
  *
  * @param id A unique identifier for this group of producers, typically matching
  *          the proof test ID they belong to
- * @param topic The name of the topic to which these producers will send messages
+ * @param topic The base topic name. If transactional=true, producers write to {topic}_transactional
+ *             and consumers read from {topic}. If transactional=false, both write to and read from {topic}
  * @param producers The number of producer instances to create, enabling parallel
  *                 message production for higher throughput
  * @param keys The number of unique message keys to use across all producers,
  *            affecting the distribution and partitioning of messages
  * @param msgRate The target message production rate in messages per second,
  *               distributed across all producer instances
+ * @param driverName The name of the messaging system driver
  * @param driver The messaging system driver configuration that specifies how to
  *              create and configure the producer instances
+ * @param transactional If true, enables exactly-once processing using embedded transactional processors
  *
  * @see Driver
  * @see ProofProducer
@@ -64,5 +77,6 @@ public record NewProducers(String id,
                            int keys,
                            int msgRate,
                            String driverName,
-                           Driver driver) {
+                           Driver driver,
+                           boolean transactional) {
 }
