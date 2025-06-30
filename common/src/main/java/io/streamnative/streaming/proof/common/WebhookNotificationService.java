@@ -23,7 +23,9 @@ import io.streamnative.streaming.proof.common.records.Proof;
 import io.streamnative.streaming.proof.common.records.ProofSummary;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
@@ -144,7 +146,17 @@ public class WebhookNotificationService {
         
         switch (type.toLowerCase()) {
             case "slack":
-                payload.put("text", message);
+                List<Map<String, Object>> blocks = new ArrayList<>();
+                Map<String, Object> section = new HashMap<>();
+                section.put("type", "section");
+                
+                Map<String, Object> text = new HashMap<>();
+                text.put("type", "mrkdwn");
+                text.put("text", message);
+                section.put("text", text);
+                
+                blocks.add(section);
+                payload.put("blocks", blocks);
                 break;
             case "discord":
                 payload.put("content", message);
