@@ -267,7 +267,7 @@ public class ProofTask {
                         log.info("Stopping proof task {} after reaching the specified duration of {} seconds",
                                 proof.getId(), proof.getDuration());
                         // Send webhook notification for duration completion
-                        sendDurationCompletionNotification();
+                        sendCompletionNotification(getSummary());
                         stop();
                         return;
                     }
@@ -417,23 +417,25 @@ public class ProofTask {
     }
 
     /**
-     * Sends webhook notification when proof duration is completed.
+     * Sends webhook notification when proof test completes with results.
+     *
+     * @param summary The proof execution summary
      */
-    private void sendDurationCompletionNotification() {
+    public void sendCompletionNotification(ProofSummary summary) {
         if (proof.getWebhookConfig() != null && proof.getWebhookConfig().isEnabled()) {
             try {
-                webhookService.sendProofTimeoutNotification(proof)
-                    .whenComplete((result, throwable) -> {
-                        if (throwable != null) {
-                            log.error("Failed to send duration completion webhook notification for proof {}", 
-                                    proof.getId(), throwable);
-                        } else {
-                            log.info("Successfully sent duration completion webhook notification for proof {}", 
-                                    proof.getId());
-                        }
-                    });
+                webhookService.sendProofCompletionNotification(proof, summary)
+                        .whenComplete((result, throwable) -> {
+                            if (throwable != null) {
+                                log.error("Failed to send completion webhook notification for proof {}",
+                                        proof.getId(), throwable);
+                            } else {
+                                log.info("Successfully sent completion webhook notification for proof {}",
+                                        proof.getId());
+                            }
+                        });
             } catch (Exception e) {
-                log.error("Error sending duration completion webhook notification for proof {}", 
+                log.error("Error sending completion webhook notification for proof {}",
                         proof.getId(), e);
             }
         }
