@@ -180,29 +180,29 @@ public class WebhookNotificationService {
      */
     private String buildCompletionMessage(Proof proof, ProofSummary summary) {
         StringBuilder message = new StringBuilder();
-        message.append("🎯 **Streaming Proof Test Completed**\n\n");
-        message.append("**Proof ID:** ").append(proof.getId()).append("\n");
-        message.append("**Name:** ").append(proof.getName()).append("\n");
-        message.append("**Driver:** ").append(proof.getDriver()).append("\n");
-        message.append("**Topic:** ").append(proof.getTopic()).append("\n");
-        message.append("**Duration:** ").append(proof.getDuration()).append(" seconds\n");
-        message.append("**Start Time:** ").append(proof.getStartTime()).append("\n");
-        message.append("**Completion Time:** ")
+        message.append("Streaming Proof Test Completed\n\n");
+        message.append("Proof ID: ").append(proof.getId()).append("\n");
+        message.append("Name: ").append(proof.getName()).append("\n");
+        message.append("Driver: ").append(proof.getDriver()).append("\n");
+        message.append("Topic: ").append(proof.getTopic()).append("\n");
+        message.append("Duration: ").append(proof.getDuration()).append(" seconds\n");
+        message.append("Start Time: ").append(proof.getStartTime()).append("\n");
+        message.append("Completion Time: ")
                 .append(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
                 .append("\n\n");
         
         if (summary != null) {
             boolean isSuccess = summary.errors() == 0 && summary.outOfOrders() == 0 && summary.missed() == 0;
-            message.append("**Status:** ").append(isSuccess ? "✅ SUCCESS" : "❌ FAILED").append("\n");
-            message.append("**Verified:** ").append(summary.verified()).append("\n");
+            message.append("Status: ").append(isSuccess ? "✅ SUCCESS" : "❌ FAILED").append("\n");
+            message.append("Verified: ").append(summary.verified()).append("\n");
             if (summary.errors() > 0) {
-                message.append("**Errors:** ").append(summary.errors()).append("\n");
+                message.append("Errors: ").append(summary.errors()).append("\n");
             }
             if (summary.outOfOrders() > 0) {
-                message.append("**Out of Orders:** ").append(summary.outOfOrders()).append("\n");
+                message.append("Out of Orders: ").append(summary.outOfOrders()).append("\n");
             }
             if (summary.missed() > 0) {
-                message.append("**Missed:** ").append(summary.missed()).append("\n");
+                message.append("Missed: ").append(summary.missed()).append("\n");
             }
         }
         
