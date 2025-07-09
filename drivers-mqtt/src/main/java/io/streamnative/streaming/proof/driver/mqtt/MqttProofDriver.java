@@ -18,6 +18,8 @@
  */
 package io.streamnative.streaming.proof.driver.mqtt;
 
+import static com.google.common.base.Preconditions.checkArgument;
+
 import com.hivemq.client.mqtt.mqtt5.Mqtt5AsyncClient;
 import com.hivemq.client.mqtt.mqtt5.Mqtt5BlockingClient;
 import com.hivemq.client.mqtt.mqtt5.Mqtt5Client;
@@ -25,11 +27,10 @@ import io.streamnative.streaming.proof.common.MessageListener;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.ProofProducer;
-import java.net.URI;
-import java.net.URL;
 import java.util.Map;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.policies.data.TenantInfo;
@@ -44,7 +45,7 @@ public class MqttProofDriver implements ProofDriver {
     private static final String PULSAR_ADMIN_URL = "pulsar.admin.url";
 
     /** Configuration key for authentication token */
-    private static final String MQTT_AUTH_TOKEN = "mqtt.auth.token";
+    private static final String PULSAR_CLIENT_AUTH_TOKEN = "pulsar.client.auth.token";
 
     /** Default namespace for topics */
     private static final String DEFAULT_NAMESPACE = "public/default";
@@ -68,23 +69,33 @@ public class MqttProofDriver implements ProofDriver {
     @Override
     public void init(Map<String, Object> configs) {
         try {
-            String serviceUrl = (String) configs.getOrDefault(MQTT_SERVICE_URL, "http://localhost:5683");
+            String serviceUrl = (String) configs.getOrDefault(MQTT_SERVICE_URL, "mqtt://localhost:5683");
             String adminUrl = (String) configs.getOrDefault(PULSAR_ADMIN_URL, "http://localhost:8080");
-            String authToken = (String) configs.get(MQTT_AUTH_TOKEN);
+            String authToken = (String) configs.get(PULSAR_CLIENT_AUTH_TOKEN);
 
-            URL url = new URI(serviceUrl).toURL();
+            checkArgument(StringUtils.isNotBlank(serviceUrl), "Missing '" + MQTT_SERVICE_URL + "' parameter");
+            checkArgument(StringUtils.isNotBlank(adminUrl), "Missing '" + PULSAR_ADMIN_URL + "' parameter");
+            checkArgument(StringUtils.isNotBlank(authToken), "Missing '" + PULSAR_CLIENT_AUTH_TOKEN + "' parameter");
+
+            if (serviceUrl.contains("://")) {
+                serviceUrl = serviceUrl.split("://")[1];
+            }
+            String host = serviceUrl.split(":")[0];
+            int port = Integer.parseInt(serviceUrl.split(":")[1]);
 
             this.consumerClient = Mqtt5Client.builder()
                     .identifier(UUID.randomUUID().toString())
-                    .serverHost(url.getHost())
-                    .serverPort(url.getPort())
+                    .serverHost(host)
+                    .serverPort(port)
+                    .sslWithDefaultConfig()
                     .buildBlocking();
 
             consumerClient.connect();
             this.producerClient = Mqtt5Client.builder()
                     .identifier(UUID.randomUUID().toString())
-                    .serverHost(url.getHost())
-                    .serverPort(url.getPort())
+                    .serverHost(host)
+                    .serverPort(port)
+                    .sslWithDefaultConfig()
                     .buildAsync();
 
             producerClient.connect();

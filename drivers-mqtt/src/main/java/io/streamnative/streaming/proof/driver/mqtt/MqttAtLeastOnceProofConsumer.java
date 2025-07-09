@@ -62,7 +62,7 @@ public class MqttAtLeastOnceProofConsumer implements ProofConsumer {
                         String payload = new String(mqtt5Publish.getPayloadAsBytes());
                         String key = payload.split(":")[0];
                         long value = Long.parseLong(payload.split(":")[1]);
-                        callback.onMessage(key, value, MessageMetadata.empty());
+                        callback.onMessage(key, value, new MessageMetadata(value));
                         mqtt5Publish.acknowledge();
                     } catch (Exception e) {
                         log.error("[{}] Exception occurred while consuming message", name, e);

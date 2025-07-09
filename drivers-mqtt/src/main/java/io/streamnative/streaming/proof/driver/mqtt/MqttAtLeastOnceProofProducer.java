@@ -55,7 +55,7 @@ public class MqttAtLeastOnceProofProducer implements ProofProducer {
                 if (throwable != null) {
                     future.completeExceptionally(throwable);
                 } else {
-                    future.complete(MessageMetadata.empty());
+                    future.complete(new MessageMetadata(value));
                 }
             });
         } catch (Exception e) {
