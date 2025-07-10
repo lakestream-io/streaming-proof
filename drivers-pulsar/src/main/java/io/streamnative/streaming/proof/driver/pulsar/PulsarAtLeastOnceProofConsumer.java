@@ -95,7 +95,7 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
 
         ConsumerBuilder<Long> consumerBuilder = client.newConsumer(Schema.INT64)
                 .topic(topic)
-                .subscriptionName("streaming-proof-" + name)
+                .subscriptionName("streaming-proof")
                 .subscriptionType(SubscriptionType.Failover)
                 .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest);
 
