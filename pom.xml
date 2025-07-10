@@ -61,7 +61,7 @@
         <maven-assembly-plugin.version>3.7.1</maven-assembly-plugin.version>
         <maven-dependency-plugin.version>3.8.1</maven-dependency-plugin.version>
         <dockerfile-maven.version>0.46.0</dockerfile-maven.version>
-        <kafka.version>3.7.1</kafka.version>
+        <kafka.version>3.7.2</kafka.version>
         <curator.version>5.8.0</curator.version>
         <awaitility.version>4.3.0</awaitility.version>
         <mockito.version>5.17.0</mockito.version>
