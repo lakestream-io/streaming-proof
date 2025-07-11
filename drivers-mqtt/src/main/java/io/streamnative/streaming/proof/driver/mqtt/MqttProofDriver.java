@@ -20,7 +20,6 @@ package io.streamnative.streaming.proof.driver.mqtt;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
-import com.hivemq.client.mqtt.mqtt5.Mqtt5AsyncClient;
 import com.hivemq.client.mqtt.mqtt5.Mqtt5BlockingClient;
 import com.hivemq.client.mqtt.mqtt5.Mqtt5Client;
 import io.streamnative.streaming.proof.common.MessageListener;
@@ -56,7 +55,7 @@ public class MqttProofDriver implements ProofDriver {
 
     private Mqtt5BlockingClient consumerClient;
 
-    private Mqtt5AsyncClient producerClient;
+    private Mqtt5BlockingClient producerClient;
 
     /** Pulsar admin client for topic management */
     private PulsarAdmin admin;
@@ -96,7 +95,7 @@ public class MqttProofDriver implements ProofDriver {
                     .serverHost(host)
                     .serverPort(port)
                     .sslWithDefaultConfig()
-                    .buildAsync();
+                    .buildBlocking();
 
             producerClient.connect();
 

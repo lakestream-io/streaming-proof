@@ -19,7 +19,7 @@
 package io.streamnative.streaming.proof.driver.mqtt;
 
 import com.hivemq.client.mqtt.datatypes.MqttQos;
-import com.hivemq.client.mqtt.mqtt5.Mqtt5AsyncClient;
+import com.hivemq.client.mqtt.mqtt5.Mqtt5BlockingClient;
 import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5Publish;
 import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5PublishResult;
 import io.streamnative.streaming.proof.common.MessageMetadata;
@@ -30,34 +30,26 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class MqttAtLeastOnceProofProducer implements ProofProducer {
 
-    private final Mqtt5AsyncClient client;
+    private final Mqtt5BlockingClient client;
     
     private final String topic;
 
-    public MqttAtLeastOnceProofProducer(Mqtt5AsyncClient client, String topic) {
+    public MqttAtLeastOnceProofProducer(Mqtt5BlockingClient client, String topic) {
         this.client = client;
-        this.client.connect();
         this.topic = topic;
     }
 
     @Override
     public CompletableFuture<MessageMetadata> sendAsync(String key, long value) {
         CompletableFuture<MessageMetadata> future = new CompletableFuture<>();
-
         try {
             final Mqtt5Publish message = Mqtt5Publish.builder()
                     .topic(topic)
                     .payload((key + ":" + value).getBytes())
                     .qos(MqttQos.AT_LEAST_ONCE)
                     .build();
-            final CompletableFuture<Mqtt5PublishResult> publish = client.publish(message);
-            publish.whenComplete((result, throwable) -> {
-                if (throwable != null) {
-                    future.completeExceptionally(throwable);
-                } else {
-                    future.complete(new MessageMetadata(value));
-                }
-            });
+            final Mqtt5PublishResult publish = client.publish(message);
+            future.complete(new MessageMetadata(value));
         } catch (Exception e) {
             future.completeExceptionally(e);
         }

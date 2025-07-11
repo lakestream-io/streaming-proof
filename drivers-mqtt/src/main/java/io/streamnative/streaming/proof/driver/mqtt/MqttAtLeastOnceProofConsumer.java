@@ -34,50 +34,57 @@ import lombok.extern.slf4j.Slf4j;
 public class MqttAtLeastOnceProofConsumer implements ProofConsumer {
 
     private final String name;
-    private final String topic;
+
     private final Mqtt5BlockingClient client;
-    private final MessageListener callback;
 
     private volatile boolean closing = false;
+
+    private final Thread consumerThread;
 
     public MqttAtLeastOnceProofConsumer(Mqtt5BlockingClient client,
                                         String name, String topic, MessageListener callback) {
         this.name = name;
-        this.topic = topic;
         this.client = client;
-        this.callback = callback;
-    }
-
-    public void start() {
-        try (Mqtt5BlockingClient.Mqtt5Publishes publishes = client.publishes(MqttGlobalPublishFilter.ALL)) {
-            this.client.subscribeWith().topicFilter(topic).qos(MqttQos.AT_LEAST_ONCE).send();
-            try {
-                while (!closing) {
-                    try {
-                        final Optional<Mqtt5Publish> receive = publishes.receive(30, TimeUnit.SECONDS);
-                        if (receive.isEmpty()) {
-                            continue; // No messages received, continue polling
+        this.consumerThread = Thread.ofVirtual()
+                .name("proof-mqtt-consumer-" + name)
+                .start(() -> {
+                    try (Mqtt5BlockingClient.Mqtt5Publishes publishes =
+                                 client.publishes(MqttGlobalPublishFilter.ALL, true)) {
+                        this.client.subscribeWith().topicFilter(topic).qos(MqttQos.AT_LEAST_ONCE).send();
+                        try {
+                            while (!closing) {
+                                try {
+                                    final Optional<Mqtt5Publish> receive = publishes.receive(30, TimeUnit.SECONDS);
+                                    if (receive.isEmpty()) {
+                                        continue; // No messages received, continue polling
+                                    }
+                                    final Mqtt5Publish mqtt5Publish = receive.get();
+                                    String payload = new String(mqtt5Publish.getPayloadAsBytes());
+                                    String key = payload.split(":")[0];
+                                    long value = Long.parseLong(payload.split(":")[1]);
+                                    callback.onMessage(key, value, new MessageMetadata(value));
+                                    mqtt5Publish.acknowledge();
+                                } catch (Exception e) {
+                                    log.error("[{}] Exception occurred while consuming message", name, e);
+                                }
+                            }
+                        } catch (Throwable t) {
+                            log.error("[{}] Fatal error in consumer thread", name, t);
                         }
-                        final Mqtt5Publish mqtt5Publish = receive.get();
-                        String payload = new String(mqtt5Publish.getPayloadAsBytes());
-                        String key = payload.split(":")[0];
-                        long value = Long.parseLong(payload.split(":")[1]);
-                        callback.onMessage(key, value, new MessageMetadata(value));
-                        mqtt5Publish.acknowledge();
-                    } catch (Exception e) {
-                        log.error("[{}] Exception occurred while consuming message", name, e);
                     }
-                }
-            } catch (Throwable t) {
-                log.error("[{}] Fatal error in consumer thread", name, t);
-            }
-        }
-        log.info("[{}] Consumer started successfully", name);
+                    log.info("[{}] Consumer started successfully", name);
+                });
     }
 
     @Override
     public void close() throws Exception {
         closing = true;
+        try {
+            consumerThread.interrupt();
+            consumerThread.join();
+        } catch (Exception e) {
+            log.error("[{}] Error while waiting for consumer thread to complete", name, e);
+        }
         if (client != null) {
             client.disconnect();
         }
