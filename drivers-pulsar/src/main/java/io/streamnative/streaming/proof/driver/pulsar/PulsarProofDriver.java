@@ -240,7 +240,7 @@ public class PulsarProofDriver implements ProofDriver {
         try {
             String consumerName = UUID.randomUUID().toString();
             return new PulsarAtLeastOnceProofConsumer(consumerName, client, topicName, configs, consumeDelayMs,
-                    listener);
+                    listener, admin);
         } catch (PulsarClientException e) {
             throw new RuntimeException(e);
         }
