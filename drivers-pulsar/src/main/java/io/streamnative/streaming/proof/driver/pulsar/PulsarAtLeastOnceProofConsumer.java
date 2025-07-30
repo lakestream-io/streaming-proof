@@ -22,7 +22,6 @@ import io.streamnative.streaming.proof.common.MessageListener;
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
@@ -38,7 +37,7 @@ import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.api.SubscriptionType;
-import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.shade.com.google.gson.Gson;
 
 /**
  * Pulsar implementation of the ProofConsumer interface that provides at-least-once message
@@ -187,41 +186,15 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
      */
     private boolean checkingOffloadFlag() {
         if ((Boolean) configs.getOrDefault("verifyOffloading", false)) {
+            var offloadedLedgerBeforeConsuming = (Integer) configs
+                .getOrDefault("offloadedLedgerBeforeConsuming", 10);
             try {
                 var meta = admin.topics().getPartitionedTopicMetadata(topic);
-                Set<Long> offloadedLedgers;
                 if (meta.partitions > 0) {
-                    var partitionedInternalStats = admin.topics().getPartitionedInternalStats(topic);
-                    offloadedLedgers = partitionedInternalStats.partitions.entrySet().stream()
-                        .flatMap(e -> e.getValue().ledgers.stream())
-                        .filter(l -> l.offloaded)
-                        .map(l -> l.ledgerId)
-                        .collect(Collectors.toSet());
-                    log.info("[{}] Checking offload flag for partitioned topic, the internal stats is {}",
-                        topic, partitionedInternalStats);
-                    if (!offloadedLedgers.isEmpty()) {
-                        for (int i = 0; i < meta.partitions; i++) {
-                            var name = TopicName.get(topic).getPartition(i).toString();
-                            admin.topics().unload(name);
-                        }
-                    }
+                    return checkingPartitionedTopicOffloading(meta.partitions, offloadedLedgerBeforeConsuming);
                 } else {
-                    var internalStats = admin.topics().getInternalStats(topic);
-                    offloadedLedgers = internalStats.ledgers.stream()
-                        .filter(l -> l.offloaded)
-                        .map(l -> l.ledgerId)
-                        .collect(Collectors.toSet());
-                    log.info("[{}] Checking offload flag for topic, the internal stats is {}", topic, internalStats);
-                    if (!offloadedLedgers.isEmpty()) {
-                        admin.topics().unload(topic);
-                    }
+                    return checkingNonPartitionedTopicOffloading(offloadedLedgerBeforeConsuming);
                 }
-                if (offloadedLedgers.isEmpty()) {
-                    log.error("[{}] No offloaded ledgers found for partitioned topic, please check your "
-                              + "configuration to ensure the topic is offloaded before consuming", topic);
-                    return false;
-                }
-                return true;
             } catch (PulsarAdminException e) {
                 log.error("[{}] Failed to check offload flag", topic, e);
                 return false;
@@ -229,6 +202,51 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
         }
 
         // no offload flag is set, so we don't need to check the offload status, return true to skip the check
+        return true;
+    }
+
+    private boolean checkingPartitionedTopicOffloading(int partitions, int requiredOffloadLedgers)
+        throws PulsarAdminException {
+
+        Gson gson = new Gson();
+        var partitionedInternalStats = admin.topics().getPartitionedInternalStats(topic);
+        var topics = partitionedInternalStats.partitions.keySet();
+        for (String s : topics) {
+            var internalStats = partitionedInternalStats.partitions.get(s);
+            var offloadedLedgers = internalStats.ledgers.stream()
+                .filter(l -> l.offloaded)
+                .map(l -> l.ledgerId)
+                .collect(Collectors.toSet());
+            if (offloadedLedgers.size() < requiredOffloadLedgers) {
+                log.warn("[{}] Not enough offloaded ledgers found for partitioned topic {}, "
+                          + "expected at least {}, found {}",
+                    topic, s, requiredOffloadLedgers, offloadedLedgers.size());
+                return false;
+            }
+        }
+        log.info("[{}] Checked offload flag for partitioned topic, the internal stats is {}",
+            topic, gson.toJson(partitionedInternalStats));
+        for (String s : topics) {
+            admin.topics().unload(s);
+        }
+        return true;
+    }
+
+    private boolean checkingNonPartitionedTopicOffloading(int requiredOffloadLedgers) throws PulsarAdminException {
+        Gson gson = new Gson();
+        var internalStats = admin.topics().getInternalStats(topic);
+        var offloadedLedgers = internalStats.ledgers.stream()
+            .filter(l -> l.offloaded)
+            .map(l -> l.ledgerId)
+            .collect(Collectors.toSet());
+        if (offloadedLedgers.size() < requiredOffloadLedgers) {
+            log.warn("[{}] Not enough offloaded ledgers found for non-partitioned topic, "
+                     + "expected at least {}, found {}", topic, requiredOffloadLedgers, offloadedLedgers.size());
+            return false;
+        }
+        log.info("[{}] Checked offload flag for topic, the internal stats is {}", topic,
+            gson.toJson(internalStats));
+        admin.topics().unload(topic);
         return true;
     }
 
