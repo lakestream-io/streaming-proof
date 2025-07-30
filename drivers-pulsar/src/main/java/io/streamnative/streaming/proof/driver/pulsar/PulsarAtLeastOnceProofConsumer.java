@@ -22,12 +22,10 @@ import io.streamnative.streaming.proof.common.MessageListener;
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.client.admin.PulsarAdmin;
-import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.ConsumerBuilder;
 import org.apache.pulsar.client.api.Message;
@@ -37,7 +35,6 @@ import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.api.SubscriptionType;
-import org.apache.pulsar.shade.com.google.gson.Gson;
 
 /**
  * Pulsar implementation of the ProofConsumer interface that provides at-least-once message
@@ -76,11 +73,7 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
 
     private final long consumeDelayMs;
 
-    private final Map<String, Object> configs;
-
-    private final PulsarAdmin admin;
-
-    private final String topic;
+    private final Optional<OffloadCondition> offloadCondition;
 
     /**
      * Creates a new Pulsar consumer with at-least-once delivery guarantees.
@@ -104,9 +97,7 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
         this.name = name;
         this.messageListener = listener;
         this.consumeDelayMs = consumeDelayMs;
-        this.configs = configs;
-        this.admin = admin;
-        this.topic = topic;
+        this.offloadCondition = OffloadCondition.getOffloadCondition(admin, topic, configs);
 
         ConsumerBuilder<Long> consumerBuilder = client.newConsumer(Schema.INT64)
                 .topic(topic)
@@ -137,6 +128,11 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
                         Long value = message.getValue();
 
                         MessageIdAdv messageIdImpl = (MessageIdAdv) message.getMessageId();
+
+                        offloadCondition.ifPresent(offloadCondition -> {
+                            offloadCondition.waitOffloadConditionMeetForMessage(messageIdImpl);
+                        });
+
                         long ledgerId = messageIdImpl.getLedgerId();
                         long entryId = messageIdImpl.getEntryId();
 
@@ -156,10 +152,8 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
                                 log.debug("[{}] Sleeping for {} ms after consuming message",
                                         name, consumeDelayMs - timestampDiff);
                                 Thread.sleep(consumeDelayMs - timestampDiff);
-                                while (!checkingOffloadFlag()) {
-                                    log.warn("[{}] Offload flag check failed, retrying...", name);
-                                    TimeUnit.SECONDS.sleep(30);
-                                }
+
+                                offloadCondition.ifPresent(OffloadCondition::waitOffloadConditionMeetForCatchupRead);
                             }
                         }
                     } catch (Exception e) {
@@ -173,81 +167,6 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
                 }
             }
         }
-    }
-
-    /**
-     * Checks if the offload flag is set and unloads the topic if necessary.
-     * This is used to ensure that the topic is unloaded for offloading
-     * when the verifyOffloading config is enabled.
-     * In our implementation, after offload the ledger, it won't close the
-     * bookkeeper ledgerHandle, so we need to unload the topic to ensure
-     * the LedgerHandle in the ManagedLedger is changed to use the offloaded
-     * ledger.
-     */
-    private boolean checkingOffloadFlag() {
-        if ((Boolean) configs.getOrDefault("verifyOffloading", false)) {
-            var offloadedLedgerBeforeConsuming = (Integer) configs
-                .getOrDefault("offloadedLedgerBeforeConsuming", 10);
-            try {
-                var meta = admin.topics().getPartitionedTopicMetadata(topic);
-                if (meta.partitions > 0) {
-                    return checkingPartitionedTopicOffloading(meta.partitions, offloadedLedgerBeforeConsuming);
-                } else {
-                    return checkingNonPartitionedTopicOffloading(offloadedLedgerBeforeConsuming);
-                }
-            } catch (PulsarAdminException e) {
-                log.error("[{}] Failed to check offload flag", topic, e);
-                return false;
-            }
-        }
-
-        // no offload flag is set, so we don't need to check the offload status, return true to skip the check
-        return true;
-    }
-
-    private boolean checkingPartitionedTopicOffloading(int partitions, int requiredOffloadLedgers)
-        throws PulsarAdminException {
-
-        Gson gson = new Gson();
-        var partitionedInternalStats = admin.topics().getPartitionedInternalStats(topic);
-        var topics = partitionedInternalStats.partitions.keySet();
-        for (String s : topics) {
-            var internalStats = partitionedInternalStats.partitions.get(s);
-            var offloadedLedgers = internalStats.ledgers.stream()
-                .filter(l -> l.offloaded)
-                .map(l -> l.ledgerId)
-                .collect(Collectors.toSet());
-            if (offloadedLedgers.size() < requiredOffloadLedgers) {
-                log.warn("[{}] Not enough offloaded ledgers found for partitioned topic {}, "
-                          + "expected at least {}, found {}",
-                    topic, s, requiredOffloadLedgers, offloadedLedgers.size());
-                return false;
-            }
-        }
-        log.info("[{}] Checked offload flag for partitioned topic, the internal stats is {}",
-            topic, gson.toJson(partitionedInternalStats));
-        for (String s : topics) {
-            admin.topics().unload(s);
-        }
-        return true;
-    }
-
-    private boolean checkingNonPartitionedTopicOffloading(int requiredOffloadLedgers) throws PulsarAdminException {
-        Gson gson = new Gson();
-        var internalStats = admin.topics().getInternalStats(topic);
-        var offloadedLedgers = internalStats.ledgers.stream()
-            .filter(l -> l.offloaded)
-            .map(l -> l.ledgerId)
-            .collect(Collectors.toSet());
-        if (offloadedLedgers.size() < requiredOffloadLedgers) {
-            log.warn("[{}] Not enough offloaded ledgers found for non-partitioned topic, "
-                     + "expected at least {}, found {}", topic, requiredOffloadLedgers, offloadedLedgers.size());
-            return false;
-        }
-        log.info("[{}] Checked offload flag for topic, the internal stats is {}", topic,
-            gson.toJson(internalStats));
-        admin.topics().unload(topic);
-        return true;
     }
 
     /**
