@@ -83,6 +83,7 @@ public class OffloadCondition {
                     .collect(Collectors.toSet());
                 offloadedLedgersCache.addAll(offloadedLedgers);
                 if (offloadedLedgers.contains(ledgerId)) {
+                    unloadTopics();
                     return;
                 }
                 refreshTopicInternalStats();
@@ -110,15 +111,25 @@ public class OffloadCondition {
                     }
                 }
             }
-            if (isAllTopicsMeetCondition) {
-                return;
-            }
             try {
+                if (isAllTopicsMeetCondition) {
+                    unloadTopics();
+                    return;
+                }
                 refreshTopicInternalStats();
                 TimeUnit.SECONDS.sleep(30); // Wait before checking again
             } catch (PulsarAdminException | InterruptedException e) {
                 log.error("Failed to refresh topic internal stats for topic: {}", topic, e);
             }
+        }
+    }
+
+    private void unloadTopics() throws PulsarAdminException {
+        if (topicInternalStatsCache.isEmpty()) {
+            refreshTopicInternalStats();
+        }
+        for (String topic : topicInternalStatsCache.keySet()) {
+            admin.topics().unload(topic);
         }
     }
 
