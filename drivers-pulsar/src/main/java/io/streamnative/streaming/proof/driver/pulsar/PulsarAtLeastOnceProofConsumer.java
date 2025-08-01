@@ -22,8 +22,10 @@ import io.streamnative.streaming.proof.common.MessageListener;
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.ConsumerBuilder;
 import org.apache.pulsar.client.api.Message;
@@ -71,6 +73,8 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
 
     private final long consumeDelayMs;
 
+    private final Optional<OffloadCondition> offloadCondition;
+
     /**
      * Creates a new Pulsar consumer with at-least-once delivery guarantees.
      *
@@ -87,11 +91,13 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
             String topic,
             Map<String, Object> configs,
             long consumeDelayMs,
-            MessageListener listener) throws PulsarClientException {
+            MessageListener listener,
+            PulsarAdmin admin) throws PulsarClientException {
 
         this.name = name;
         this.messageListener = listener;
         this.consumeDelayMs = consumeDelayMs;
+        this.offloadCondition = OffloadCondition.getOffloadCondition(admin, topic, configs);
 
         ConsumerBuilder<Long> consumerBuilder = client.newConsumer(Schema.INT64)
                 .topic(topic)
@@ -122,6 +128,11 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
                         Long value = message.getValue();
 
                         MessageIdAdv messageIdImpl = (MessageIdAdv) message.getMessageId();
+
+                        offloadCondition.ifPresent(offloadCondition -> {
+                            offloadCondition.waitOffloadConditionMeetForMessage(messageIdImpl);
+                        });
+
                         long ledgerId = messageIdImpl.getLedgerId();
                         long entryId = messageIdImpl.getEntryId();
 
@@ -141,6 +152,8 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
                                 log.debug("[{}] Sleeping for {} ms after consuming message",
                                         name, consumeDelayMs - timestampDiff);
                                 Thread.sleep(consumeDelayMs - timestampDiff);
+
+                                offloadCondition.ifPresent(OffloadCondition::waitOffloadConditionMeetForCatchupRead);
                             }
                         }
                     } catch (Exception e) {
