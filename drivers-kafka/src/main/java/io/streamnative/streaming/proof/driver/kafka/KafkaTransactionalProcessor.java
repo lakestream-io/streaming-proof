@@ -25,6 +25,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import lombok.extern.slf4j.Slf4j;
@@ -91,16 +92,27 @@ public class KafkaTransactionalProcessor {
     public KafkaTransactionalProcessor(Properties baseProps, String topicName) {
         this.inputTopic = topicName + "_transactional";
         this.outputTopic = topicName;
-        // Derive stable identifiers
+
+        // Generate unique instance identifier using UUID to ensure multi-instance safety
+        String instanceId = UUID.randomUUID().toString().substring(0, 8);
+
+        // Derive stable identifiers with unique instance ID
         String clientId = (String) baseProps.getOrDefault(ProducerConfig.CLIENT_ID_CONFIG, null);
         String baseGroupInstanceId = (String) baseProps.getOrDefault(ConsumerConfig.GROUP_INSTANCE_ID_CONFIG, null);
         String instanceComponent = clientId != null
-                ? clientId
-                : (baseGroupInstanceId != null ? baseGroupInstanceId : "processor");
+                ? clientId + "-" + instanceId
+                : (baseGroupInstanceId != null ? baseGroupInstanceId + "-" + instanceId : "processor-" + instanceId);
+
         this.consumerGroupId = "transactional-processor-" + topicName;
         this.groupInstanceId = "giid-" + topicName + "-" + instanceComponent;
         this.transactionalId = "txp-" + topicName + "-" + instanceComponent;
         
+        // Validate identifier uniqueness
+        if (this.transactionalId.length() > 255) {
+            throw new IllegalArgumentException("Transactional ID too long: "
+                + this.transactionalId.length() + " characters");
+        }
+
         // Configure consumer
         Properties consumerProps = new Properties();
         consumerProps.putAll(baseProps);
@@ -109,6 +121,10 @@ public class KafkaTransactionalProcessor {
         consumerProps.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
         consumerProps.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed");
         consumerProps.put(ConsumerConfig.GROUP_INSTANCE_ID_CONFIG, groupInstanceId);
+        // Optimize for multi-instance scenarios
+        consumerProps.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "30000");
+        consumerProps.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, "10000");
+        consumerProps.put(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, "300000");
         consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, LongDeserializer.class.getName());
         
