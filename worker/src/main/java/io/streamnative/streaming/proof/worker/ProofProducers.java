@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Manages a group of producer tasks for streaming proof tests. This class coordinates
@@ -39,6 +40,9 @@ import java.util.concurrent.atomic.AtomicLong;
  *   <li>Sequence tracking per message key</li>
  *   <li>Aggregated producer statistics collection</li>
  * </ul>
+ *
+ * <p>For exactly-once processing, the class creates {@link KafkaExactlyOnceProofProducer}
+ * instances that embed transactional processors for atomic read-process-write operations.
  *
  * <p>The class uses a virtual thread to coordinate message production across
  * all producer tasks, ensuring controlled message rates and fair task scheduling
@@ -70,6 +74,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * @see UniformRateLimiter
  * @see ProofDriver
  */
+@Slf4j
 public class ProofProducers {
 
     /** Configuration for creating new producers */
@@ -92,6 +97,7 @@ public class ProofProducers {
 
     /** Rate limiter for controlling message production speed */
     private final UniformRateLimiter rateLimiter;
+
 
     /**
      * Creates a new ProofProducers instance with the specified configuration.
@@ -121,11 +127,27 @@ public class ProofProducers {
 
         // Create tasks with their respective key counts
         for (int i = 0; i < producerCount; i++) {
-            ProofProducer producer = driver.createProducer(newProducers.topic(), newProducers.driver().driverConfigs());
+            ProofProducer producer;
+            
+            if (newProducers.transactional() && "kafka".equals(newProducers.driver().driverType())) {
+                // Create exactly-once producer with embedded transactional processor
+                // Cast to KafkaProofDriver to access exactly-once method
+                if (driver instanceof io.streamnative.streaming.proof.driver.kafka.KafkaProofDriver) {
+                    producer = ((io.streamnative.streaming.proof.driver.kafka.KafkaProofDriver) driver)
+                            .createProducer(newProducers.topic(), newProducers.driver().driverConfigs(), true);
+                } else {
+                    throw new IllegalStateException("Exactly-once semantics require Kafka driver");
+                }
+            } else {
+                // Create normal producer
+                producer = driver.createProducer(newProducers.topic(), newProducers.driver().driverConfigs());
+            }
+            
             int keyCount = baseKeysPerProducer + (i == producerCount - 1 ? remainder : 0);
             tasks.add(new ProofProducerTask(producer, keyCount));
         }
     }
+
 
     /**
      * Collects and aggregates checkpoints from all producer tasks.
@@ -158,6 +180,8 @@ public class ProofProducers {
         if (producerThread != null) {
             producerThread.interrupt();
         }
+        
+        
         try {
             for (ProofProducerTask task : tasks) {
                 task.close();

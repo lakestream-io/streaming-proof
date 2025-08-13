@@ -62,10 +62,15 @@ import org.apache.kafka.common.serialization.StringSerializer;
  *   <li>Partition-level parallelism for scalable testing</li>
  * </ul>
  *
+ * <p>For exactly-once transaction verification, set the {@code exactly_once} feature
+ * in the proof configuration. This will automatically enable embedded transactional
+ * processors that implement the read-process-write pattern.
  *
  * @see ProofDriver
  * @see KafkaAtLeastOnceProofProducer
+ * @see KafkaExactlyOnceProofProducer
  * @see KafkaAtLeastOnceProofConsumer
+ * @see KafkaTransactionalProcessor
  */
 @Slf4j
 public class KafkaProofDriver implements ProofDriver {
@@ -78,7 +83,7 @@ public class KafkaProofDriver implements ProofDriver {
     
     /** Configuration key for Kafka client ID */
     private static final String KAFKA_CLIENT_ID = "client.id";
-
+    
     /** Kafka admin client for topic management */
     private AdminClient admin;
 
@@ -127,7 +132,6 @@ public class KafkaProofDriver implements ProofDriver {
 
     /**
      * Creates a new producer with at-least-once delivery guarantees.
-     * Configures string key serialization and long value serialization.
      *
      * @param topicName Target topic for the producer
      * @param configs Producer-specific configurations
@@ -135,23 +139,54 @@ public class KafkaProofDriver implements ProofDriver {
      */
     @Override
     public ProofProducer createProducer(String topicName, Map<String, Object> configs) {
-        configs.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        configs.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, LongSerializer.class.getName());
-        if (configs.containsKey(KAFKA_CLIENT_ID)) {
-            configs.put(
-                    KAFKA_CLIENT_ID,
-                    applyZoneId(
-                            String.valueOf(configs.get(KAFKA_CLIENT_ID)), System.getProperty(ZONE_ID_CONFIG)));
-        }
-        KafkaProducer<String, Long> producer = new KafkaProducer<>(configs);
-        return new KafkaAtLeastOnceProofProducer(producer, topicName);
+        return createProducer(topicName, configs, false);
     }
 
     /**
-     * Creates a new consumer with the specified message listener.
-     * Configures string key deserialization and long value deserialization.
+     * Creates a new producer with configurable delivery guarantees.
+     *
+     * @param topicName Target topic for the producer
+     * @param configs Producer-specific configurations
+     * @param exactlyOnce If true, creates exactly-once producer with embedded transactional processor
+     * @return A configured ProofProducer instance
+     */
+    public ProofProducer createProducer(String topicName, Map<String, Object> configs, boolean exactlyOnce) {
+        // Clone configs to avoid modifying original
+        Map<String, Object> producerConfigs = new java.util.HashMap<>(configs);
+        
+        producerConfigs.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        producerConfigs.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, LongSerializer.class.getName());
+        if (producerConfigs.containsKey(KAFKA_CLIENT_ID)) {
+            producerConfigs.put(
+                    KAFKA_CLIENT_ID,
+                    applyZoneId(
+                            String.valueOf(producerConfigs.get(KAFKA_CLIENT_ID)), System.getProperty(ZONE_ID_CONFIG)));
+        }
+        
+        if (exactlyOnce) {
+            log.info("Creating exactly-once producer for topic: {}", topicName);
+            KafkaProducer<String, Long> producer = new KafkaProducer<>(producerConfigs);
+            
+            // Convert to Properties for KafkaTransactionalProcessor
+            java.util.Properties baseProps = new java.util.Properties();
+            baseProps.putAll(configs);
+            
+            return new KafkaExactlyOnceProofProducer(producer, baseProps, topicName);
+        } else {
+            log.info("Creating at-least-once producer for topic: {}", topicName);
+            KafkaProducer<String, Long> producer = new KafkaProducer<>(producerConfigs);
+            return new KafkaAtLeastOnceProofProducer(producer, topicName);
+        }
+    }
+
+    /**
+     * Creates a new consumer with at-least-once delivery guarantees.
+     * When exactly-once processing is enabled, consumers read from the output topic
+     * to verify messages processed by embedded transactional processors.
      *
      * @param topicName Topic to consume from
+     * @param partitionCount Number of partitions in the topic
+     * @param consumeDelayMs Delay before starting consumption
      * @param configs Consumer-specific configurations
      * @param listener Callback for processing consumed messages
      * @return A configured ProofConsumer instance
@@ -169,6 +204,8 @@ public class KafkaProofDriver implements ProofDriver {
                     applyZoneId(
                             String.valueOf(configs.get(KAFKA_CLIENT_ID)), System.getProperty(ZONE_ID_CONFIG)));
         }
+        
+        log.info("Creating at-least-once consumer for topic: {}", topicName);
         KafkaConsumer<String, Long> consumer = new KafkaConsumer<>(configs);
         String consumerName = RandomStringUtils.secure().nextAlphanumeric(5);
         consumer.subscribe(List.of(topicName), new ConsumerRebalanceListener() {
@@ -183,6 +220,7 @@ public class KafkaProofDriver implements ProofDriver {
         });
         return new KafkaAtLeastOnceProofConsumer(consumerName, consumer, configs, consumeDelayMs, listener);
     }
+
 
     /**
      * Applies zone ID to client ID template if present.
