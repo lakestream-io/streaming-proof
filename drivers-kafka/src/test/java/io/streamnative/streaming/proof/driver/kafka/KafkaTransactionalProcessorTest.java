@@ -18,6 +18,8 @@
  */
 package io.streamnative.streaming.proof.driver.kafka;
 
+import static org.testng.Assert.assertNotNull;
+
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -302,6 +304,8 @@ public class KafkaTransactionalProcessorTest {
                 ConsumerRecords<String, Long> records = consumer.poll(Duration.ofMillis(1000));
                 for (ConsumerRecord<String, Long> record : records) {
                     messages.add(record.key());
+                    assertNotNull(record.headers().lastHeader("originalOffset"),
+                            "Message value should not be null");
                 }
             }
         }

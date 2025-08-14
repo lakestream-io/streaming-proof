@@ -31,19 +31,20 @@ public class MessageMetadataTest {
     @Test
     public void testConstructors() {
         // Test full constructor
-        MessageMetadata metadata1 = new MessageMetadata(100L, 1L, 2L, 3);
+        MessageMetadata metadata1 = new MessageMetadata(100L, 1L, 2L, 3, 1000L);
         assertEquals(metadata1.offset(), Long.valueOf(100L));
         assertEquals(metadata1.ledgerId(), Long.valueOf(1L));
         assertEquals(metadata1.entryId(), Long.valueOf(2L));
         assertEquals(metadata1.partition(), Integer.valueOf(3));
-        
+        assertEquals(metadata1.originalOffset(), Long.valueOf(1000L));
+
         // Test offset-only constructor
         MessageMetadata metadata2 = new MessageMetadata(200L);
         assertEquals(metadata2.offset(), Long.valueOf(200L));
         assertNull(metadata2.ledgerId());
         assertNull(metadata2.entryId());
         assertNull(metadata2.partition());
-        
+
         // Test offset and partition constructor
         MessageMetadata metadata3 = new MessageMetadata(300L, 5);
         assertEquals(metadata3.offset(), Long.valueOf(300L));
@@ -115,7 +116,7 @@ public class MessageMetadataTest {
         MessageMetadata offsetMetadata = new MessageMetadata(100L);
         
         // Create a metadata with both offset and ledger/entry values
-        MessageMetadata mixedMetadata = new MessageMetadata(50L, 1L, 5L, null);
+        MessageMetadata mixedMetadata = new MessageMetadata(50L, 1L, 5L, null, -1L);
         
         // When comparing different types with valid offsets, should use offset comparison
         assertTrue(offsetMetadata.isAfter(mixedMetadata));
@@ -125,7 +126,7 @@ public class MessageMetadataTest {
     @Test
     public void testToString() throws JsonProcessingException {
         // Test toString() method
-        MessageMetadata metadata = new MessageMetadata(100L, 1L, 2L, 3);
+        MessageMetadata metadata = new MessageMetadata(100L, 1L, 2L, 3, 1000L);
         String metadataString = metadata.toString();
         
         // Verify the string contains all the values
@@ -133,21 +134,23 @@ public class MessageMetadataTest {
         assertTrue(metadataString.contains("1"));
         assertTrue(metadataString.contains("2"));
         assertTrue(metadataString.contains("3"));
-        
+        assertTrue(metadataString.contains("1000"));
+
         // Verify the string can be parsed back to a MessageMetadata
         MessageMetadata parsedMetadata = Util.JSON_MAPPER.readValue(metadataString, MessageMetadata.class);
         assertEquals(parsedMetadata.offset(), Long.valueOf(100L));
         assertEquals(parsedMetadata.ledgerId(), Long.valueOf(1L));
         assertEquals(parsedMetadata.entryId(), Long.valueOf(2L));
         assertEquals(parsedMetadata.partition(), Integer.valueOf(3));
+        assertEquals(parsedMetadata.originalOffset(), Long.valueOf(1000L));
     }
-    
+
     @Test
     public void testEquality() {
         // Test equals() and hashCode()
-        MessageMetadata metadata1 = new MessageMetadata(100L, 1L, 2L, 3);
-        MessageMetadata metadata2 = new MessageMetadata(100L, 1L, 2L, 3);
-        MessageMetadata metadata3 = new MessageMetadata(200L, 1L, 2L, 3);
+        MessageMetadata metadata1 = new MessageMetadata(100L, 1L, 2L, 3, 10L);
+        MessageMetadata metadata2 = new MessageMetadata(100L, 1L, 2L, 3, 10L);
+        MessageMetadata metadata3 = new MessageMetadata(200L, 1L, 2L, 3, 10L);
         
         // Same values should be equal
         assertEquals(metadata1, metadata2);

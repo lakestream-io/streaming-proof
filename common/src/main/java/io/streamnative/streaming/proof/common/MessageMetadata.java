@@ -51,6 +51,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
  *                A value of -1 indicates this field is not applicable.
  * @param partition The partition ID where the message was stored.
  *                  May be null if not applicable to the messaging system.
+ * @param originalOffset The original offset of the message in the source topic,
+ *                       this is for Kafka exactly-once verification.
  *
  * @see ProofProducer#sendAsync(String, long)
  * @see MessageListener#onMessage(String, long, MessageMetadata)
@@ -67,22 +69,29 @@ public record MessageMetadata(
         Long entryId,
 
         @JsonInclude(Include.NON_NULL)
-        Integer partition
+        Integer partition,
+
+        @JsonInclude(Include.NON_NULL)
+        Long originalOffset
 ) {
 
     public static MessageMetadata empty() {
-        return new MessageMetadata(-1L, -1L, -1L, null);
+        return new MessageMetadata(-1L, -1L, -1L, null, -1L);
     }
     public MessageMetadata(long offset) {
-        this(offset, null, null, null);
+        this(offset, null, null, null, -1L);
     }
 
     public MessageMetadata(long offset, int partition) {
-        this(offset, null, null, partition);
+        this(offset, null, null, partition, -1L);
+    }
+
+    public static MessageMetadata kafkaMetadata(long offset, int partition, Long originalOffset) {
+        return new MessageMetadata(offset, null, null, partition, originalOffset);
     }
 
     public MessageMetadata(long ledgerId, long entryId) {
-        this(null, ledgerId, entryId, null);
+        this(null, ledgerId, entryId, null, -1L);
     }
 
     public boolean isAfter(MessageMetadata other) {

@@ -34,6 +34,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.header.Header;
 
 /**
  * Kafka implementation of the ProofConsumer interface that provides at-least-once message
@@ -133,8 +134,15 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
                                             Thread.sleep(sleepTime);
                                         }
                                     }
+
+                                    Header originalHeader = record.headers().lastHeader("originalOffset");
+                                    long originalOffset = -1L;
+                                    if (originalHeader != null) {
+                                        originalOffset = Long.parseLong(new String(originalHeader.value()));
+                                    }
                                     callback.onMessage(record.key(), record.value(),
-                                            new MessageMetadata(record.offset(), record.partition()));
+                                            MessageMetadata.kafkaMetadata(
+                                                    record.offset(), record.partition(), originalOffset));
 
                                     offsetMap.put(
                                             new TopicPartition(record.topic(), record.partition()),
