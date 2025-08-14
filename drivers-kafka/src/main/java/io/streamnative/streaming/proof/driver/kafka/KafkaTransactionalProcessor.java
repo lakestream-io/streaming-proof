@@ -230,6 +230,7 @@ public class KafkaTransactionalProcessor {
 
             ProducerRecord<String, Long> outputRecord =
                     new ProducerRecord<>(outputTopic, record.partition(), outputKey, outputValue);
+            outputRecord.headers().add("originalOffset", String.valueOf(record.offset()).getBytes());
             producer.send(outputRecord);
 
             TopicPartition tp = new TopicPartition(record.topic(), record.partition());
