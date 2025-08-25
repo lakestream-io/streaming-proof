@@ -201,7 +201,7 @@ public class KafkaTransactionalProcessor {
             } catch (ProducerFencedException e) {
                 // If the transaction timeout, the producer epoch will be bumped and the producer ID will be fenced
                 log.warn("Producer fenced exception, aborting transaction and shutting down.");
-                safeAbortTransaction();
+                // the transaction should be aborted automatically
                 restoreFetchPositionToCommitted();
                 producer.initTransactions();
                 log.info("Reinitialized producer after fencing.");
