@@ -75,7 +75,7 @@ import org.apache.kafka.common.serialization.StringSerializer;
 @Slf4j
 public class KafkaTransactionalProcessor {
     private final KafkaConsumer<String, Long> consumer;
-    private final KafkaProducer<String, Long> producer;
+    private KafkaProducer<String, Long> producer;
     private final String inputTopic;
     private final String outputTopic;
     private final String transactionalId;
@@ -88,6 +88,7 @@ public class KafkaTransactionalProcessor {
     private static final int MAX_RETRIES = 5;
     private static final int TRANSACTION_TIMEOUT_MS = 10_000;
     private volatile int retries = 0;
+    private final Properties producerProps;
     
     public KafkaTransactionalProcessor(Properties baseProps, String topicName) {
         this.inputTopic = topicName + "_transactional";
@@ -141,7 +142,8 @@ public class KafkaTransactionalProcessor {
         producerProps.put(ProducerConfig.TRANSACTION_TIMEOUT_CONFIG, TRANSACTION_TIMEOUT_MS);
         producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, LongSerializer.class.getName());
-        
+
+        this.producerProps = producerProps;
         this.producer = new KafkaProducer<>(producerProps);
         
         // Initialize transactional producer
@@ -191,11 +193,18 @@ public class KafkaTransactionalProcessor {
                 // Reset retries after a successful commit
                 retries = 0;
                 
-            } catch (AuthorizationException | UnsupportedVersionException | ProducerFencedException
+            } catch (AuthorizationException | UnsupportedVersionException
                      | FencedInstanceIdException | OutOfOrderSequenceException | SerializationException e) {
                 log.error("Unrecoverable error in transactional processing. Shutting down.", e);
                 safeAbortTransaction();
                 running.set(false);
+            } catch (ProducerFencedException e) {
+                // If the transaction timeout, the producer epoch will be bumped and the producer ID will be fenced
+                log.warn("Producer fenced exception, aborting transaction and shutting down.");
+                // the transaction should be aborted automatically
+                restoreFetchPositionToCommitted();
+                producer.initTransactions();
+                log.info("Reinitialized producer after fencing.");
             } catch (OffsetOutOfRangeException | NoOffsetForPartitionException e) {
                 log.warn(
                         "Offset invalid or not found, seeking to end and committing current position: {}",
