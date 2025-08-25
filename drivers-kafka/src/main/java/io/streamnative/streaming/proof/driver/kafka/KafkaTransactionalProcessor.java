@@ -202,8 +202,6 @@ public class KafkaTransactionalProcessor {
                 // If the transaction timeout, the producer epoch will be bumped and the producer ID will be fenced
                 log.warn("Producer fenced exception, aborting transaction and shutting down.");
                 restoreFetchPositionToCommitted();
-                producer.close();
-                producer = new KafkaProducer<>(producerProps);
                 producer.initTransactions();
                 log.info("Reinitialized producer after fencing.");
             } catch (OffsetOutOfRangeException | NoOffsetForPartitionException e) {
