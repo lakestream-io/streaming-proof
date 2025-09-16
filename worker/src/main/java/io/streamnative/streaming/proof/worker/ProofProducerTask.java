@@ -140,9 +140,22 @@ public class ProofProducerTask implements AutoCloseable {
                 synchronized (lastPublished) {
                     LongSeq newMsg = new LongSeq(seq, metadata);
                     LongSeq previousMsg = this.lastPublished.get(key);
-                    if (!metadata.isAfter(previousMsg.metadata())) {
-                        log.info("Out of order message | key: {} | new message: {} | previous message: {}",
-                                key, newMsg, previousMsg);
+                    if (previousMsg != null) {
+                        if (newMsg.compareTo(previousMsg) <= 0) {
+                            log.error("Seq out of order writes | key: {} | new message: {} | previous message: {}",
+                                    key, newMsg, previousMsg);
+                            errors.compute("Seq out of order writes", (k, v) -> v == null ? 1 : v + 1);
+                        }
+                        if (newMsg.seq() - previousMsg.seq() > 1) {
+                            log.error("Seq writes gap | key: {} | new message: {} | previous message: {}",
+                                    key, newMsg, previousMsg);
+                            errors.compute("Seq writes gap", (k, v) -> v == null ? 1 : v + 1);
+                        }
+                        if (!metadata.isAfter(previousMsg.metadata())) {
+                            log.error("Offset out of order writes | key: {} | new message: {} | previous message: {}",
+                                    key, newMsg, previousMsg);
+                            errors.compute("Offset out of order writes", (k, v) -> v == null ? 1 : v + 1);
+                        }
                     }
                     lastPublished.put(key, newMsg);
                 }
