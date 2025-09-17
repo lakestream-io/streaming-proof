@@ -392,15 +392,21 @@ public class ConsumerCheckPoint {
         if (ranges.size() <= 1) {
             return ranges;
         }
+
+        // Sort ranges by start sequence number to ensure proper merging
+        List<SeqRange> sortedRanges = ranges.stream()
+            .sorted(java.util.Comparator.comparingLong(r -> r.getStart().seq()))
+            .toList();
+
         List<SeqRange> mergedRanges = new ArrayList<>();
         // Start with the first range
         SeqRange currentRange = new SeqRange();
-        currentRange.setStart(ranges.getFirst().getStart());
-        currentRange.setEnd(ranges.getFirst().getEnd());
+        currentRange.setStart(sortedRanges.getFirst().getStart());
+        currentRange.setEnd(sortedRanges.getFirst().getEnd());
 
         // Try to merge subsequent ranges
-        for (int i = 1; i < ranges.size(); i++) {
-            SeqRange nextRange = ranges.get(i);
+        for (int i = 1; i < sortedRanges.size(); i++) {
+            SeqRange nextRange = sortedRanges.get(i);
             long currentEnd = currentRange.getEnd().seq();
             long nextStart = nextRange.getStart().seq();
             long nextEnd = nextRange.getEnd().seq();

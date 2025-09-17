@@ -567,6 +567,63 @@ public class ConsumerCheckPointTest {
         }
     }
 
+    @Test
+    public void testOutOfOrderTimestampRanges() {
+        // Test case from the user's issue:
+        // Ranges arrive in timestamp order but are out of sequence order
+
+        // First range: [0-4607] at timestamp 2025-09-17T00:47:44.374298848
+        Map<String, ConsumerCheckPoint.SeqRange> range1Map = new HashMap<>();
+        ConsumerCheckPoint.SeqRange range1 = new ConsumerCheckPoint.SeqRange();
+        range1.setStart(new LongSeq(0L, new MessageMetadata(19L, null, null, 11, -1L)));
+        range1.setEnd(new LongSeq(4607L, new MessageMetadata(79922L, null, null, 11, -1L)));
+        range1.setDuplicated(24);
+        range1Map.put("2025-09-17T00:47:44.374298848", range1);
+
+        // Second range: [4635-4635] at timestamp 2025-09-17T00:49:18.505461392
+        Map<String, ConsumerCheckPoint.SeqRange> range2Map = new HashMap<>();
+        ConsumerCheckPoint.SeqRange range2 = new ConsumerCheckPoint.SeqRange();
+        range2.setStart(new LongSeq(4635L, new MessageMetadata(80449L, null, null, 11, -1L)));
+        range2.setEnd(new LongSeq(4635L, new MessageMetadata(80449L, null, null, 11, -1L)));
+        range2.setDuplicated(0);
+        range2Map.put("2025-09-17T00:49:18.505461392", range2);
+
+        // Third range: [4608-4634] at timestamp 2025-09-17T00:49:18.507581828
+        Map<String, ConsumerCheckPoint.SeqRange> range3Map = new HashMap<>();
+        ConsumerCheckPoint.SeqRange range3 = new ConsumerCheckPoint.SeqRange();
+        range3.setStart(new LongSeq(4608L, new MessageMetadata(80686L, null, null, 11, -1L)));
+        range3.setEnd(new LongSeq(4634L, new MessageMetadata(80738L, null, null, 11, -1L)));
+        range3.setDuplicated(0);
+        range3Map.put("2025-09-17T00:49:18.507581828", range3);
+
+        // Add ranges to checkpoint in timestamp order (which is out of sequence order)
+        checkPoint.addKey("wOz8x", range1Map);
+        checkPoint.addKey("wOz8x", range2Map);
+        checkPoint.addKey("wOz8x", range3Map);
+
+        // Calculate to trigger trimming and gap detection
+        checkPoint.calculate();
+
+        // After the fix, there should be NO missed sequences since the ranges are actually continuous
+        // [0-4607] + [4608-4634] + [4635-4635] = [0-4635] (continuous)
+        assertFalse(checkPoint.getMissedSeqs().containsKey("wOz8x"),
+            "Should not have missed sequences when ranges are actually continuous");
+
+        // Verify the merged consumed ranges
+        assertNotNull(checkPoint.getMergedConsumed().get("wOz8x"));
+        assertEquals(checkPoint.getMergedConsumed().get("wOz8x").size(), 1,
+            "Should have merged into a single continuous range");
+
+        ConsumerCheckPoint.SeqRange mergedRange = checkPoint.getMergedConsumed().get("wOz8x").getFirst();
+        assertEquals(mergedRange.getStart().seq(), 0L, "Merged range should start at 0");
+        assertEquals(mergedRange.getEnd().seq(), 4635L, "Merged range should end at 4635");
+
+        // Verify last sequence
+        LongSeq lastSeq = checkPoint.getLastSeq("wOz8x");
+        assertNotNull(lastSeq);
+        assertEquals(lastSeq.seq(), 4635L, "Last sequence should be 4635");
+    }
+
     private Map<String, ConsumerCheckPoint.SeqRange> createRangeMap(String orderKey, Long start, Long end) {
         Map<String, ConsumerCheckPoint.SeqRange> rangeMap = new HashMap<>();
         ConsumerCheckPoint.SeqRange range = new ConsumerCheckPoint.SeqRange();
