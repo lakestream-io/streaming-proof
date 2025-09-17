@@ -251,8 +251,8 @@ public class ProofConsumerTaskTest {
             generateMessage(consumerTask, KEY3, 5L, createMetadata(14L)); // Gap after 2
             
             // Verify multiple ranges
-            assertEquals(consumerTask.getConsumed().get(KEY1).size(), 2);
-            assertEquals(consumerTask.getConsumed().get(KEY2).size(), 2);
+            assertEquals(consumerTask.getConsumed().get(KEY1).size(), 3);
+            assertEquals(consumerTask.getConsumed().get(KEY2).size(), 3);
             assertEquals(consumerTask.getConsumed().get(KEY3).size(), 2);
             
             // Verify the second range for each key
@@ -279,11 +279,11 @@ public class ProofConsumerTaskTest {
             // Verify ranges are merged in trimmed result
             merged = consumerTask.getTrimmedConsumed();
 
-            assertEquals(merged.get(KEY1).size(), 2); // Now one continuous range
+            assertEquals(merged.get(KEY1).size(), 3); // Now one continuous range
             assertEquals(merged.get(KEY1).firstEntry().getValue().getStart().seq(), 0L);
             assertEquals(merged.get(KEY1).firstEntry().getValue().getEnd().seq(), 2L);
-            assertEquals(merged.get(KEY1).lastEntry().getValue().getStart().seq(), 5L);
-            assertEquals(merged.get(KEY1).lastEntry().getValue().getEnd().seq(), 5L);
+            assertEquals(merged.get(KEY1).lastEntry().getValue().getStart().seq(), 3L);
+            assertEquals(merged.get(KEY1).lastEntry().getValue().getEnd().seq(), 4L);
             
             // Verify the producer duplicates or out-of-order seqs are still tracked
             Map<String, SortedMap<String, ConsumerCheckPoint.SeqRange>> writeDupsOrOutOrder = 
@@ -292,14 +292,14 @@ public class ProofConsumerTaskTest {
             assertEquals(writeDupsOrOutOrder.get(KEY1).firstEntry().getValue().getStart().seq(), 1L);
             assertEquals(writeDupsOrOutOrder.get(KEY1).firstEntry().getValue().getEnd().seq(), 1L);
             assertEquals(writeDupsOrOutOrder.get(KEY1).lastEntry().getValue().getStart().seq(), 3L);
-            assertEquals(writeDupsOrOutOrder.get(KEY1).lastEntry().getValue().getEnd().seq(), 4L);
+            assertEquals(writeDupsOrOutOrder.get(KEY1).lastEntry().getValue().getEnd().seq(), 3L);
 
             // Verify the message redeliveries to the consumer
             generateMessage(consumerTask, KEY1, 5L, createMetadata(12L));
             generateMessage(consumerTask, KEY1, 6L, createMetadata(13L));
             merged = consumerTask.getTrimmedConsumed();
             assertEquals(merged.get(KEY1).size(), 2);
-            assertEquals(merged.get(KEY1).lastEntry().getValue().getStart().seq(), 5L);
+            assertEquals(merged.get(KEY1).lastEntry().getValue().getStart().seq(), 3L);
             assertEquals(merged.get(KEY1).lastEntry().getValue().getEnd().seq(), 6L);
             assertEquals(merged.get(KEY1).lastEntry().getValue().getDuplicated(), 1);
         }

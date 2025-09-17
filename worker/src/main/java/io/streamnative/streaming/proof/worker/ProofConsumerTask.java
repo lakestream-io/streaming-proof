@@ -92,6 +92,7 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
                 } else {
                     lastSeqFromProducerDups.setEnd(newMsg);
                 }
+                newConsumedRange(key, newMsg);
             } else {
                 // Handle message redeliveries to the consumer side
                 long dups = lastConsumedSeq.seq() - value + 1;
