@@ -203,6 +203,8 @@ public class KafkaTransactionalProcessor {
                 log.warn("Producer fenced exception, aborting transaction and shutting down.");
                 // the transaction should be aborted automatically
                 restoreFetchPositionToCommitted();
+                producer.close();
+                producer = new KafkaProducer<>(producerProps);
                 producer.initTransactions();
                 log.info("Reinitialized producer after fencing.");
             } catch (OffsetOutOfRangeException | NoOffsetForPartitionException e) {
