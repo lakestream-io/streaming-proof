@@ -242,7 +242,18 @@ public class KafkaTransactionalProcessor {
             ProducerRecord<String, Long> outputRecord =
                     new ProducerRecord<>(outputTopic, record.partition(), outputKey, outputValue);
             outputRecord.headers().add("originalOffset", String.valueOf(record.offset()).getBytes());
-            producer.send(outputRecord);
+            producer.send(outputRecord, (metadata, err) -> {
+                if (err != null) {
+                    log.error("Failed to produce record to output topic", err);
+                    if (err instanceof ProducerFencedException) {
+                        log.warn("Producer is fenced while producing", err);
+                        producer.close();
+                        producer = new KafkaProducer<>(producerProps);
+                        producer.initTransactions();
+                        log.info("Producer is fenced while producing, reInitialize it.");
+                    }
+                }
+            });
 
             TopicPartition tp = new TopicPartition(record.topic(), record.partition());
             offsetsToCommit.put(tp, new OffsetAndMetadata(record.offset() + 1));
