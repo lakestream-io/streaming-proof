@@ -192,12 +192,9 @@ public class WebhookNotificationService {
                 .append("\n\n");
         
         if (summary != null) {
-            boolean isSuccess = summary.errors() == 0 && summary.outOfOrders() == 0 && summary.missed() == 0;
+            boolean isSuccess = summary.outOfOrders() == 0 && summary.missed() == 0;
             message.append("Status: ").append(isSuccess ? "✅ SUCCESS" : "❌ FAILED").append("\n");
             message.append("Verified: ").append(summary.verified()).append("\n");
-            if (summary.errors() > 0) {
-                message.append("Errors: ").append(summary.errors()).append("\n");
-            }
             if (summary.outOfOrders() > 0) {
                 message.append("Out of Orders: ").append(summary.outOfOrders()).append("\n");
             }
