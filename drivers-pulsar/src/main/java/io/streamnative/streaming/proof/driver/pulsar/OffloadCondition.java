@@ -74,8 +74,7 @@ public class OffloadCondition {
         }
         while (true) {
             try {
-                log.info("Checking offload condition for topic: {}, ledgerId: {}, internal stats: {}",
-                    topic, ledgerId, gson.toJson(topicInternalStatsCache));
+                log.info("Checking offload condition for topic: {}, ledgerId: {}", topic, ledgerId);
                 var offloadedLedgers = topicInternalStatsCache.values().stream()
                     .flatMap(stats -> stats.ledgers.stream())
                     .filter(l -> l.offloaded)
@@ -96,8 +95,7 @@ public class OffloadCondition {
 
     public void waitOffloadConditionMeetForCatchupRead() {
         while (true) {
-            log.info("Checking offload condition for topic: {}, internal stats: {}",
-                topic, gson.toJson(topicInternalStatsCache));
+            log.info("Waiting for the offload condition for topic: {} to start the catchup read", topic);
             boolean isAllTopicsMeetCondition = true;
             for (String topic : topicInternalStatsCache.keySet()) {
                 var stats = topicInternalStatsCache.get(topic);
