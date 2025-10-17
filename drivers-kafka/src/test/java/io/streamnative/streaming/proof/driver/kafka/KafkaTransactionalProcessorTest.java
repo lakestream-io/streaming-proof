@@ -131,7 +131,7 @@ public class KafkaTransactionalProcessorTest {
                     "All input messages should be present in output");
 
             // Verify transaction count
-            Assert.assertTrue(processor.getTransactionCount() > 0,
+            Assert.assertTrue(processor.getCommitCount() > 0,
                     "At least one transaction should have been committed");
 
         } finally {
@@ -186,7 +186,7 @@ public class KafkaTransactionalProcessorTest {
 
         // Get initial counts
         long initialProcessedCount = processor.getProcessedMessageCount();
-        long initialTxCount = processor.getTransactionCount();
+        long initialTxCount = processor.getCommitCount();
 
         // Close processor
         processor.close();
@@ -194,7 +194,7 @@ public class KafkaTransactionalProcessorTest {
         // Verify final counts are stable (no more processing after close)
         Thread.sleep(1000);
         Assert.assertEquals(processor.getProcessedMessageCount(), initialProcessedCount);
-        Assert.assertEquals(processor.getTransactionCount(), initialTxCount);
+        Assert.assertEquals(processor.getCommitCount(), initialTxCount);
     }
 
     @Test

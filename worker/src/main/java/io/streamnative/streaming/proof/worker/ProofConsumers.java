@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Manages a group of consumer tasks for streaming proof tests. This class is responsible
@@ -44,6 +45,7 @@ import java.util.Map;
  * @see ProofDriver
  * @see ConsumerCheckPoint
  */
+@Slf4j
 public class ProofConsumers {
 
     /** Configuration for creating new consumers */
@@ -123,6 +125,7 @@ public class ProofConsumers {
      * @throws RuntimeException if an error occurs while closing consumers
      */
     public void stop() {
+        log.info("Stopping consumers for topic {}", newConsumers.topic());
         try {
             for (ProofConsumerTask task : tasks) {
                 task.close();
@@ -130,5 +133,6 @@ public class ProofConsumers {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+        log.info("Stopped consumers for topic {}", newConsumers.topic());
     }
 }

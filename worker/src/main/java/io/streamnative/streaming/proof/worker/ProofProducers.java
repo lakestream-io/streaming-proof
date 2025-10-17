@@ -176,6 +176,7 @@ public class ProofProducers {
      * @throws RuntimeException if an error occurs while closing producers
      */
     public void stop() {
+        log.info("Stopping producers for topic {}", newProducers.topic());
         running.set(false);
         if (producerThread != null) {
             producerThread.interrupt();
@@ -189,6 +190,7 @@ public class ProofProducers {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+        log.info("Stopped producers for topic {}", newProducers.topic());
     }
 
     /**

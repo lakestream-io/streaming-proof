@@ -156,6 +156,6 @@ public class KafkaExactlyOnceProofProducer implements ProofProducer {
      * @return Number of transactions committed by the transactional processor
      */
     public long getTransactionCount() {
-        return transactionalProcessor != null ? transactionalProcessor.getTransactionCount() : 0;
+        return transactionalProcessor != null ? transactionalProcessor.getCommitCount() : 0;
     }
 }

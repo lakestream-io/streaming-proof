@@ -26,7 +26,9 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -44,6 +46,8 @@ import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.AuthorizationException;
 import org.apache.kafka.common.errors.FencedInstanceIdException;
+import org.apache.kafka.common.errors.InvalidProducerEpochException;
+import org.apache.kafka.common.errors.InvalidTxnStateException;
 import org.apache.kafka.common.errors.OutOfOrderSequenceException;
 import org.apache.kafka.common.errors.ProducerFencedException;
 import org.apache.kafka.common.errors.SerializationException;
@@ -74,7 +78,7 @@ import org.apache.kafka.common.serialization.StringSerializer;
  */
 @Slf4j
 public class KafkaTransactionalProcessor {
-    private final KafkaConsumer<String, Long> consumer;
+    private KafkaConsumer<String, Long> consumer;
     private KafkaProducer<String, Long> producer;
     private final String inputTopic;
     private final String outputTopic;
@@ -82,14 +86,19 @@ public class KafkaTransactionalProcessor {
     private final String consumerGroupId;
     private final String groupInstanceId;
     private final AtomicBoolean running = new AtomicBoolean(true);
-    private final AtomicLong processedMessages = new AtomicLong(0);
-    private final AtomicLong transactionCount = new AtomicLong(0);
     private final Thread processingThread;
     private static final int MAX_RETRIES = 5;
     private static final int TRANSACTION_TIMEOUT_MS = 10_000;
     private volatile int retries = 0;
     private final Properties producerProps;
-    
+    private final AtomicBoolean isRestarting = new AtomicBoolean(false);
+
+    private final AtomicLong processedMessages = new AtomicLong(0);
+    private final AtomicLong commitCount = new AtomicLong(0);
+    private final AtomicLong abortCount = new AtomicLong(0);
+    private final AtomicInteger producerRestartCount = new AtomicInteger(0);
+    private final Map<Exception, Integer> exceptionMap = new ConcurrentHashMap<>();
+
     public KafkaTransactionalProcessor(Properties baseProps, String topicName) {
         this.inputTopic = topicName + "_transactional";
         this.outputTopic = topicName;
@@ -128,9 +137,9 @@ public class KafkaTransactionalProcessor {
         consumerProps.put(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, "300000");
         consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, LongDeserializer.class.getName());
-        
+
         this.consumer = new KafkaConsumer<>(consumerProps);
-        
+
         // Configure transactional producer
         Properties producerProps = new Properties();
         producerProps.putAll(baseProps);
@@ -162,6 +171,15 @@ public class KafkaTransactionalProcessor {
     
     private void processLoop() {
         while (running.get()) {
+            if (isRestarting.get()) {
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+                continue;
+            }
+            final int lastProducerRestartCount = this.producerRestartCount.get();
             try {
                 ConsumerRecords<String, Long> records = consumer.poll(Duration.ofMillis(100));
                 
@@ -172,7 +190,7 @@ public class KafkaTransactionalProcessor {
                 // Only start transaction when there are records
                 producer.beginTransaction();
 
-                ProcessingResult result = processRecords(records);
+                ProcessingResult result = processRecords(records, lastProducerRestartCount);
 
                 // Commit consumer offsets to the transaction
                 producer.sendOffsetsToTransaction(result.offsetsToCommit, consumer.groupMetadata());
@@ -180,14 +198,14 @@ public class KafkaTransactionalProcessor {
                 // Commit the transaction AFTER writing records to output topic
                 producer.commitTransaction();
 
-                long committedTx = transactionCount.incrementAndGet();
+                long committedTx = commitCount.incrementAndGet();
                 if (result.messagesInTransaction > 0) {
                     log.debug("Committed transaction #{} with {} messages", committedTx, result.messagesInTransaction);
                 }
 
                 if (processedMessages.get() % 1000 == 0) {
                     log.info("Processed {} messages in {} transactions", 
-                            processedMessages.get(), transactionCount.get());
+                            processedMessages.get(), commitCount.get());
                 }
 
                 // Reset retries after a successful commit
@@ -195,19 +213,17 @@ public class KafkaTransactionalProcessor {
                 
             } catch (AuthorizationException | UnsupportedVersionException
                      | FencedInstanceIdException | OutOfOrderSequenceException | SerializationException e) {
+                exceptionMap.compute(e, (key, val) -> (val == null) ? 1 : val + 1);
                 log.error("Unrecoverable error in transactional processing. Shutting down.", e);
                 safeAbortTransaction();
                 running.set(false);
-            } catch (ProducerFencedException e) {
+            } catch (ProducerFencedException | InvalidProducerEpochException | InvalidTxnStateException e) {
                 // If the transaction timeout, the producer epoch will be bumped and the producer ID will be fenced
-                log.warn("Producer fenced exception, aborting transaction and shutting down.");
-                // the transaction should be aborted automatically
-                restoreFetchPositionToCommitted();
-                producer.close();
-                producer = new KafkaProducer<>(producerProps);
-                producer.initTransactions();
-                log.info("Reinitialized producer after fencing.");
+                exceptionMap.compute(e, (key, val) -> (val == null) ? 1 : val + 1);
+                log.warn("Producer is fencing, restart producer, {}", e.getMessage());
+                restart(lastProducerRestartCount);
             } catch (OffsetOutOfRangeException | NoOffsetForPartitionException e) {
+                exceptionMap.compute(e, (key, val) -> (val == null) ? 1 : val + 1);
                 log.warn(
                         "Offset invalid or not found, seeking to end and committing current position: {}",
                         e.getMessage());
@@ -215,12 +231,14 @@ public class KafkaTransactionalProcessor {
                 consumer.commitSync();
                 retries = 0;
             } catch (KafkaException e) {
+                exceptionMap.compute(e, (key, val) -> (val == null) ? 1 : val + 1);
                 log.warn("KafkaException during processing, aborting and retrying: {}", e.getMessage());
                 safeAbortTransaction();
                 restoreFetchPositionToCommitted();
                 retries = maybeRetry(retries);
                 backoffOnError();
             } catch (Exception e) {
+                exceptionMap.compute(e, (key, val) -> (val == null) ? 1 : val + 1);
                 log.error("Unexpected error in processing loop", e);
                 safeAbortTransaction();
                 restoreFetchPositionToCommitted();
@@ -230,10 +248,11 @@ public class KafkaTransactionalProcessor {
         }
     }
     
-    private ProcessingResult processRecords(ConsumerRecords<String, Long> records) {
+    private ProcessingResult processRecords(ConsumerRecords<String, Long> records, int lastProducerRestartCount) {
         Map<TopicPartition, OffsetAndMetadata> offsetsToCommit = new HashMap<>();
         int messagesInTx = 0;
 
+        // Capture the current producer epoch to make sure restarts are not duplicated
         for (ConsumerRecord<String, Long> record : records) {
             // Identity processing in this proof: forward the same key/value to the same partition
             String outputKey = record.key();
@@ -244,13 +263,15 @@ public class KafkaTransactionalProcessor {
             outputRecord.headers().add("originalOffset", String.valueOf(record.offset()).getBytes());
             producer.send(outputRecord, (metadata, err) -> {
                 if (err != null) {
-                    log.error("Failed to produce record to output topic", err);
-                    if (err instanceof ProducerFencedException) {
-                        log.warn("Producer is fenced while producing", err);
-                        producer.close();
-                        producer = new KafkaProducer<>(producerProps);
-                        producer.initTransactions();
-                        log.info("Producer is fenced while producing, reInitialize it.");
+                    exceptionMap.compute(err, (key, val) -> (val == null) ? 1 : val + 1);
+                    if (err instanceof ProducerFencedException
+                            || err instanceof InvalidProducerEpochException
+                            || err instanceof InvalidTxnStateException) {
+                        log.error("Producer fenced or invalid txn state detected in callback,"
+                                + "try restarting processor");
+                        restart(lastProducerRestartCount);
+                    } else {
+                        log.warn("Failed to produce record to output topic, {}", err.getMessage());
                     }
                 }
             });
@@ -264,13 +285,45 @@ public class KafkaTransactionalProcessor {
 
         return new ProcessingResult(offsetsToCommit, messagesInTx);
     }
-    
+
+    private void restart(int lastProducerRestartCount) {
+        int currentRestartCount = this.producerRestartCount.get();
+        if (lastProducerRestartCount != -1 && lastProducerRestartCount < currentRestartCount) {
+            log.info("Processor already restarted by another thread, last: {}, current: {}.",
+                    lastProducerRestartCount, currentRestartCount);
+            return;
+        }
+        if (isRestarting.compareAndSet(false, true)) {
+            log.info("Restarting transactional processor...");
+            try {
+                // Close existing producer
+                if (producer != null) {
+                    producer.close();
+                }
+
+                // Create new producer
+                producer = new KafkaProducer<>(producerProps);
+                producer.initTransactions();
+
+                restoreFetchPositionToCommitted();
+
+                log.info("[{}] Transactional processor restarted successfully.",
+                        producerRestartCount.incrementAndGet());
+            } catch (Exception e) {
+                log.error("Failed to restart transactional processor", e);
+                throw new IllegalStateException(e);
+            } finally {
+                isRestarting.set(false);
+            }
+        }
+    }
+
     public long getProcessedMessageCount() {
         return processedMessages.get();
     }
     
-    public long getTransactionCount() {
-        return transactionCount.get();
+    public long getCommitCount() {
+        return commitCount.get();
     }
     
     public void close() {
@@ -283,8 +336,9 @@ public class KafkaTransactionalProcessor {
                 consumer.close();
                 producer.close();
                 
-                log.info("Closed transactional processor. Processed {} messages in {} transactions", 
-                        processedMessages.get(), transactionCount.get());
+                log.info("Closed transactional processor. Processed {} messages in {} transactions, aborts: {},"
+                                + "producerRestarts: {}, exceptions: {}", processedMessages.get(), commitCount.get(),
+                        abortCount, producerRestartCount.get(), exceptionMap);
             } catch (Exception e) {
                 log.error("Error closing transactional processor", e);
             }
@@ -294,6 +348,7 @@ public class KafkaTransactionalProcessor {
     private void safeAbortTransaction() {
         try {
             producer.abortTransaction();
+            abortCount.incrementAndGet();
         } catch (Exception abortEx) {
             log.error("Failed to abort transaction", abortEx);
         }
@@ -310,6 +365,7 @@ public class KafkaTransactionalProcessor {
                     consumer.seekToBeginning(Collections.singleton(tp));
                 }
             }
+            log.info("Restored fetch position to committed offsets: {}", committed);
         } catch (Exception e) {
             log.warn("Failed to restore fetch position to committed offsets", e);
         }
