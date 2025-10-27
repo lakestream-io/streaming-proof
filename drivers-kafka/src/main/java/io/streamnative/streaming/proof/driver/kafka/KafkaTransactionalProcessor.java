@@ -212,12 +212,13 @@ public class KafkaTransactionalProcessor {
                 retries = 0;
                 
             } catch (AuthorizationException | UnsupportedVersionException
-                     | FencedInstanceIdException | OutOfOrderSequenceException | SerializationException e) {
+                     | FencedInstanceIdException | SerializationException e) {
                 exceptionMap.compute(e, (key, val) -> (val == null) ? 1 : val + 1);
                 log.error("Unrecoverable error in transactional processing. Shutting down.", e);
                 safeAbortTransaction();
                 running.set(false);
-            } catch (ProducerFencedException | InvalidProducerEpochException | InvalidTxnStateException e) {
+            } catch (ProducerFencedException | InvalidProducerEpochException
+                     | InvalidTxnStateException | OutOfOrderSequenceException e) {
                 // If the transaction timeout, the producer epoch will be bumped and the producer ID will be fenced
                 exceptionMap.compute(e, (key, val) -> (val == null) ? 1 : val + 1);
                 log.warn("Producer is fencing, restart producer, {}", e.getMessage());
