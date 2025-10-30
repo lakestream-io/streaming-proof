@@ -287,8 +287,8 @@ public class KafkaTransactionalProcessor {
     private void restart(int lastProducerRestartCount, Throwable throwable, boolean isSendError) {
         int currentRestartCount = this.producerRestartCount.get();
         if (lastProducerRestartCount != -1 && lastProducerRestartCount < currentRestartCount) {
-            log.info("Processor already restarted by another thread, isSendError: {}, last: {}, current: {}.",
-                    isSendError, lastProducerRestartCount, currentRestartCount);
+            log.info("Processor already restarted by another thread, last: {}, current: {}, isSendError: {}, {}",
+                    lastProducerRestartCount, currentRestartCount, isSendError, throwable.getMessage());
             return;
         }
         if (isRestarting.compareAndSet(false, true)) {
@@ -315,8 +315,9 @@ public class KafkaTransactionalProcessor {
                 isRestarting.set(false);
             }
         } else {
-            log.info("Another thread is restarting the processor, skipping this restart request, isSendError: {}, "
-                    + "last: {}, current: {}.", isSendError, lastProducerRestartCount, currentRestartCount);
+            log.info("Another thread is restarting the processor, skipping this restart request, "
+                    + "last: {}, current: {}, isSendError: {}, {}.",
+                    lastProducerRestartCount, currentRestartCount, isSendError, throwable.getMessage());
         }
     }
 
