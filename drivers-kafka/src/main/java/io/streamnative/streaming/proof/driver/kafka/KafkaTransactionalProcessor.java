@@ -221,8 +221,7 @@ public class KafkaTransactionalProcessor {
                      | InvalidTxnStateException | OutOfOrderSequenceException e) {
                 // If the transaction timeout, the producer epoch will be bumped and the producer ID will be fenced
                 exceptionMap.compute(e, (key, val) -> (val == null) ? 1 : val + 1);
-                log.warn("Producer is fencing, restart producer, {}", e.getMessage());
-                restart(lastProducerRestartCount);
+                restart(lastProducerRestartCount, e, false);
             } catch (OffsetOutOfRangeException | NoOffsetForPartitionException e) {
                 exceptionMap.compute(e, (key, val) -> (val == null) ? 1 : val + 1);
                 log.warn(
@@ -268,9 +267,7 @@ public class KafkaTransactionalProcessor {
                     if (err instanceof ProducerFencedException
                             || err instanceof InvalidProducerEpochException
                             || err instanceof InvalidTxnStateException) {
-                        log.error("Producer fenced or invalid txn state detected in callback,"
-                                + "try restarting processor");
-                        restart(lastProducerRestartCount);
+                        restart(lastProducerRestartCount, err, true);
                     } else {
                         log.warn("Failed to produce record to output topic, {}", err.getMessage());
                     }
@@ -287,15 +284,16 @@ public class KafkaTransactionalProcessor {
         return new ProcessingResult(offsetsToCommit, messagesInTx);
     }
 
-    private void restart(int lastProducerRestartCount) {
+    private void restart(int lastProducerRestartCount, Throwable throwable, boolean isSendError) {
         int currentRestartCount = this.producerRestartCount.get();
         if (lastProducerRestartCount != -1 && lastProducerRestartCount < currentRestartCount) {
-            log.info("Processor already restarted by another thread, last: {}, current: {}.",
-                    lastProducerRestartCount, currentRestartCount);
+            log.info("Processor already restarted by another thread, isSendError: {}, last: {}, current: {}.",
+                    isSendError, lastProducerRestartCount, currentRestartCount);
             return;
         }
         if (isRestarting.compareAndSet(false, true)) {
-            log.info("Restarting transactional processor...");
+            log.error("Processor producer restarting due to exception, isSendError: {}, {}",
+                    isSendError, throwable.getMessage(), throwable);
             try {
                 // Close existing producer
                 if (producer != null) {
@@ -316,6 +314,9 @@ public class KafkaTransactionalProcessor {
             } finally {
                 isRestarting.set(false);
             }
+        } else {
+            log.info("Another thread is restarting the processor, skipping this restart request, isSendError: {}, "
+                    + "last: {}, current: {}.", isSendError, lastProducerRestartCount, currentRestartCount);
         }
     }
 
