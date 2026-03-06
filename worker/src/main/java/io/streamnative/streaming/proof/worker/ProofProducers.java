@@ -122,11 +122,22 @@ public class ProofProducers {
         // Calculate keys per producer
         int totalKeys = newProducers.keys();
         int producerCount = newProducers.producers();
-        int baseKeysPerProducer = totalKeys / producerCount;
-        int remainder = totalKeys % producerCount;
+        if (producerCount <= 0) {
+            throw new IllegalArgumentException("Producer groups require at least one producer");
+        }
+        if (totalKeys <= 0) {
+            throw new IllegalArgumentException("Producer groups require at least one key");
+        }
+        int activeProducerCount = Math.min(totalKeys, producerCount);
+        if (activeProducerCount < producerCount) {
+            log.warn("Requested {} producers but only {} keys available, reducing to {}",
+                    producerCount, totalKeys, activeProducerCount);
+        }
+        int baseKeysPerProducer = totalKeys / activeProducerCount;
+        int remainder = totalKeys % activeProducerCount;
 
         // Create tasks with their respective key counts
-        for (int i = 0; i < producerCount; i++) {
+        for (int i = 0; i < activeProducerCount; i++) {
             ProofProducer producer;
             
             if (newProducers.transactional() && "kafka".equals(newProducers.driver().driverType())) {
@@ -143,7 +154,7 @@ public class ProofProducers {
                 producer = driver.createProducer(newProducers.topic(), newProducers.driver().driverConfigs());
             }
             
-            int keyCount = baseKeysPerProducer + (i == producerCount - 1 ? remainder : 0);
+            int keyCount = baseKeysPerProducer + (i == activeProducerCount - 1 ? remainder : 0);
             tasks.add(new ProofProducerTask(producer, keyCount));
         }
     }

@@ -106,6 +106,9 @@ public class ProofProducerTask implements AutoCloseable {
      * @param keys The number of unique keys to manage
      */
     public ProofProducerTask(ProofProducer producer, int keys) {
+        if (keys <= 0) {
+            throw new IllegalArgumentException("Producer tasks require at least one key");
+        }
         this.producer = producer;
         this.keys = keys;
         this.keyArray = new String[keys];
