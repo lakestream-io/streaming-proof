@@ -239,14 +239,22 @@ public class KafkaTransactionalProcessor {
                 exceptionMap.merge(e.getClass().getSimpleName(), 1, Integer::sum);
                 log.warn("KafkaException during processing, aborting and retrying: {}", e.getMessage());
                 safeAbortTransaction();
-                restoreFetchPositionToCommitted();
+                try {
+                    restoreFetchPositionToCommitted();
+                } catch (Exception restoreEx) {
+                    log.warn("Failed to restore fetch position to committed offsets", restoreEx);
+                }
                 retries = maybeRetry(retries);
                 backoffOnError();
             } catch (Exception e) {
                 exceptionMap.merge(e.getClass().getSimpleName(), 1, Integer::sum);
                 log.error("Unexpected error in processing loop", e);
                 safeAbortTransaction();
-                restoreFetchPositionToCommitted();
+                try {
+                    restoreFetchPositionToCommitted();
+                } catch (Exception restoreEx) {
+                    log.warn("Failed to restore fetch position to committed offsets", restoreEx);
+                }
                 retries = maybeRetry(retries);
                 backoffOnError();
             }
@@ -368,20 +376,16 @@ public class KafkaTransactionalProcessor {
     }
 
     private void restoreFetchPositionToCommitted() {
-        try {
-            Map<TopicPartition, OffsetAndMetadata> committed = consumer.committed(consumer.assignment());
-            for (TopicPartition tp : consumer.assignment()) {
-                OffsetAndMetadata om = committed.get(tp);
-                if (om != null) {
-                    consumer.seek(tp, om.offset());
-                } else {
-                    consumer.seekToBeginning(Collections.singleton(tp));
-                }
+        Map<TopicPartition, OffsetAndMetadata> committed = consumer.committed(consumer.assignment());
+        for (TopicPartition tp : consumer.assignment()) {
+            OffsetAndMetadata om = committed.get(tp);
+            if (om != null) {
+                consumer.seek(tp, om.offset());
+            } else {
+                consumer.seekToBeginning(Collections.singleton(tp));
             }
-            log.info("Restored fetch position to committed offsets: {}", committed);
-        } catch (Exception e) {
-            log.warn("Failed to restore fetch position to committed offsets", e);
         }
+        log.info("Restored fetch position to committed offsets: {}", committed);
     }
 
     private int maybeRetry(int currentRetries) {
