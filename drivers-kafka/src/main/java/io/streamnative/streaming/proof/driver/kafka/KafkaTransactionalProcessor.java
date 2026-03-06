@@ -177,6 +177,9 @@ public class KafkaTransactionalProcessor {
                     Thread.sleep(1000);
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
+                    if (!running.get()) {
+                        break;
+                    }
                 }
                 continue;
             }
