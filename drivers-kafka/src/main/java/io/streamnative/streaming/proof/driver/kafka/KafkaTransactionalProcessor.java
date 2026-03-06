@@ -97,7 +97,7 @@ public class KafkaTransactionalProcessor {
     private final AtomicLong commitCount = new AtomicLong(0);
     private final AtomicLong abortCount = new AtomicLong(0);
     private final AtomicInteger producerRestartCount = new AtomicInteger(0);
-    private final Map<Exception, Integer> exceptionMap = new ConcurrentHashMap<>();
+    private final Map<String, Integer> exceptionMap = new ConcurrentHashMap<>();
 
     public KafkaTransactionalProcessor(Properties baseProps, String topicName) {
         this.inputTopic = topicName + "_transactional";
@@ -213,17 +213,17 @@ public class KafkaTransactionalProcessor {
                 
             } catch (AuthorizationException | UnsupportedVersionException
                      | FencedInstanceIdException | SerializationException e) {
-                exceptionMap.compute(e, (key, val) -> (val == null) ? 1 : val + 1);
+                exceptionMap.merge(e.getClass().getSimpleName(), 1, Integer::sum);
                 log.error("Unrecoverable error in transactional processing. Shutting down.", e);
                 safeAbortTransaction();
                 running.set(false);
             } catch (ProducerFencedException | InvalidProducerEpochException
                      | InvalidTxnStateException | OutOfOrderSequenceException e) {
                 // If the transaction timeout, the producer epoch will be bumped and the producer ID will be fenced
-                exceptionMap.compute(e, (key, val) -> (val == null) ? 1 : val + 1);
+                exceptionMap.merge(e.getClass().getSimpleName(), 1, Integer::sum);
                 restart(lastProducerRestartCount, e, false);
             } catch (OffsetOutOfRangeException | NoOffsetForPartitionException e) {
-                exceptionMap.compute(e, (key, val) -> (val == null) ? 1 : val + 1);
+                exceptionMap.merge(e.getClass().getSimpleName(), 1, Integer::sum);
                 log.warn(
                         "Offset invalid or not found, seeking to end and committing current position: {}",
                         e.getMessage());
@@ -231,14 +231,14 @@ public class KafkaTransactionalProcessor {
                 consumer.commitSync();
                 retries = 0;
             } catch (KafkaException e) {
-                exceptionMap.compute(e, (key, val) -> (val == null) ? 1 : val + 1);
+                exceptionMap.merge(e.getClass().getSimpleName(), 1, Integer::sum);
                 log.warn("KafkaException during processing, aborting and retrying: {}", e.getMessage());
                 safeAbortTransaction();
                 restoreFetchPositionToCommitted();
                 retries = maybeRetry(retries);
                 backoffOnError();
             } catch (Exception e) {
-                exceptionMap.compute(e, (key, val) -> (val == null) ? 1 : val + 1);
+                exceptionMap.merge(e.getClass().getSimpleName(), 1, Integer::sum);
                 log.error("Unexpected error in processing loop", e);
                 safeAbortTransaction();
                 restoreFetchPositionToCommitted();
@@ -263,7 +263,7 @@ public class KafkaTransactionalProcessor {
             outputRecord.headers().add("originalOffset", String.valueOf(record.offset()).getBytes());
             producer.send(outputRecord, (metadata, err) -> {
                 if (err != null) {
-                    exceptionMap.compute(err, (key, val) -> (val == null) ? 1 : val + 1);
+                    exceptionMap.merge(err.getClass().getSimpleName(), 1, Integer::sum);
                     if (err instanceof ProducerFencedException
                             || err instanceof InvalidProducerEpochException
                             || err instanceof InvalidTxnStateException) {
