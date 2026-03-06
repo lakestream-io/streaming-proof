@@ -126,13 +126,22 @@ public class ProofConsumers {
      */
     public void stop() {
         log.info("Stopping consumers for topic {}", newConsumers.topic());
-        try {
-            for (ProofConsumerTask task : tasks) {
+        Exception firstFailure = null;
+        for (ProofConsumerTask task : tasks) {
+            try {
                 task.close();
+            } catch (Exception e) {
+                log.error("Failed to close consumer task for topic {}", newConsumers.topic(), e);
+                if (firstFailure == null) {
+                    firstFailure = e;
+                } else {
+                    firstFailure.addSuppressed(e);
+                }
             }
-        } catch (Exception e) {
-            throw new RuntimeException(e);
         }
         log.info("Stopped consumers for topic {}", newConsumers.topic());
+        if (firstFailure != null) {
+            throw new RuntimeException(firstFailure);
+        }
     }
 }

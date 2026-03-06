@@ -194,14 +194,23 @@ public class ProofProducers {
         }
         
         
-        try {
-            for (ProofProducerTask task : tasks) {
+        Exception firstFailure = null;
+        for (ProofProducerTask task : tasks) {
+            try {
                 task.close();
+            } catch (Exception e) {
+                log.error("Failed to close producer task for topic {}", newProducers.topic(), e);
+                if (firstFailure == null) {
+                    firstFailure = e;
+                } else {
+                    firstFailure.addSuppressed(e);
+                }
             }
-        } catch (Exception e) {
-            throw new RuntimeException(e);
         }
         log.info("Stopped producers for topic {}", newProducers.topic());
+        if (firstFailure != null) {
+            throw new RuntimeException(firstFailure);
+        }
     }
 
     /**
