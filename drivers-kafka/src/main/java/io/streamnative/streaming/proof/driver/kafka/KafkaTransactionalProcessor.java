@@ -355,13 +355,18 @@ public class KafkaTransactionalProcessor {
             try {
                 // Wait for processing thread to finish
                 processingThread.join(5000);
-                
+                if (processingThread.isAlive()) {
+                    log.warn("Processing thread did not terminate within 5 seconds, interrupting");
+                    processingThread.interrupt();
+                    processingThread.join(2000);
+                }
+
                 // Close resources
                 consumer.close();
                 producer.close();
-                
+
                 log.info("Closed transactional processor. Processed {} messages in {} transactions, aborts: {},"
-                                + "producerRestarts: {}, exceptions: {}", processedMessages.get(), commitCount.get(),
+                                + " producerRestarts: {}, exceptions: {}", processedMessages.get(), commitCount.get(),
                         abortCount, producerRestartCount.get(), exceptionMap);
             } catch (Exception e) {
                 log.error("Error closing transactional processor", e);
