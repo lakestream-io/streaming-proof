@@ -87,7 +87,11 @@ public class OffloadCondition {
                 }
                 refreshTopicInternalStats();
                 TimeUnit.SECONDS.sleep(30);
-            } catch (PulsarAdminException | InterruptedException e) {
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("Interrupted while waiting for offload condition for topic: {}", topic);
+                return;
+            } catch (PulsarAdminException e) {
                 log.error("Failed to refresh topic internal stats for topic: {}", topic, e);
             }
         }
@@ -116,7 +120,11 @@ public class OffloadCondition {
                 }
                 refreshTopicInternalStats();
                 TimeUnit.SECONDS.sleep(30); // Wait before checking again
-            } catch (PulsarAdminException | InterruptedException e) {
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("Interrupted while waiting for offload condition for topic: {}", topic);
+                return;
+            } catch (PulsarAdminException e) {
                 log.error("Failed to refresh topic internal stats for topic: {}", topic, e);
             }
         }
