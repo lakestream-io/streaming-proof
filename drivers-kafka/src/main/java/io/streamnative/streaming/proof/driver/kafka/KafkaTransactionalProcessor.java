@@ -309,8 +309,8 @@ public class KafkaTransactionalProcessor {
                 log.info("[{}] Transactional processor restarted successfully.",
                         producerRestartCount.incrementAndGet());
             } catch (Exception e) {
-                log.error("Failed to restart transactional processor", e);
-                throw new IllegalStateException(e);
+                log.error("Failed to restart transactional processor, shutting down", e);
+                running.set(false);
             } finally {
                 isRestarting.set(false);
             }
