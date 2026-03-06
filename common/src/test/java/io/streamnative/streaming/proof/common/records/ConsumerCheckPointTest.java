@@ -255,6 +255,56 @@ public class ConsumerCheckPointTest {
     }
 
     @Test
+    public void testDuplicateCountDoesNotRepeatIntrinsicDuplicatesAcrossEarlierRanges() {
+        checkPoint.addKey(TEST_KEY_1, createRangeMap("1", 1L, 5L));
+        checkPoint.addKey(TEST_KEY_1, createRangeMap("10", 10L, 15L));
+
+        Map<String, ConsumerCheckPoint.SeqRange> duplicatedRange = createRangeMap("20", 20L, 25L);
+        duplicatedRange.get("20").setDuplicated(3);
+        checkPoint.addKey(TEST_KEY_1, duplicatedRange);
+
+        checkPoint.calculate();
+
+        assertNotNull(checkPoint.getDuplicatedCount().get(TEST_KEY_1));
+        assertEquals(checkPoint.getDuplicatedCount().get(TEST_KEY_1).longValue(), 3L);
+    }
+
+    @Test
+    public void testDuplicateCountWithOverlapAndIntrinsicDuplicates() {
+        checkPoint.addKey(TEST_KEY_1, createRangeMap("1", 1L, 5L));
+        checkPoint.addKey(TEST_KEY_1, createRangeMap("10", 10L, 15L));
+
+        Map<String, ConsumerCheckPoint.SeqRange> duplicatedRange = createRangeMap("20", 3L, 12L);
+        duplicatedRange.get("20").setDuplicated(4);
+        checkPoint.addKey(TEST_KEY_1, duplicatedRange);
+
+        checkPoint.calculate();
+
+        assertNotNull(checkPoint.getDuplicatedCount().get(TEST_KEY_1));
+        assertEquals(checkPoint.getDuplicatedCount().get(TEST_KEY_1).longValue(), 10L);
+    }
+
+    @Test
+    public void testDuplicateCountWithMultipleIntrinsicDuplicateRanges() {
+        checkPoint.addKey(TEST_KEY_1, createRangeMap("1", 1L, 5L));
+        checkPoint.addKey(TEST_KEY_1, createRangeMap("10", 10L, 15L));
+
+        Map<String, ConsumerCheckPoint.SeqRange> duplicatedRange1 = createRangeMap("20", 3L, 12L);
+        duplicatedRange1.get("20").setDuplicated(4);
+        checkPoint.addKey(TEST_KEY_1, duplicatedRange1);
+
+        Map<String, ConsumerCheckPoint.SeqRange> duplicatedRange2 = createRangeMap("30", 18L, 22L);
+        duplicatedRange2.get("30").setDuplicated(2);
+        checkPoint.addKey(TEST_KEY_1, duplicatedRange2);
+
+        checkPoint.calculate();
+
+        assertNotNull(checkPoint.getDuplicatedCount().get(TEST_KEY_1));
+        // Overlaps: 3-5 (3), 10-12 (3); intrinsic duplicates: 4 and 2.
+        assertEquals(checkPoint.getDuplicatedCount().get(TEST_KEY_1).longValue(), 12L);
+    }
+
+    @Test
     public void testTrimRedundantRanges() {
         // Add all ranges to the checkpoint
         checkPoint.addKey(TEST_KEY_1, createRangeMap("1", 1L, 20L));

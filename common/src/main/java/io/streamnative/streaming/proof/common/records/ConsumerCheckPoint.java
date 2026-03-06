@@ -304,6 +304,8 @@ public class ConsumerCheckPoint {
         // Iterate through consecutive ranges to find duplicates
         for (int i = 1; i < ranges.size(); i++) {
             SeqRange current = ranges.get(i);
+            // trim() is only used to collapse earlier overlap windows for overlap counting.
+            // Intrinsic duplicate counts stay on the original range and must be added exactly once here.
             List<SeqRange> trimmed = trim(ranges.subList(0, i));
             for (SeqRange previous : trimmed) {
                 // If current start sequence is less than or equal to previous end sequence,
@@ -319,8 +321,8 @@ public class ConsumerCheckPoint {
                         duplicates += overlap;
                     }
                 }
-                duplicates += current.getDuplicated();
             }
+            duplicates += current.getDuplicated();
         }
         
         return duplicates;
