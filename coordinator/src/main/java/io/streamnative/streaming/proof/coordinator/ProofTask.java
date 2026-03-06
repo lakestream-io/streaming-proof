@@ -420,6 +420,14 @@ public class ProofTask {
      * Deletes the messaging system topic and performs cleanup.
      */
     public void remove() {
+        if (proof.getFeatures() != null && proof.getFeatures().contains("exactly_once")) {
+            try {
+                proofDriver.deleteTopic(proof.getTopic() + "_transactional");
+            } catch (Exception e) {
+                log.warn("Failed to delete transactional topic {} for proof {}",
+                        proof.getTopic() + "_transactional", proof.getId(), e);
+            }
+        }
         proofDriver.deleteTopic(proof.getTopic());
         System.out.println("ProofTask removed");
     }
