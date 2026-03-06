@@ -79,7 +79,7 @@ import org.apache.kafka.common.serialization.StringSerializer;
 @Slf4j
 public class KafkaTransactionalProcessor {
     private KafkaConsumer<String, Long> consumer;
-    private KafkaProducer<String, Long> producer;
+    private volatile KafkaProducer<String, Long> producer;
     private final String inputTopic;
     private final String outputTopic;
     private final String transactionalId;
