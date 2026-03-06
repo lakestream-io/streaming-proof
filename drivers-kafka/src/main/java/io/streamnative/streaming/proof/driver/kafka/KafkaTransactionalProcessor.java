@@ -92,6 +92,7 @@ public class KafkaTransactionalProcessor {
     private volatile int retries = 0;
     private final Properties producerProps;
     private final AtomicBoolean isRestarting = new AtomicBoolean(false);
+    private volatile boolean needsPositionRestore = false;
 
     private final AtomicLong processedMessages = new AtomicLong(0);
     private final AtomicLong commitCount = new AtomicLong(0);
@@ -178,6 +179,10 @@ public class KafkaTransactionalProcessor {
                     Thread.currentThread().interrupt();
                 }
                 continue;
+            }
+            if (needsPositionRestore) {
+                restoreFetchPositionToCommitted();
+                needsPositionRestore = false;
             }
             final int lastProducerRestartCount = this.producerRestartCount.get();
             try {
@@ -304,7 +309,12 @@ public class KafkaTransactionalProcessor {
                 producer = new KafkaProducer<>(producerProps);
                 producer.initTransactions();
 
-                restoreFetchPositionToCommitted();
+                if (isSendError) {
+                    // KafkaConsumer is not thread-safe; defer position restore to the processing thread
+                    needsPositionRestore = true;
+                } else {
+                    restoreFetchPositionToCommitted();
+                }
 
                 log.info("[{}] Transactional processor restarted successfully.",
                         producerRestartCount.incrementAndGet());
