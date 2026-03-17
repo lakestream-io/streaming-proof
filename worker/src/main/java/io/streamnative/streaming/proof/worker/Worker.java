@@ -86,7 +86,10 @@ public class Worker {
      */
     public void stopProducers(String id) {
         ProofProducers producer = producers.get(id);
-        producer.stop();
+        if (producer != null) {
+            producer.stop();
+            producers.remove(id);
+        }
     }
 
     /**

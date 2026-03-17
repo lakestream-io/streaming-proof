@@ -37,9 +37,13 @@ jobs:
 
       - name: Push image
         run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          docker tag streamnative/streaming-proof:latest streamnative/streaming-proof:${SHORT_SHA}
+
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.tag }}" != "latest" ]]; then
             docker tag streamnative/streaming-proof:latest streamnative/streaming-proof:${{ inputs.tag }}
             docker push streamnative/streaming-proof:${{ inputs.tag }}
-          else
-            docker push streamnative/streaming-proof:latest
           fi
+
+          docker push streamnative/streaming-proof:latest
+          docker push streamnative/streaming-proof:${SHORT_SHA}

@@ -41,6 +41,7 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
@@ -127,6 +128,12 @@ public class ProofTask {
     private long checkPointInCheckTimeStamps;
 
     private boolean failed = false;
+    private final AtomicBoolean running = new AtomicBoolean(false);
+    private final AtomicBoolean completionHandled = new AtomicBoolean(false);
+
+    public boolean isRunning() {
+        return running.get();
+    }
 
     /**
      * Creates a new proof task with the specified configuration.
@@ -158,6 +165,7 @@ public class ProofTask {
      * </ul>
      */
     public void start() {
+        running.set(true);
         // Create output topic (consumers read from this)
         proofDriver.createTopic(proof.getTopic(), proof.getPartitions());
         
@@ -261,6 +269,9 @@ public class ProofTask {
     private void scheduleCheckpoint() {
         executor.scheduleAtFixedRate(() -> {
             try {
+                if (!running.get()) {
+                    return;
+                }
                 // Check if the proof task has reached its duration limit
                 if (proof.getDuration() > 0 && proof.getStartTime() != null) {
                     // Parse the formatted timestamp back to a LocalDateTime
@@ -272,11 +283,7 @@ public class ProofTask {
                             startDateTime, LocalDateTime.now()).getSeconds();
 
                     if (elapsedSeconds >= proof.getDuration()) {
-                        log.info("Stopping proof task {} after reaching the specified duration of {} seconds",
-                                proof.getId(), proof.getDuration());
-                        // Send webhook notification for duration completion
-                        sendCompletionNotification(getSummary());
-                        stop();
+                        completeProofAfterDuration();
                         return;
                     }
                 }
@@ -323,6 +330,17 @@ public class ProofTask {
             }
 
         }, proof.getCheckPointInterval(), proof.getCheckPointInterval(), TimeUnit.SECONDS);
+    }
+
+    private void completeProofAfterDuration() {
+        if (!completionHandled.compareAndSet(false, true)) {
+            return;
+        }
+
+        log.info("Stopping proof task {} after reaching the specified duration of {} seconds",
+                proof.getId(), proof.getDuration());
+        sendCompletionNotification(getSummary());
+        stop();
     }
 
     Pair<ProducerCheckpoint, ConsumerCheckPoint> aggregateCheckpoints() {
@@ -462,21 +480,29 @@ public class ProofTask {
      * Stops all producers and shuts down the executor service.
      */
     public void stop() {
+        if (!running.compareAndSet(true, false)) {
+            return;
+        }
+
+        executor.shutdown();
+
         clients.forEach(client -> {
             try {
                 client.stopProducers(proof.getId()).join();
+            } catch (Exception e) {
+                log.warn("Failed to stop producers for proof {}", proof.getId(), e);
+            }
+            try {
                 client.stopConsumers(proof.getId()).join();
             } catch (Exception e) {
-                throw new RuntimeException(e);
+                log.warn("Failed to stop consumers for proof {}", proof.getId(), e);
             }
         });
-        executor.shutdown();
-        
-        // Close webhook service
+
         if (webhookService != null) {
             webhookService.close();
         }
-        
+
         log.info("ProofTask {} stopped", proof.getId());
     }
 }
