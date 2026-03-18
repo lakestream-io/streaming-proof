@@ -18,6 +18,12 @@
  */
 package io.streamnative.streaming.proof.worker;
 
+import static org.testng.Assert.assertNotNull;
+import static org.testng.Assert.assertTrue;
+
+import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
+import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
+import java.util.Map;
 import org.testng.annotations.Test;
 
 public class WorkerTest {
@@ -26,5 +32,36 @@ public class WorkerTest {
     public void testStopProducersIgnoresMissingProducer() {
         Worker worker = new Worker();
         worker.stopProducers("missing-proof");
+    }
+
+    @Test
+    public void testProducerCheckpointReturnsEmptyCheckpointWhenProducerIsMissing() {
+        Worker worker = new Worker();
+
+        ProducerCheckpoint checkpoint = worker.producerCheckPoint("missing-proof");
+
+        assertNotNull(checkpoint);
+        assertTrue(checkpoint.getPublished().isEmpty());
+        assertTrue(checkpoint.getErrors().isEmpty());
+    }
+
+    @Test
+    public void testConsumerCheckpointReturnsEmptyCheckpointWhenConsumerIsMissing() {
+        Worker worker = new Worker();
+
+        ConsumerCheckPoint checkpoint = worker.consumerCheckPoint("missing-proof");
+
+        assertNotNull(checkpoint);
+        assertTrue(checkpoint.getConsumed().isEmpty());
+    }
+
+    @Test
+    public void testConsumerCheckpointDetailsReturnsEmptyMapWhenConsumerIsMissing() {
+        Worker worker = new Worker();
+
+        Map<String, ConsumerCheckPoint> checkpoints = worker.consumerCheckPointDetails("missing-proof");
+
+        assertNotNull(checkpoints);
+        assertTrue(checkpoints.isEmpty());
     }
 }

@@ -100,6 +100,9 @@ public class Worker {
      */
     public ProducerCheckpoint producerCheckPoint(String id) {
         ProofProducers producer = producers.get(id);
+        if (producer == null) {
+            return new ProducerCheckpoint();
+        }
         return producer.checkPoint();
     }
 
@@ -136,6 +139,9 @@ public class Worker {
      */
     public ConsumerCheckPoint consumerCheckPoint(String id) {
         ProofConsumers consumer = consumers.get(id);
+        if (consumer == null) {
+            return new ConsumerCheckPoint();
+        }
         return consumer.checkPoint();
     }
 
@@ -163,6 +169,9 @@ public class Worker {
      */
     public Map<String, ConsumerCheckPoint> consumerCheckPointDetails(String id) {
         ProofConsumers consumer = consumers.get(id);
+        if (consumer == null) {
+            return Map.of();
+        }
         return consumer.checkPointDetails();
     }
 }
