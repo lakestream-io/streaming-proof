@@ -177,6 +177,45 @@ public class CoordinatorAPITest {
         assertEquals(proofs3.size(), 0);
     }
 
+    @Test
+    public void testGetDeletedProofReturnsNotFound() throws Exception {
+        Configs configs = new Configs(Map.of("worker1", "http://localhost:" + workerPort), Map.of("kafka_driver",
+                new Driver("kafka", Map.of("bootstrap.servers", "localhost:" + kafkaPort))));
+        httpClient.putConfigs(configs).join();
+        Proof proof = Proof.builder()
+                .name(UUID.randomUUID().toString())
+                .driver("kafka_driver")
+                .keys(10)
+                .partitions(1)
+                .producers(1)
+                .consumers(1)
+                .features(List.of("at_least_once", "ordering"))
+                .checkPointInterval(5)
+                .msgRate(100)
+                .timeout(30)
+                .build();
+        httpClient.createProof(proof).join();
+
+        String proofId = Awaitility.await()
+                .atMost(30, TimeUnit.SECONDS)
+                .until(() -> httpClient.listProofs().join(),
+                        proofs -> !proofs.isEmpty())
+                .getFirst()
+                .getId();
+
+        httpClient.stopProof(proofId).join();
+        httpClient.deleteProof(proofId).join();
+
+        try {
+            httpClient.getProof(proofId).join();
+            fail("Expected deleted proof lookup to return not found");
+        } catch (Exception e) {
+            Throwable cause = e.getCause() == null ? e : e.getCause();
+            assertTrue(cause.getMessage().contains("Proof test not found"),
+                    "Expected 404-style response, but got: " + cause.getMessage());
+        }
+    }
+
     @Test()
     public void testProofWithConsumeDelay() throws Exception {
         Configs configs = new Configs(Map.of("worker1", "http://localhost:" + workerPort), Map.of("kafka_driver",

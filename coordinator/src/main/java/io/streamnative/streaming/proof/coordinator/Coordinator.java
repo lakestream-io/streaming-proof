@@ -195,11 +195,17 @@ public class Coordinator {
      */
     public ProofDetails getProofDetails(String proofID) {
         ProofTask task = proofs.get(proofID);
+        if (task == null) {
+            return null;
+        }
         return task.getDetails();
     }
 
     public ProofDetails getProofSummary(String proofID) {
         ProofTask task = proofs.get(proofID);
+        if (task == null) {
+            return null;
+        }
         Checkpoints checkpoints = new Checkpoints(
                 task.getInCheck(),
                 task.getLatestProducerCheckpoint(),
