@@ -18,30 +18,41 @@
  */
 package io.streamnative.streaming.proof.driver.pulsar;
 
-import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.client.admin.PulsarAdmin;
-import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.MessageIdAdv;
 import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
 import org.apache.pulsar.common.policies.data.PersistentTopicInternalStats;
-import org.apache.pulsar.shade.com.google.gson.Gson;
 
 @Slf4j
 public class OffloadCondition {
 
-    private final Gson gson = new Gson();
+    private static final long DEFAULT_MAX_WAIT_MS = TimeUnit.MINUTES.toMillis(5);
+    private static final long DEFAULT_INITIAL_RETRY_BACKOFF_MS = TimeUnit.SECONDS.toMillis(1);
+    private static final long DEFAULT_MAX_RETRY_BACKOFF_MS = TimeUnit.SECONDS.toMillis(30);
+
     private final PulsarAdmin admin;
     private final String topic;
     private final int waitOffloadedForCatchupRead;
-    private Map<String, PersistentTopicInternalStats> topicInternalStatsCache = new HashMap<>();
-    private Set<Long> offloadedLedgersCache = new HashSet<>();
+    private final long maxWaitMs;
+    private final long initialRetryBackoffMs;
+    private final long maxRetryBackoffMs;
+    private final boolean allowDegradedMode;
+    private final Map<String, PersistentTopicInternalStats> topicInternalStatsCache = new LinkedHashMap<>();
+    private final Set<Long> offloadedLedgersCache = new HashSet<>();
+    private volatile boolean degradedMode;
 
     public static Optional<OffloadCondition> getOffloadCondition(
             PulsarAdmin admin, String topicName, Map<String, Object> configs) {
@@ -58,13 +69,26 @@ public class OffloadCondition {
             return Optional.empty();
         }
 
-        return  Optional.of(new OffloadCondition(admin, topicName, waitOffloadedForCatchupRead));
+        return Optional.of(new OffloadCondition(
+                admin,
+                topicName,
+                waitOffloadedForCatchupRead,
+                getLongConfig(configs, "offload.condition.maxWaitMs", DEFAULT_MAX_WAIT_MS),
+                getLongConfig(configs, "offload.condition.initialRetryBackoffMs", DEFAULT_INITIAL_RETRY_BACKOFF_MS),
+                getLongConfig(configs, "offload.condition.maxRetryBackoffMs", DEFAULT_MAX_RETRY_BACKOFF_MS),
+                getBooleanConfig(configs, "offload.condition.allowDegradedMode", true)));
     }
 
-    public OffloadCondition(PulsarAdmin admin, String topic, int waitOffloadedForCatchupRead) {
+    public OffloadCondition(PulsarAdmin admin, String topic, int waitOffloadedForCatchupRead,
+                            long maxWaitMs, long initialRetryBackoffMs,
+                            long maxRetryBackoffMs, boolean allowDegradedMode) {
         this.admin = admin;
         this.topic = topic;
         this.waitOffloadedForCatchupRead = waitOffloadedForCatchupRead;
+        this.maxWaitMs = maxWaitMs;
+        this.initialRetryBackoffMs = Math.max(1L, initialRetryBackoffMs);
+        this.maxRetryBackoffMs = Math.max(this.initialRetryBackoffMs, maxRetryBackoffMs);
+        this.allowDegradedMode = allowDegradedMode;
     }
 
     public void waitOffloadConditionMeetForMessage(MessageIdAdv messageIdAdv) {
@@ -72,89 +96,180 @@ public class OffloadCondition {
         if (offloadedLedgersCache.contains(ledgerId)) {
             return;
         }
-        while (true) {
-            try {
-                log.info("Checking offload condition for topic: {}, ledgerId: {}", topic, ledgerId);
-                var offloadedLedgers = topicInternalStatsCache.values().stream()
-                    .flatMap(stats -> stats.ledgers.stream())
-                    .filter(l -> l.offloaded)
-                    .map(l -> l.ledgerId)
-                    .collect(Collectors.toSet());
-                offloadedLedgersCache.addAll(offloadedLedgers);
-                if (offloadedLedgers.contains(ledgerId)) {
-                    unloadTopics();
-                    return;
-                }
-                refreshTopicInternalStats();
-                TimeUnit.SECONDS.sleep(30);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.warn("Interrupted while waiting for offload condition for topic: {}", topic);
-                return;
-            } catch (PulsarAdminException e) {
-                log.error("Failed to refresh topic internal stats for topic: {}", topic, e);
-            }
+        log.info("Checking offload condition for topic: {}, ledgerId: {}", topic, ledgerId);
+        boolean conditionMet = waitForCondition("ledger-" + ledgerId, () -> {
+            Set<Long> offloadedLedgers = getOffloadedLedgers();
+            offloadedLedgersCache.addAll(offloadedLedgers);
+            return offloadedLedgers.contains(ledgerId);
+        });
+        if (conditionMet) {
+            unloadTopics();
         }
     }
 
     public void waitOffloadConditionMeetForCatchupRead() {
-        while (true) {
-            log.info("Waiting for the offload condition for topic: {} to start the catchup read", topic);
-            boolean isAllTopicsMeetCondition = true;
-            for (String topic : topicInternalStatsCache.keySet()) {
-                var stats = topicInternalStatsCache.get(topic);
-                if (stats != null) {
-                    var offloadedLedgers = stats.ledgers.stream()
-                        .filter(l -> l.offloaded)
-                        .map(l -> l.ledgerId)
-                        .collect(Collectors.toSet());
-                    if (offloadedLedgers.size() < waitOffloadedForCatchupRead) {
-                        isAllTopicsMeetCondition = false;
-                    }
-                }
-            }
-            try {
-                if (isAllTopicsMeetCondition) {
-                    unloadTopics();
-                    return;
-                }
-                refreshTopicInternalStats();
-                TimeUnit.SECONDS.sleep(30); // Wait before checking again
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.warn("Interrupted while waiting for offload condition for topic: {}", topic);
-                return;
-            } catch (PulsarAdminException e) {
-                log.error("Failed to refresh topic internal stats for topic: {}", topic, e);
-            }
+        if (waitOffloadedForCatchupRead <= 0) {
+            return;
+        }
+        log.info("Waiting for the offload condition for topic: {} to start the catchup read", topic);
+        boolean conditionMet = waitForCondition("catchup-read", this::isCatchupReadConditionMet);
+        if (conditionMet) {
+            unloadTopics();
         }
     }
 
-    private void unloadTopics() throws PulsarAdminException {
+    public boolean isDegradedMode() {
+        return degradedMode;
+    }
+
+    private boolean waitForCondition(String conditionName, BooleanSupplier conditionSupplier) {
+        long startTimeMs = System.currentTimeMillis();
+        long retryBackoffMs = initialRetryBackoffMs;
+        while (!conditionSupplier.getAsBoolean()) {
+            RefreshResult refreshResult = refreshTopicInternalStats();
+            if (refreshResult.failureCount > 0) {
+                log.warn("Refresh topic internal stats had {} failures and {} successes for topic {}",
+                        refreshResult.failureCount, refreshResult.successCount, topic);
+            }
+
+            if (conditionSupplier.getAsBoolean()) {
+                degradedMode = false;
+                return true;
+            }
+
+            if (hasExceededWaitTime(startTimeMs)) {
+                if (allowDegradedMode) {
+                    degradedMode = true;
+                    log.warn("Offload condition '{}' timed out for topic {} after {} ms; entering degraded mode",
+                            conditionName, topic, maxWaitMs);
+                    return false;
+                }
+                log.warn("Offload condition '{}' timed out for topic {} after {} ms; keep waiting due to config",
+                        conditionName, topic, maxWaitMs);
+            }
+
+            try {
+                TimeUnit.MILLISECONDS.sleep(retryBackoffMs);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                if (allowDegradedMode) {
+                    degradedMode = true;
+                    log.warn("Interrupted while waiting for offload condition for topic: {}", topic);
+                    return false;
+                }
+                log.warn("Interrupted while waiting for offload condition for topic {}; keep waiting due to config",
+                        topic);
+            }
+            retryBackoffMs = Math.min(maxRetryBackoffMs, retryBackoffMs * 2);
+        }
+
+        degradedMode = false;
+        return true;
+    }
+
+    private boolean hasExceededWaitTime(long startTimeMs) {
+        return maxWaitMs > 0 && System.currentTimeMillis() - startTimeMs >= maxWaitMs;
+    }
+
+    private boolean isCatchupReadConditionMet() {
+        if (topicInternalStatsCache.isEmpty()) {
+            return false;
+        }
+        for (PersistentTopicInternalStats stats : topicInternalStatsCache.values()) {
+            if (stats == null || stats.ledgers == null) {
+                return false;
+            }
+            long offloadedLedgers = stats.ledgers.stream().filter(ledger -> ledger.offloaded).count();
+            if (offloadedLedgers < waitOffloadedForCatchupRead) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private Set<Long> getOffloadedLedgers() {
+        return topicInternalStatsCache.values().stream()
+                .filter(stats -> stats != null && stats.ledgers != null)
+                .flatMap(stats -> stats.ledgers.stream())
+                .filter(ledger -> ledger.offloaded)
+                .map(ledger -> ledger.ledgerId)
+                .collect(Collectors.toSet());
+    }
+
+    private void unloadTopics() {
         if (topicInternalStatsCache.isEmpty()) {
             refreshTopicInternalStats();
         }
-        for (String topic : topicInternalStatsCache.keySet()) {
-            admin.topics().unload(topic);
+        for (String partitionedTopic : topicInternalStatsCache.keySet()) {
+            try {
+                admin.topics().unload(partitionedTopic);
+            } catch (Exception e) {
+                log.warn("Failed to unload topic {} after offload condition met", partitionedTopic, e);
+            }
         }
     }
 
-    private void refreshTopicInternalStats() throws PulsarAdminException {
+    private RefreshResult refreshTopicInternalStats() {
         if (topicInternalStatsCache.isEmpty()) {
-            var topicMetadata = admin.topics().getPartitionedTopicMetadata(topic);
-            if (topicMetadata.partitions > 0) {
-                for (int i = 0; i < topicMetadata.partitions; i++) {
-                    String partitionedTopic = TopicName.get(topic).getPartition(i).toString();
-                    topicInternalStatsCache.put(partitionedTopic, null);
+            try {
+                PartitionedTopicMetadata topicMetadata = admin.topics().getPartitionedTopicMetadata(topic);
+                if (topicMetadata.partitions > 0) {
+                    for (int i = 0; i < topicMetadata.partitions; i++) {
+                        String partitionedTopic = TopicName.get(topic).getPartition(i).toString();
+                        topicInternalStatsCache.put(partitionedTopic, null);
+                    }
+                } else {
+                    topicInternalStatsCache.put(topic, null);
                 }
-            } else {
-                topicInternalStatsCache.put(topic, null);
+            } catch (Exception e) {
+                log.warn("Failed to fetch partitioned metadata for topic {}", topic, e);
+                return new RefreshResult(0, 1, Collections.emptyList());
             }
         }
 
-        for (String topic : topicInternalStatsCache.keySet()) {
-            PersistentTopicInternalStats stats = admin.topics().getInternalStats(topic);
-            topicInternalStatsCache.put(topic, stats);
+        int successCount = 0;
+        int failureCount = 0;
+        List<String> failedTopics = new ArrayList<>();
+        for (String partitionedTopic : topicInternalStatsCache.keySet()) {
+            try {
+                PersistentTopicInternalStats stats = admin.topics().getInternalStats(partitionedTopic);
+                topicInternalStatsCache.put(partitionedTopic, stats);
+                successCount++;
+            } catch (Exception e) {
+                failureCount++;
+                failedTopics.add(partitionedTopic);
+                log.warn("Failed to refresh topic internal stats for topic: {}", partitionedTopic, e);
+            }
         }
+        return new RefreshResult(successCount, failureCount, failedTopics);
+    }
+
+    private static long getLongConfig(Map<String, Object> configs, String key, long defaultValue) {
+        Object value = configs.get(key);
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof String s) {
+            try {
+                return Long.parseLong(s);
+            } catch (NumberFormatException e) {
+                log.warn("Invalid long config '{}'={}, using default {}", key, value, defaultValue);
+            }
+        }
+        return defaultValue;
+    }
+
+    private static boolean getBooleanConfig(Map<String, Object> configs, String key, boolean defaultValue) {
+        Object value = configs.get(key);
+        if (value instanceof Boolean b) {
+            return b;
+        }
+        if (value instanceof String s) {
+            return Boolean.parseBoolean(s);
+        }
+        return defaultValue;
+    }
+
+    private record RefreshResult(int successCount, int failureCount, List<String> failedTopics) {
     }
 }
