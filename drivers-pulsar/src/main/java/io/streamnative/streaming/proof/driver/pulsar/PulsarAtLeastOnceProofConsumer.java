@@ -105,6 +105,8 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
                 .subscriptionType(SubscriptionType.Failover)
                 .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest);
 
+        applyPulsarConsumerConfig(consumerBuilder, configs);
+
         this.consumer = consumerBuilder.subscribe();
         log.info("[{}] Created Pulsar consumer for topic: {}", name, topic);
 
@@ -209,5 +211,13 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
     @Override
     public String name() {
         return name;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void applyPulsarConsumerConfig(ConsumerBuilder<Long> builder, Map<String, Object> configs) {
+        Object raw = configs.get("pulsar.consumer.config");
+        if (raw instanceof Map<?, ?> consumerConfig) {
+            builder.loadConf((Map<String, Object>) consumerConfig);
+        }
     }
 }

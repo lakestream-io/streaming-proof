@@ -22,6 +22,7 @@ import io.streamnative.streaming.proof.common.MessageListener;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.ProofProducer;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -186,14 +187,16 @@ public class PulsarProofDriver implements ProofDriver {
         try {
             String fullTopicName = getFullTopicName(topicName);
 
-            // Check if topic is partitioned
+            // Check if topic is partitioned (partitions > 0 means partitioned)
             boolean isPartitioned = false;
             try {
-                admin.topics().getPartitionedTopicMetadata(fullTopicName);
-                isPartitioned = true;
+                int partitions = admin.topics().getPartitionedTopicMetadata(fullTopicName).partitions;
+                isPartitioned = partitions > 0;
             } catch (PulsarAdminException.NotFoundException e) {
-                // Topic is not partitioned or doesn't exist
+                // Topic doesn't exist
             }
+
+            deleteSubscriptions(fullTopicName, isPartitioned);
 
             if (isPartitioned) {
                 admin.topics().deletePartitionedTopic(fullTopicName, true);
@@ -207,6 +210,22 @@ public class PulsarProofDriver implements ProofDriver {
             } else {
                 throw new RuntimeException("Failed to delete topic: " + topicName, e);
             }
+        }
+    }
+
+    private void deleteSubscriptions(String fullTopicName, boolean isPartitioned) {
+        try {
+            List<String> subscriptions = admin.topics().getSubscriptions(fullTopicName);
+            for (String subscription : subscriptions) {
+                try {
+                    admin.topics().deleteSubscription(fullTopicName, subscription, true);
+                    log.info("Deleted subscription {} on topic {}", subscription, fullTopicName);
+                } catch (PulsarAdminException e) {
+                    log.warn("Failed to delete subscription {} on topic {}", subscription, fullTopicName, e);
+                }
+            }
+        } catch (PulsarAdminException e) {
+            log.warn("Failed to list subscriptions for topic {}", fullTopicName, e);
         }
     }
 

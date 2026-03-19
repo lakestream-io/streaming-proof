@@ -195,6 +195,8 @@ public class ProofTask {
         int baseConsumersPerWorker = totalConsumers / workerCount;
         int consumerRemainder = totalConsumers % workerCount;
         String driverName = proof.getDrivers() == null ? proof.getDriver() : proof.getDrivers().consumer();
+        Map<String, Object> pulsarConsumerConfig = proof.getPulsar() != null
+                ? proof.getPulsar().getConsumerConfig() : null;
         for (int i = 0; i < clients.size(); i++) {
             int consumerCount = baseConsumersPerWorker + (i == workerCount - 1 ? consumerRemainder : 0);
             NewConsumers record = new NewConsumers(
@@ -204,7 +206,8 @@ public class ProofTask {
                     consumerCount,
                     TimeUnit.SECONDS.toMillis(proof.getConsumeDelay()),
                     driverName,
-                    configs.drivers().get(driverName)
+                    configs.drivers().get(driverName),
+                    pulsarConsumerConfig
             );
             try {
                 clients.get(i).startConsumers(record).join();

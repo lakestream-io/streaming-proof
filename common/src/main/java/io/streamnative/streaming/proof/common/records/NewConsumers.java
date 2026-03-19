@@ -19,6 +19,7 @@
 package io.streamnative.streaming.proof.common.records;
 
 import io.streamnative.streaming.proof.common.ProofConsumer;
+import java.util.Map;
 
 /**
  * A record representing a request to create new consumers in the streaming proof system.
@@ -57,5 +58,6 @@ public record NewConsumers(String id,
                            int consumers,
                            long consumeDelayMs,
                            String driverName,
-                           Driver driver) {
+                           Driver driver,
+                           Map<String, Object> pulsarConsumerConfig) {
 }

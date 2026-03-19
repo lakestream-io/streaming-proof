@@ -156,4 +156,7 @@ public class Proof {
     
     /** Webhook configuration for notifications */
     private WebhookConfig webhookConfig;
+
+    /** Per-proof Pulsar-specific configuration */
+    private PulsarProofConfig pulsar;
 }

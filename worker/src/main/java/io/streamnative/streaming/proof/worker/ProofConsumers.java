@@ -78,10 +78,14 @@ public class ProofConsumers {
      * @throws IllegalArgumentException if the specified driver type is not supported
      */
     public void start() {
+        Map<String, Object> configs = new HashMap<>(newConsumers.driver().driverConfigs());
+        if (newConsumers.pulsarConsumerConfig() != null) {
+            configs.put("pulsar.consumer.config", newConsumers.pulsarConsumerConfig());
+        }
         for (int i = 0; i < newConsumers.consumers(); i++) {
             ProofConsumerTask task = new ProofConsumerTask();
             ProofConsumer proofConsumer = driver.createConsumer(newConsumers.topic(), newConsumers.partitions(),
-                    newConsumers.consumeDelayMs(), newConsumers.driver().driverConfigs(), task);
+                    newConsumers.consumeDelayMs(), configs, task);
             task.setConsumer(proofConsumer);
             tasks.add(task);
         }
