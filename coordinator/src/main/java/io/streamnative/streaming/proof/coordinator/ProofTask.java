@@ -99,6 +99,12 @@ public class ProofTask {
     /** Service for sending webhook notifications */
     private final WebhookNotificationService webhookService;
 
+    /** Whether this proof uses Pulsar Shared subscription mode */
+    private final boolean sharedMode;
+
+    /** High watermarks per key for shared-mode verification */
+    private Map<String, Long> highWatermarks = new HashMap<>();
+
     /** Current checkpoint being verified */
     private ProducerCheckpoint inCheck = new ProducerCheckpoint();
 
@@ -148,6 +154,8 @@ public class ProofTask {
         this.clients = new ArrayList<>(configs.workers().size());
         this.proofDriver = driver;
         this.webhookService = new WebhookNotificationService();
+        this.sharedMode = proof.getPulsar() != null
+                && proof.getPulsar().isSharedSubscription();
         configs.workers().forEach((k, v) -> {
             WorkerHttpClient client = new WorkerHttpClient(Dsl.asyncHttpClient(), v);
             clients.add(client);
@@ -299,6 +307,11 @@ public class ProofTask {
                     ProofTask.this.checkPointInCheckTimeStamps = System.currentTimeMillis();
                 }
 
+                if (sharedMode) {
+                    verifyShared();
+                    return;
+                }
+
                 boolean fulfilled = true;
                 for (Map.Entry<String, LongSeq> entry : ProofTask.this.inCheck.getPublished().entrySet()) {
                     LongSeq expectedSeq = entry.getValue();
@@ -313,10 +326,14 @@ public class ProofTask {
                 }
 
                 if (fulfilled) {
+                    // Compute watermarks before mutating state
+                    Map<String, Long> newWatermarks =
+                            latestConsumerCheckpoint.computeHighWatermarks(highWatermarks);
                     log.info("[{}] checkpoint verify succeed: {}", proof.getId(), getSummary());
                     failed = false;
                     ProofTask.this.lastVerifiedProducerCheckpoint = ProofTask.this.inCheck;
                     ProofTask.this.lastVerifiedConsumerCheckpoint = ProofTask.this.latestConsumerCheckpoint;
+                    highWatermarks = newWatermarks;
                     ProofTask.this.inCheck = ProofTask.this.latestProducerCheckpoint;
                     ProofTask.this.checkPointInCheckTimeStamps = System.currentTimeMillis();
                 } else if (Duration.ofMillis(System.currentTimeMillis() - ProofTask.this.checkPointInCheckTimeStamps)
@@ -333,6 +350,46 @@ public class ProofTask {
             }
 
         }, proof.getCheckPointInterval(), proof.getCheckPointInterval(), TimeUnit.SECONDS);
+    }
+
+    private void verifyShared() {
+        if (ProofTask.this.inCheck.getPublished().isEmpty()) {
+            ProofTask.this.inCheck = ProofTask.this.latestProducerCheckpoint;
+            ProofTask.this.checkPointInCheckTimeStamps = System.currentTimeMillis();
+        }
+
+        Map<String, Long> newWatermarks = latestConsumerCheckpoint.computeHighWatermarks(highWatermarks);
+        highWatermarks = newWatermarks;
+
+        boolean fulfilled = true;
+        for (Map.Entry<String, LongSeq> entry : inCheck.getPublished().entrySet()) {
+            long expectedSeq = entry.getValue().seq();
+            Long watermark = newWatermarks.get(entry.getKey());
+            if (watermark == null || watermark < expectedSeq) {
+                log.info("[{}] shared checkpoint verify in progress | {} | expected {} <= watermark {} ",
+                        proof.getId(), entry.getKey(), expectedSeq,
+                        watermark == null ? -1L : watermark);
+                fulfilled = false;
+                break;
+            }
+        }
+
+        if (fulfilled) {
+            log.info("[{}] shared checkpoint verify succeed: {}", proof.getId(), getSummary());
+            failed = false;
+            lastVerifiedProducerCheckpoint = inCheck;
+            lastVerifiedConsumerCheckpoint = latestConsumerCheckpoint;
+            inCheck = latestProducerCheckpoint;
+            checkPointInCheckTimeStamps = System.currentTimeMillis();
+        } else if (Duration.ofMillis(System.currentTimeMillis() - checkPointInCheckTimeStamps)
+                .compareTo(Duration.ofSeconds(proof.getTimeout())) > 0) {
+            log.error("[{}] shared checkpoint verify failed: {}", proof.getId(), getSummary());
+            failed = true;
+            lastFailedProducerCheckpoint = inCheck;
+            lastFailedConsumerCheckpoint = latestConsumerCheckpoint;
+            timeouts++;
+            checkPointInCheckTimeStamps = System.currentTimeMillis();
+        }
     }
 
     private void completeProofAfterDuration() {
@@ -353,7 +410,8 @@ public class ProofTask {
             try {
                 ProducerCheckpoint producerCheckpoint = client.producerCheckpoint(proof.getId()).join();
                 aggregatedProducerCheckpoint.merge(producerCheckpoint);
-                ConsumerCheckPoint consumerCheckpoint = client.consumerCheckpoint(proof.getId()).join();
+                ConsumerCheckPoint consumerCheckpoint = client.consumerCheckpoint(proof.getId(),
+                        highWatermarks).join();
                 aggregatedConsumerCheckpoint.merge(consumerCheckpoint);
             } catch (Exception e) {
                 throw new RuntimeException(e);
@@ -368,6 +426,27 @@ public class ProofTask {
      * @return A ProofSummary containing verification statistics
      */
     public ProofSummary getSummary() {
+        if (sharedMode) {
+            long verified = highWatermarks.values().stream()
+                    .filter(w -> w >= 0)
+                    .mapToLong(w -> w + 1)
+                    .sum();
+            ConsumerCheckPoint cp = this.getLastVerifiedConsumerCheckpoint();
+            cp.calculate();
+            return new ProofSummary(
+                    verified,
+                    this.getLastVerifiedProducerCheckpoint().getErrors().values().stream()
+                            .mapToInt(Integer::intValue).sum(),
+                    0, // out-of-order: not applicable for Shared
+                    cp.getMissedSeqs().values().stream()
+                            .flatMap(ranges -> ranges.stream()
+                                    .map(range -> range.getEnd().seq() - range.getStart().seq() - 1))
+                            .mapToInt(Long::intValue)
+                            .sum(),
+                    cp.getDuplicatedCount().values().stream().reduce(0L, Long::sum),
+                    0, // write duplicates: not tracked in shared mode
+                    this.getTimeouts());
+        }
         long verified = this.getLastVerifiedProducerCheckpoint().getPublished().values().stream()
                 .mapToLong(LongSeq::seq).sum();
         ConsumerCheckPoint lastVerifiedConsumerCheckpoint = this.getLastVerifiedConsumerCheckpoint();
@@ -404,14 +483,24 @@ public class ProofTask {
         ProofSummary summary = getSummary();
         Map<String, List<LongSeq>> failedKeys = new HashMap<>();
         if (failed) {
-            latestConsumerCheckpoint.calculate();
-            inCheck.getPublished().forEach((k, v) -> {
-                LongSeq consumerLongSeq = latestConsumerCheckpoint.getLastSeq(k);
-                if (consumerLongSeq != null
-                        && v.compareTo(consumerLongSeq) > 0) {
-                    failedKeys.put(k, List.of(v, consumerLongSeq));
-                }
-            });
+            if (sharedMode) {
+                inCheck.getPublished().forEach((k, v) -> {
+                    Long watermark = highWatermarks.get(k);
+                    if (watermark == null || watermark < v.seq()) {
+                        failedKeys.put(k, List.of(v,
+                                new LongSeq(watermark == null ? -1 : watermark, null)));
+                    }
+                });
+            } else {
+                latestConsumerCheckpoint.calculate();
+                inCheck.getPublished().forEach((k, v) -> {
+                    LongSeq consumerLongSeq = latestConsumerCheckpoint.getLastSeq(k);
+                    if (consumerLongSeq != null
+                            && v.compareTo(consumerLongSeq) > 0) {
+                        failedKeys.put(k, List.of(v, consumerLongSeq));
+                    }
+                });
+            }
         }
         ConsumerCheckPoint lastVerifiedConsumerCheckpoint = this.getLastVerifiedConsumerCheckpoint();
         lastVerifiedConsumerCheckpoint.calculate();

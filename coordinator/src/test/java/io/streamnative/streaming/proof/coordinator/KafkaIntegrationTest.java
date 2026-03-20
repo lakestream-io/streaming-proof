@@ -24,7 +24,9 @@ import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
 import io.streamnative.streaming.proof.common.CoordinatorHttpClient;
+import io.streamnative.streaming.proof.common.Util;
 import io.streamnative.streaming.proof.common.records.Configs;
+import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
 import io.streamnative.streaming.proof.common.records.Driver;
 import io.streamnative.streaming.proof.common.records.Drivers;
 import io.streamnative.streaming.proof.common.records.Proof;
@@ -213,6 +215,49 @@ public class KafkaIntegrationTest {
             Throwable cause = e.getCause() == null ? e : e.getCause();
             assertTrue(cause.getMessage().contains("Proof test not found"),
                     "Expected 404-style response, but got: " + cause.getMessage());
+        }
+    }
+
+    @Test
+    public void testWatermarkTrimming() throws Exception {
+        Configs configs = new Configs(Map.of("worker1", "http://localhost:" + workerPort), Map.of("kafka_driver",
+                new Driver("kafka", Map.of("bootstrap.servers", "localhost:" + kafkaPort))));
+        httpClient.putConfigs(configs).join();
+        Proof proof = Proof.builder()
+                .name(UUID.randomUUID().toString())
+                .driver("kafka_driver")
+                .keys(50)
+                .partitions(5)
+                .producers(2)
+                .consumers(2)
+                .features(List.of("at_least_once", "ordering"))
+                .checkPointInterval(3)
+                .msgRate(500)
+                .timeout(180)
+                .build();
+        httpClient.createProof(proof).join();
+        List<Proof> proofs = httpClient.listProofs().join();
+        assertEquals(proofs.size(), 1);
+        String proofId = proofs.getFirst().getId();
+        try {
+            // Wait for multiple checkpoint cycles to succeed
+            Awaitility.await().atMost(1, TimeUnit.MINUTES).untilAsserted(() -> {
+                ProofDetails details = httpClient.getProof(proofId).join();
+                assertTrue(details.summary().verified() > 0);
+            });
+            long firstVerified = httpClient.getProof(proofId).join().summary().verified();
+            Awaitility.await().atMost(1, TimeUnit.MINUTES).untilAsserted(() -> {
+                ProofDetails details = httpClient.getProof(proofId).join();
+                assertTrue(details.summary().verified() > firstVerified,
+                        "Verified count should grow across checkpoint cycles, "
+                                + "was " + firstVerified + " now " + details.summary().verified());
+            });
+
+            // Verify worker-side trimming: earliest range start should be above 0
+            assertWorkerRangesTrimmed(proofId);
+        } finally {
+            httpClient.stopProof(proofId).join();
+            httpClient.deleteProof(proofId).join();
         }
     }
 
@@ -450,6 +495,24 @@ public class KafkaIntegrationTest {
         httpClient.deleteProof(proofs.getFirst().getId()).join();
         List<Proof> proofs3 = httpClient.listProofs().join();
         assertEquals(proofs3.size(), 0);
+    }
+
+    private void assertWorkerRangesTrimmed(String proofId) throws Exception {
+        String url = "http://localhost:" + workerPort
+                + Util.CONSUMER_CHECKPOINTS_DETAILS.replace("{id}", proofId);
+        String body = client.prepareGet(url).execute().get().getResponseBody();
+        @SuppressWarnings("unchecked")
+        Map<String, ConsumerCheckPoint> details = Util.JSON_MAPPER.readValue(body,
+                Util.JSON_MAPPER.getTypeFactory().constructMapType(
+                        java.util.HashMap.class, String.class, ConsumerCheckPoint.class));
+        // At least one consumer should have ranges that no longer start at seq 0,
+        // proving that watermark trimming removed earlier ranges
+        boolean anyTrimmed = details.values().stream()
+                .flatMap(cp -> cp.getConsumed().values().stream())
+                .flatMap(rangeMap -> rangeMap.values().stream())
+                .anyMatch(range -> range.getStart().seq() > 0);
+        assertTrue(anyTrimmed,
+                "Expected at least one consumer range to start above seq 0 after watermark trimming");
     }
 
     private static int getFreePort() {

@@ -21,6 +21,7 @@ package io.streamnative.streaming.proof.worker;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
 
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofConsumer;
@@ -198,6 +199,72 @@ public class ProofConsumerTaskTest {
             consumerTask.setConsumer(mockConsumer);
             consumerTask.close();
             verify(mockConsumer).close();
+        }
+    }
+
+    @Test
+    public void testSharedModeOutOfOrderMessages() throws Exception {
+        try (ProofConsumerTask consumerTask = new ProofConsumerTask(true)) {
+            consumerTask.setConsumer(mockConsumer);
+            generateMessage(consumerTask, KEY1, 0L, createMetadata(1L));
+            generateMessage(consumerTask, KEY1, 5L, createMetadata(2L));
+            generateMessage(consumerTask, KEY1, 3L, createMetadata(3L));
+            assertEquals(consumerTask.getConsumed().size(), 1);
+            assertTrue(consumerTask.getWriteDupsOrOutOrder().isEmpty());
+            Map<String, SortedMap<String, ConsumerCheckPoint.SeqRange>> merged = consumerTask.getTrimmedConsumed();
+            assertEquals(merged.get(KEY1).size(), 3);
+        }
+    }
+
+    @Test
+    public void testSharedModeDuplicateDetection() throws Exception {
+        try (ProofConsumerTask consumerTask = new ProofConsumerTask(true)) {
+            consumerTask.setConsumer(mockConsumer);
+            generateMessage(consumerTask, KEY1, 0L, createMetadata(1L));
+            generateMessage(consumerTask, KEY1, 1L, createMetadata(2L));
+            generateMessage(consumerTask, KEY1, 2L, createMetadata(3L));
+            generateMessage(consumerTask, KEY1, 1L, createMetadata(4L));
+            Map<String, SortedMap<String, ConsumerCheckPoint.SeqRange>> merged = consumerTask.getTrimmedConsumed();
+            assertEquals(merged.get(KEY1).size(), 1);
+            assertEquals(merged.get(KEY1).firstEntry().getValue().getDuplicated(), 1);
+            assertTrue(consumerTask.getWriteDupsOrOutOrder().isEmpty());
+        }
+    }
+
+    @Test
+    public void testApplyHighWatermarks() throws Exception {
+        try (ProofConsumerTask consumerTask = new ProofConsumerTask()) {
+            consumerTask.setConsumer(mockConsumer);
+            for (long i = 0; i <= 5; i++) {
+                generateMessage(consumerTask, KEY1, i, createMetadata(i));
+            }
+            for (long i = 10; i <= 15; i++) {
+                generateMessage(consumerTask, KEY1, i, createMetadata(i + 10));
+            }
+            for (long i = 0; i <= 3; i++) {
+                generateMessage(consumerTask, KEY2, i, createMetadata(i + 30));
+            }
+
+            consumerTask.applyHighWatermarks(Map.of(KEY1, 5L, KEY2, 1L));
+
+            Map<String, SortedMap<String, ConsumerCheckPoint.SeqRange>> trimmed = consumerTask.getTrimmedConsumed();
+            assertEquals(trimmed.get(KEY1).size(), 1);
+            assertEquals(trimmed.get(KEY1).firstEntry().getValue().getStart().seq(), 10L);
+            assertEquals(trimmed.get(KEY1).firstEntry().getValue().getEnd().seq(), 15L);
+
+            assertEquals(trimmed.get(KEY2).size(), 1);
+            assertEquals(trimmed.get(KEY2).firstEntry().getValue().getStart().seq(), 2L);
+            assertEquals(trimmed.get(KEY2).firstEntry().getValue().getEnd().seq(), 3L);
+        }
+    }
+
+    @Test
+    public void testApplyHighWatermarksIgnoresUnknownKeys() throws Exception {
+        try (ProofConsumerTask consumerTask = new ProofConsumerTask()) {
+            consumerTask.setConsumer(mockConsumer);
+            generateMessage(consumerTask, KEY1, 0L, createMetadata(1L));
+            consumerTask.applyHighWatermarks(Map.of("unknown_key", 100L));
+            assertEquals(consumerTask.getConsumed().size(), 1);
         }
     }
 

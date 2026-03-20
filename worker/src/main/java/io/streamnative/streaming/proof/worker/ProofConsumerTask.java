@@ -23,7 +23,9 @@ import io.streamnative.streaming.proof.common.MessageListener;
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
@@ -41,9 +43,21 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class ProofConsumerTask implements MessageListener, AutoCloseable {
 
+    /** Whether this task operates in shared subscription mode */
+    @Getter
+    private final boolean sharedMode;
+
     /** The consumer instance that this task is associated with */
     @Setter
     private ProofConsumer consumer;
+
+    public ProofConsumerTask() {
+        this(false);
+    }
+
+    public ProofConsumerTask(boolean sharedMode) {
+        this.sharedMode = sharedMode;
+    }
 
     /**
      * Map storing consumed sequence ranges for each key.
@@ -81,8 +95,18 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
             return;
         }
 
+        if (sharedMode) {
+            LongSeq lastConsumedSeq = lastConsumedRange.getEnd();
+            if (value == lastConsumedSeq.seq() + 1) {
+                lastConsumedRange.setEnd(newMsg);
+            } else {
+                newConsumedRange(key, newMsg);
+            }
+            return;
+        }
+
         LongSeq lastConsumedSeq = lastConsumedRange.getEnd();
-    
+
         if (value <= lastConsumedSeq.seq()) {
             if (metadata.isAfter(lastConsumedSeq.metadata())) {
                 // Handle duplicated writes from the producer side
@@ -107,6 +131,55 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
         } else {
             lastConsumedRange.setEnd(newMsg);
         }
+    }
+
+    /**
+     * Trims consumed and writeDupsOrOutOrder ranges based on high watermarks.
+     * Ranges fully below the watermark are removed. Ranges spanning the watermark
+     * are trimmed so they start at watermark + 1. This bounds memory usage for
+     * long-running proofs.
+     *
+     * @param watermarks A map of key to high watermark sequence number. Sequences
+     *                   at or below the watermark are considered verified and can
+     *                   be discarded.
+     */
+    public synchronized void applyHighWatermarks(Map<String, Long> watermarks) {
+        watermarks.forEach((key, watermark) -> {
+            SortedMap<String, ConsumerCheckPoint.SeqRange> ranges = consumed.get(key);
+            if (ranges == null) {
+                return;
+            }
+            List<String> toRemove = new ArrayList<>();
+            for (Map.Entry<String, ConsumerCheckPoint.SeqRange> entry : ranges.entrySet()) {
+                ConsumerCheckPoint.SeqRange range = entry.getValue();
+                if (range.getEnd().seq() <= watermark) {
+                    toRemove.add(entry.getKey());
+                } else if (range.getStart().seq() <= watermark) {
+                    range.setStart(new LongSeq(watermark + 1, range.getStart().metadata()));
+                }
+            }
+            toRemove.forEach(ranges::remove);
+            if (ranges.isEmpty()) {
+                consumed.remove(key);
+            }
+
+            SortedMap<String, ConsumerCheckPoint.SeqRange> dupsRanges = writeDupsOrOutOrder.get(key);
+            if (dupsRanges != null) {
+                List<String> dupsToRemove = new ArrayList<>();
+                for (Map.Entry<String, ConsumerCheckPoint.SeqRange> entry : dupsRanges.entrySet()) {
+                    ConsumerCheckPoint.SeqRange range = entry.getValue();
+                    if (range.getEnd().seq() <= watermark) {
+                        dupsToRemove.add(entry.getKey());
+                    } else if (range.getStart().seq() <= watermark) {
+                        range.setStart(new LongSeq(watermark + 1, range.getStart().metadata()));
+                    }
+                }
+                dupsToRemove.forEach(dupsRanges::remove);
+                if (dupsRanges.isEmpty()) {
+                    writeDupsOrOutOrder.remove(key);
+                }
+            }
+        });
     }
 
     /**

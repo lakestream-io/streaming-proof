@@ -25,6 +25,7 @@ import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
 import io.streamnative.streaming.proof.common.records.NewConsumers;
 import io.streamnative.streaming.proof.common.records.NewProducers;
 import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
+import java.util.HashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 
@@ -54,7 +55,7 @@ import lombok.extern.slf4j.Slf4j;
  * // POST /producers/start - Start producers with configuration
  * // POST /consumers/start - Start consumers with configuration
  * // GET /producers/checkpoints/{id} - Get producer statistics
- * // GET /consumers/checkpoints/{id} - Get consumer statistics
+ * // POST /consumers/checkpoints/{id} - Get consumer statistics (with watermark trimming)
  * // POST /producers/stop/{id} - Stop producer group
  * // POST /consumers/stop/{id} - Stop consumer group
  * }</pre>
@@ -79,7 +80,7 @@ public class WorkerHandler {
         app.post(Util.START_PRODUCER, this::handleStartProducer);
         app.post(Util.START_CONSUMER, this::handleStartConsumer);
         app.get(Util.PRODUCER_CHECKPOINTS, this::handleProducerCheckpoints);
-        app.get(Util.CONSUMER_CHECKPOINTS, this::handleConsumerCheckpoints);
+        app.post(Util.CONSUMER_CHECKPOINTS, this::handleConsumerCheckpoints);
         app.get(Util.CONSUMER_CHECKPOINTS_DETAILS, this::handleConsumerCheckpointsDetails);
         app.post(Util.STOP_PRODUCER, this::handleStopProducer);
         app.post(Util.STOP_CONSUMER, this::handleStopConsumer);
@@ -134,6 +135,15 @@ public class WorkerHandler {
      */
     private void handleConsumerCheckpoints(Context ctx) throws Exception {
         String proofID = ctx.pathParam("id");
+        String body = ctx.body();
+        if (body != null && !body.isBlank()) {
+            @SuppressWarnings("unchecked")
+            Map<String, Long> watermarks = Util.JSON_MAPPER.readValue(body,
+                    Util.JSON_MAPPER.getTypeFactory().constructMapType(HashMap.class, String.class, Long.class));
+            if (!watermarks.isEmpty()) {
+                worker.applyConsumerWatermarks(proofID, watermarks);
+            }
+        }
         ConsumerCheckPoint checkPoint = worker.consumerCheckPoint(proofID);
         ctx.result(Util.JSON_WRITER.writeValueAsString(checkPoint));
     }

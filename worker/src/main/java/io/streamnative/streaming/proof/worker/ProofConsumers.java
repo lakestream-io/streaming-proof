@@ -22,6 +22,7 @@ import io.streamnative.streaming.proof.common.ProofConsumer;
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
 import io.streamnative.streaming.proof.common.records.NewConsumers;
+import io.streamnative.streaming.proof.common.records.PulsarProofConfig;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -82,8 +83,10 @@ public class ProofConsumers {
         if (newConsumers.pulsarConsumerConfig() != null) {
             configs.put("pulsar.consumer.config", newConsumers.pulsarConsumerConfig());
         }
+        boolean sharedMode = newConsumers.pulsarConsumerConfig() != null
+                && PulsarProofConfig.isSharedSubscriptionType(newConsumers.pulsarConsumerConfig());
         for (int i = 0; i < newConsumers.consumers(); i++) {
-            ProofConsumerTask task = new ProofConsumerTask();
+            ProofConsumerTask task = new ProofConsumerTask(sharedMode);
             ProofConsumer proofConsumer = driver.createConsumer(newConsumers.topic(), newConsumers.partitions(),
                     newConsumers.consumeDelayMs(), configs, task);
             task.setConsumer(proofConsumer);
@@ -121,6 +124,18 @@ public class ProofConsumers {
             result.put(task.getConsumerName(), checkPoint);
         }
         return result;
+    }
+
+    /**
+     * Applies high watermarks to all consumer tasks, allowing them to trim
+     * verified sequence ranges and reduce memory usage.
+     *
+     * @param watermarks A map of key to high watermark sequence number
+     */
+    public void applyHighWatermarks(Map<String, Long> watermarks) {
+        for (ProofConsumerTask task : tasks) {
+            task.applyHighWatermarks(watermarks);
+        }
     }
 
     /**

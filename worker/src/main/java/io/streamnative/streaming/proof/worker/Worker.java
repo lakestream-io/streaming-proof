@@ -146,6 +146,20 @@ public class Worker {
     }
 
     /**
+     * Applies high watermarks to a consumer group, allowing verified sequence
+     * ranges to be trimmed and reducing memory usage for long-running proofs.
+     *
+     * @param id The unique identifier of the consumer group
+     * @param watermarks A map of key to high watermark sequence number
+     */
+    public void applyConsumerWatermarks(String id, Map<String, Long> watermarks) {
+        ProofConsumers consumer = consumers.get(id);
+        if (consumer != null) {
+            consumer.applyHighWatermarks(watermarks);
+        }
+    }
+
+    /**
      * Performs cleanup by stopping all producer and consumer groups managed by this worker.
      * This method ensures proper shutdown by iterating through all registered producers
      * and consumers and stopping them.

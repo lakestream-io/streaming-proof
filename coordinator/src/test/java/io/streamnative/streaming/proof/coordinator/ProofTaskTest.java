@@ -24,10 +24,13 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertTrue;
 
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.records.Configs;
 import io.streamnative.streaming.proof.common.records.Proof;
+import io.streamnative.streaming.proof.common.records.PulsarProofConfig;
 import java.util.List;
 import java.util.Map;
 import org.mockito.InOrder;
@@ -87,6 +90,39 @@ public class ProofTaskTest {
 
             verify(driver, times(1)).deleteTopic("test-topic_transactional");
             verify(driver, times(1)).deleteTopic("test-topic");
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testSharedModeDetection() {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof sharedProof = Proof.builder()
+                .topic("test-topic")
+                .features(List.of("at_least_once"))
+                .pulsar(PulsarProofConfig.builder()
+                        .consumerConfig(Map.of("subscriptionType", "Shared"))
+                        .build())
+                .build();
+        ProofTask task = new ProofTask(sharedProof, new Configs(Map.of(), Map.of()), driver);
+        try {
+            assertTrue(task.isSharedMode());
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testNonSharedModeByDefault() {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof proof = Proof.builder()
+                .topic("test-topic")
+                .features(List.of("at_least_once"))
+                .build();
+        ProofTask task = new ProofTask(proof, new Configs(Map.of(), Map.of()), driver);
+        try {
+            assertFalse(task.isSharedMode());
         } finally {
             task.getExecutor().shutdownNow();
         }

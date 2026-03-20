@@ -18,6 +18,7 @@
  */
 package io.streamnative.streaming.proof.common.records;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -40,8 +41,23 @@ public class PulsarProofConfig {
     /**
      * Consumer configuration map passed to {@code ConsumerBuilder.loadConf()}.
      * Keys must match Pulsar's ConsumerConfigurationData field names (case-sensitive).
-     * Example keys: "subscriptionType" ("Exclusive", "Failover", "Key_Shared"),
+     * Example keys: "subscriptionType" ("Exclusive", "Failover", "Shared", "Key_Shared"),
      * "receiverQueueSize", "ackTimeoutMillis".
      */
     private Map<String, Object> consumerConfig;
+
+    /**
+     * Returns whether this configuration specifies a Shared subscription type.
+     */
+    @JsonIgnore
+    public boolean isSharedSubscription() {
+        return isSharedSubscriptionType(consumerConfig);
+    }
+
+    /**
+     * Returns whether the given consumer config map specifies a Shared subscription type.
+     */
+    public static boolean isSharedSubscriptionType(Map<String, Object> config) {
+        return config != null && "Shared".equals(config.get("subscriptionType"));
+    }
 }

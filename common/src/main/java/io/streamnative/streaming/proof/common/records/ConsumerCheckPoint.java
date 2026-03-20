@@ -371,6 +371,61 @@ public class ConsumerCheckPoint {
     }
 
     /**
+     * Computes the high-watermark for each key by walking the merged, sorted ranges.
+     * The high-watermark is the highest contiguous sequence number starting from seq 0.
+     * If no range starts at 0, the watermark is -1.
+     *
+     * @return A map from key to its high-watermark value
+     */
+    public Map<String, Long> computeHighWatermarks() {
+        return computeHighWatermarks(Collections.emptyMap());
+    }
+
+    /**
+     * Computes high watermarks using base watermarks as the starting point.
+     * After watermark trimming, ranges no longer start at seq 0,
+     * so the base watermark is used as the contiguity starting point.
+     *
+     * @param baseWatermarks Previous watermarks per key, must not be null
+     * @return A map from key to its updated high-watermark value
+     */
+    public Map<String, Long> computeHighWatermarks(Map<String, Long> baseWatermarks) {
+        java.util.Objects.requireNonNull(baseWatermarks, "baseWatermarks must not be null");
+        trim();
+        Map<String, Long> watermarks = new HashMap<>(baseWatermarks);
+        mergedConsumed.forEach((key, ranges) -> {
+            long base = baseWatermarks.getOrDefault(key, -1L);
+            if (ranges.isEmpty()) {
+                watermarks.put(key, base);
+                return;
+            }
+            // Check if the first range is contiguous with the base watermark
+            long firstStart = ranges.getFirst().getStart().seq();
+            if (base == -1L && firstStart != 0) {
+                // No base and doesn't start at 0
+                watermarks.put(key, -1L);
+                return;
+            }
+            if (base >= 0 && firstStart > base + 1) {
+                // Gap between base watermark and first range
+                watermarks.put(key, base);
+                return;
+            }
+            long watermark = Math.max(base, ranges.getFirst().getEnd().seq());
+            for (int i = 1; i < ranges.size(); i++) {
+                SeqRange next = ranges.get(i);
+                if (next.getStart().seq() <= watermark + 1) {
+                    watermark = Math.max(watermark, next.getEnd().seq());
+                } else {
+                    break;
+                }
+            }
+            watermarks.put(key, watermark);
+        });
+        return watermarks;
+    }
+
+    /**
      * Processes the consumed map to create optimized sequence ranges in the mergedConsumed map.
      * This method performs two key optimizations:
      * 1. Merges adjacent or overlapping ranges into single continuous ranges

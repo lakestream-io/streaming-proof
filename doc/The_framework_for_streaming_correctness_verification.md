@@ -69,7 +69,7 @@ The core idea is to generate uniquely sequenced messages for distinct keys and v
     *   Producers (on Workers) generate messages with `(Key, Seq)` pairs and send them via the configured `ProofDriver`. They track the last sent `Seq` for each assigned `Key`.
     *   Consumers (on Workers) receive messages via the `ProofDriver`. They track the last *valid* `Seq` received for each `Key` and record any duplicates, out-of-order messages, or calculate potential misses based on sequence gaps.
 5.  **Checkpointing & Verification:**
-    *   Coordinator periodically triggers checkpoints (`GET /producer/checkpoint/{id}`, `GET /consumer/checkpoint/{id}` from Workers).
+    *   Coordinator periodically triggers checkpoints (`GET /producer/checkpoint/{id}`, `POST /consumer/checkpoint/{id}` from Workers). The consumer checkpoint request includes high watermarks for memory trimming.
     *   Coordinator aggregates producer checkpoints to determine the expected state (highest `Seq` produced per `Key`).
     *   Coordinator aggregates consumer checkpoints (highest *valid* `Seq` consumed per `Key`, error counts).
     *   Coordinator compares the aggregated producer state ("InCheck" state) with the aggregated consumer state over time. It uses a configurable `timeout` to determine if messages produced in a checkpoint window are eventually consumed correctly. If sequences remain unverified after the timeout, a timeout error is flagged.
@@ -117,7 +117,59 @@ To improve verification efficiency, the framework implements:
 1. Range Merging : Adjacent and overlapping sequence ranges are merged to create a more compact representation
 2. Trimming : The trim() method optimizes sequence ranges by combining adjacent ranges where the end of one range + 1 equals the start of the next range
 
-#### 5.4.5. Handling Partition Reassignment
+#### 5.4.5. Watermark-Based Memory Management
+The framework uses a high-watermark mechanism to bound memory usage during long-running proofs. Without watermarks, consumers accumulate sequence ranges indefinitely.
+
+**How it works:**
+1. The coordinator computes **high watermarks** per key — the highest contiguous sequence number that has been fully verified
+2. When the coordinator fetches consumer checkpoints, it sends the current watermarks in the request body (POST)
+3. Workers apply the watermarks before returning the checkpoint: ranges with `end <= watermark` are fully removed, ranges spanning the watermark are trimmed to start at `watermark + 1`
+4. The coordinator then computes new watermarks from the trimmed checkpoint, using the previous watermarks as the contiguity starting point
+
+This creates a sliding window that keeps only unverified ranges in memory, regardless of how long the proof runs. The mechanism applies to all subscription types (Kafka consumer groups, Pulsar Failover, Key_Shared, and Shared).
+
+#### 5.4.6. Shared Subscription Verification (Pulsar)
+Pulsar Shared subscriptions distribute messages round-robin across consumers. Unlike Failover or Key_Shared, a single key's messages may be consumed by any consumer, so per-key ordering is **not guaranteed**.
+
+**Detection:** The framework automatically detects Shared mode when `subscriptionType: "Shared"` is set in the Pulsar consumer configuration.
+
+**Worker-side differences:**
+- `ProofConsumerTask` operates in shared mode: `onMessage()` records consumed ranges without ordering analysis — gaps and out-of-order arrival are expected, and `writeDupsOrOutOrder` tracking is disabled
+- Duplicate detection still works via `SeqRange.duplicated` when a message's sequence falls within an existing range
+
+**Coordinator-side verification:**
+Instead of checking `getLastSeq(key) >= producerSeq` (which only confirms the highest sequence arrived), Shared verification uses **high-watermark contiguity checking**:
+
+1. Merge consumer checkpoints from all workers per key
+2. Compute high watermarks: walk the merged, sorted ranges to find the highest contiguous sequence starting from seq 0 (or from the previous watermark after trimming)
+3. For each key, verify `highWatermark >= producerLastSeq`
+4. If all keys pass, verification succeeds; if timeout is exceeded, record failure
+
+**Summary reporting for Shared mode:**
+- `verified`: sum of `(highWatermark + 1)` across all keys (sequences are 0-based)
+- `duplicates`: detected via existing `SeqRange.duplicated` overlap counting
+- `missed`: internal gaps in merged ranges
+- `outOfOrders`: always 0 (expected for Shared, not reported)
+
+**API example:**
+```json
+{
+  "name": "pulsar-shared-test",
+  "driver": "pulsar_driver",
+  "features": ["at_least_once"],
+  "topic": "test-topic",
+  "partitions": 1,
+  "producers": 2,
+  "consumers": 4,
+  "pulsar": {
+    "consumerConfig": {
+      "subscriptionType": "Shared"
+    }
+  }
+}
+```
+
+#### 5.4.7. Handling Partition Reassignment
 The framework handles partition reassignment to different consumers through timestamp-based sequence range tracking:
 - **Timestamp-Based Range Creation** : When a consumer processes messages, it creates sequence ranges with timestamps. Each range is identified by the timestamp when it was created.
 - **Sequence Range Continuity** : When a consumer starts processing messages from a newly assigned partition, it creates new sequence ranges with new timestamps. This allows the system to:
@@ -132,7 +184,7 @@ The framework handles partition reassignment to different consumers through time
   - Message sequence integrity can be verified across consumer instances
   - Duplicates processed by different consumers are detected through overlapping ranges
   - Missed messages during rebalancing are identified through sequence gaps
-#### 5.4.6. Verification Process
+#### 5.4.8. Verification Process
 The verification process follows these steps:
 1. Producers publish messages with sequential values for each key
 2. Consumers receive messages and track sequence ranges
@@ -141,7 +193,7 @@ The verification process follows these steps:
    - Messages that were published but never consumed (missed messages)
    - Messages that were consumed multiple times (duplicates)
 
-#### 5.4.7. Practical Applications
+#### 5.4.9. Practical Applications
 These verification mechanisms are crucial for validating:
 - At-least-once delivery : Ensures no messages are missed (no gaps in sequence) and messages are processed in sequence order
 - Exactly-once processing : Ensures no duplicates are processed through embedded transactional processors
@@ -430,8 +482,15 @@ The framework exposes REST APIs for control and monitoring.
            }
         }
         ```
-*   `GET /consumers/checkpoints/{id}`: Get the current consumer checkpoint state.
+*   `POST /consumers/checkpoints/{id}`: Get the current consumer checkpoint state, optionally applying watermarks.
     *   **Path Parameter:** `id` (string) - The `consumerId` assigned during start.
+    *   **Request Body:** (`application/json`) - Optional map of high watermarks per key. Workers trim ranges at or below the watermark before returning the checkpoint. An empty map `{}` skips trimming.
+        ```json
+        {
+          "key0": 1500,
+          "key1": 1498
+        }
+        ```
     *   **Response Body:** (`application/json`) - The ConsumerCheckPoint object for this consumer instance.
         ```json
         {

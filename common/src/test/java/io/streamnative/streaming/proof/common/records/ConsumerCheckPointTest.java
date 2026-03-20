@@ -29,6 +29,7 @@ import io.streamnative.streaming.proof.common.MessageMetadata;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
@@ -672,6 +673,100 @@ public class ConsumerCheckPointTest {
         LongSeq lastSeq = checkPoint.getLastSeq("wOz8x");
         assertNotNull(lastSeq);
         assertEquals(lastSeq.seq(), 4635L, "Last sequence should be 4635");
+    }
+
+    private ConsumerCheckPoint.SeqRange range(long start, long end) {
+        ConsumerCheckPoint.SeqRange r = new ConsumerCheckPoint.SeqRange();
+        r.setStart(new LongSeq(start, new MessageMetadata(start)));
+        r.setEnd(new LongSeq(end, new MessageMetadata(end)));
+        return r;
+    }
+
+    @Test
+    public void testComputeHighWatermarksContiguous() {
+        ConsumerCheckPoint cp = new ConsumerCheckPoint();
+        TreeMap<String, ConsumerCheckPoint.SeqRange> ranges = new TreeMap<>();
+        ranges.put("t1", range(0, 100));
+        cp.addKey("key1", ranges);
+        Map<String, Long> watermarks = cp.computeHighWatermarks();
+        assertEquals(watermarks.get("key1").longValue(), 100L);
+    }
+
+    @Test
+    public void testComputeHighWatermarksWithGap() {
+        ConsumerCheckPoint cp = new ConsumerCheckPoint();
+        TreeMap<String, ConsumerCheckPoint.SeqRange> ranges = new TreeMap<>();
+        ranges.put("t1", range(0, 50));
+        ranges.put("t2", range(60, 100));
+        cp.addKey("key1", ranges);
+        Map<String, Long> watermarks = cp.computeHighWatermarks();
+        assertEquals(watermarks.get("key1").longValue(), 50L);
+    }
+
+    @Test
+    public void testComputeHighWatermarksNotStartingAtZero() {
+        ConsumerCheckPoint cp = new ConsumerCheckPoint();
+        TreeMap<String, ConsumerCheckPoint.SeqRange> ranges = new TreeMap<>();
+        ranges.put("t1", range(5, 100));
+        cp.addKey("key1", ranges);
+        Map<String, Long> watermarks = cp.computeHighWatermarks();
+        assertEquals(watermarks.get("key1").longValue(), -1L);
+    }
+
+    @Test
+    public void testComputeHighWatermarksMultipleKeys() {
+        ConsumerCheckPoint cp = new ConsumerCheckPoint();
+        TreeMap<String, ConsumerCheckPoint.SeqRange> ranges1 = new TreeMap<>();
+        ranges1.put("t1", range(0, 200));
+        cp.addKey("key1", ranges1);
+        TreeMap<String, ConsumerCheckPoint.SeqRange> ranges2 = new TreeMap<>();
+        ranges2.put("t1", range(0, 50));
+        ranges2.put("t2", range(52, 100));
+        cp.addKey("key2", ranges2);
+        Map<String, Long> watermarks = cp.computeHighWatermarks();
+        assertEquals(watermarks.get("key1").longValue(), 200L);
+        assertEquals(watermarks.get("key2").longValue(), 50L);
+    }
+
+    @Test
+    public void testComputeHighWatermarksWithBaseWatermarks() {
+        // Simulates second checkpoint cycle after watermark trimming:
+        // ranges no longer start at 0 because workers trimmed below watermark 50
+        ConsumerCheckPoint cp = new ConsumerCheckPoint();
+        TreeMap<String, ConsumerCheckPoint.SeqRange> ranges = new TreeMap<>();
+        ranges.put("t1", range(51, 200));
+        cp.addKey("key1", ranges);
+
+        // Without base: returns -1 (doesn't start at 0)
+        Map<String, Long> withoutBase = cp.computeHighWatermarks();
+        assertEquals(withoutBase.get("key1").longValue(), -1L);
+
+        // With base watermark of 50: contiguous from 50, advances to 200
+        Map<String, Long> withBase = cp.computeHighWatermarks(Map.of("key1", 50L));
+        assertEquals(withBase.get("key1").longValue(), 200L);
+    }
+
+    @Test
+    public void testComputeHighWatermarksWithBaseAndGap() {
+        // Ranges start above base watermark but with a gap
+        ConsumerCheckPoint cp = new ConsumerCheckPoint();
+        TreeMap<String, ConsumerCheckPoint.SeqRange> ranges = new TreeMap<>();
+        ranges.put("t1", range(55, 200));  // gap: 51-54 missing
+        cp.addKey("key1", ranges);
+
+        // Base is 50, first range starts at 55 — gap, watermark stays at 50
+        Map<String, Long> watermarks = cp.computeHighWatermarks(Map.of("key1", 50L));
+        assertEquals(watermarks.get("key1").longValue(), 50L);
+    }
+
+    @Test
+    public void testComputeHighWatermarksWithBaseEmptyRanges() {
+        // Key exists in base but has no ranges (all trimmed, no new messages)
+        ConsumerCheckPoint cp = new ConsumerCheckPoint();
+
+        Map<String, Long> watermarks = cp.computeHighWatermarks(Map.of("key1", 100L));
+        // key1 not in mergedConsumed, base watermark is preserved
+        assertEquals(watermarks.get("key1").longValue(), 100L);
     }
 
     private Map<String, ConsumerCheckPoint.SeqRange> createRangeMap(String orderKey, Long start, Long end) {

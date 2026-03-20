@@ -21,7 +21,9 @@ package io.streamnative.streaming.proof.coordinator;
 import static org.testng.Assert.assertTrue;
 
 import io.streamnative.streaming.proof.common.CoordinatorHttpClient;
+import io.streamnative.streaming.proof.common.Util;
 import io.streamnative.streaming.proof.common.records.Configs;
+import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
 import io.streamnative.streaming.proof.common.records.Driver;
 import io.streamnative.streaming.proof.common.records.Proof;
 import io.streamnative.streaming.proof.common.records.ProofDetails;
@@ -50,11 +52,12 @@ public class PulsarIntegrationTest {
     private final AsyncHttpClient client = Dsl.asyncHttpClient();
     private CoordinatorHttpClient httpClient;
     private PulsarContainer pulsarContainer;
+    private int workerPort;
 
     @BeforeClass
     public void setUp() throws Exception {
         int port = getFreePort();
-        int workerPort = getFreePort();
+        workerPort = getFreePort();
 
         pulsarContainer = new PulsarContainer(DockerImageName.parse("apachepulsar/pulsar:4.0.4"));
         pulsarContainer.start();
@@ -137,6 +140,126 @@ public class PulsarIntegrationTest {
                         .build())
                 .build();
         runProofAndVerify(proof);
+    }
+
+    @Test
+    public void testSharedSubscription() throws Exception {
+        Proof proof = Proof.builder()
+                .name(UUID.randomUUID().toString())
+                .driver("pulsar_driver")
+                .keys(10)
+                .partitions(1)
+                .producers(2)
+                .consumers(4)
+                .features(List.of("at_least_once"))
+                .checkPointInterval(5)
+                .msgRate(500)
+                .timeout(180)
+                .pulsar(PulsarProofConfig.builder()
+                        .consumerConfig(Map.of("subscriptionType", "Shared"))
+                        .build())
+                .build();
+        runProofAndVerify(proof);
+    }
+
+    @Test
+    public void testFailoverWatermarkTrimming() throws Exception {
+        Proof proof = Proof.builder()
+                .name(UUID.randomUUID().toString())
+                .driver("pulsar_driver")
+                .keys(50)
+                .partitions(1)
+                .producers(2)
+                .consumers(1)
+                .features(List.of("at_least_once", "ordering"))
+                .checkPointInterval(3)
+                .msgRate(500)
+                .timeout(180)
+                .build();
+        runWatermarkTrimmingTest(proof);
+    }
+
+    @Test
+    public void testKeySharedWatermarkTrimming() throws Exception {
+        Proof proof = Proof.builder()
+                .name(UUID.randomUUID().toString())
+                .driver("pulsar_driver")
+                .keys(50)
+                .partitions(1)
+                .producers(2)
+                .consumers(4)
+                .features(List.of("at_least_once", "ordering"))
+                .checkPointInterval(3)
+                .msgRate(500)
+                .timeout(180)
+                .pulsar(PulsarProofConfig.builder()
+                        .consumerConfig(Map.of("subscriptionType", "Key_Shared"))
+                        .build())
+                .build();
+        runWatermarkTrimmingTest(proof);
+    }
+
+    @Test
+    public void testSharedSubscriptionWatermarkTrimming() throws Exception {
+        Proof proof = Proof.builder()
+                .name(UUID.randomUUID().toString())
+                .driver("pulsar_driver")
+                .keys(10)
+                .partitions(1)
+                .producers(2)
+                .consumers(4)
+                .features(List.of("at_least_once"))
+                .checkPointInterval(3)
+                .msgRate(500)
+                .timeout(180)
+                .pulsar(PulsarProofConfig.builder()
+                        .consumerConfig(Map.of("subscriptionType", "Shared"))
+                        .build())
+                .build();
+        runWatermarkTrimmingTest(proof);
+    }
+
+    private void runWatermarkTrimmingTest(Proof proof) throws Exception {
+        httpClient.createProof(proof).join();
+        String proofId = findProofId(proof.getName());
+        try {
+            // Wait for first successful verification
+            Awaitility.await().atMost(1, TimeUnit.MINUTES).untilAsserted(() -> {
+                ProofDetails details = httpClient.getProof(proofId).join();
+                assertTrue(details.summary().verified() > 0);
+            });
+            long firstVerified = httpClient.getProof(proofId).join().summary().verified();
+
+            // Wait for verified count to grow across checkpoint cycles
+            Awaitility.await().atMost(1, TimeUnit.MINUTES).untilAsserted(() -> {
+                ProofDetails details = httpClient.getProof(proofId).join();
+                assertTrue(details.summary().verified() > firstVerified,
+                        "Verified count should grow across checkpoint cycles, "
+                                + "was " + firstVerified + " now " + details.summary().verified());
+            });
+
+            // Verify worker-side trimming: earliest range start should be above 0
+            assertWorkerRangesTrimmed(proofId);
+        } finally {
+            httpClient.stopProof(proofId).join();
+            httpClient.deleteProof(proofId).join();
+        }
+    }
+
+    private void assertWorkerRangesTrimmed(String proofId) throws Exception {
+        String url = "http://localhost:" + workerPort
+                + Util.CONSUMER_CHECKPOINTS_DETAILS.replace("{id}", proofId);
+        String body = client.prepareGet(url).execute().get().getResponseBody();
+        @SuppressWarnings("unchecked")
+        Map<String, ConsumerCheckPoint> details = Util.JSON_MAPPER.readValue(body,
+                Util.JSON_MAPPER.getTypeFactory().constructMapType(
+                        java.util.HashMap.class, String.class, ConsumerCheckPoint.class));
+        boolean anyTrimmed = details.values().stream()
+                .flatMap(cp -> cp.getConsumed().values().stream())
+                .flatMap(rangeMap -> rangeMap.values().stream())
+                .anyMatch(range -> range.getStart().seq() > 0);
+        assertTrue(anyTrimmed,
+                "Expected at least one consumer range to start above seq 0 after watermark trimming");
     }
 
     private void runProofAndVerify(Proof proof) throws Exception {

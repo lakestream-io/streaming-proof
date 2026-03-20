@@ -53,10 +53,12 @@ The checkpoints section provides detailed information about the verification sta
 
 **Supported Streaming Systems**:
 - Apache Kafka, or any Kafka API compatible systems
+- Apache Pulsar (Failover, Key_Shared, Shared subscriptions)
 
 **Supported verifications**:
 - At least once
 - Ordering
+- Shared subscription (Pulsar) — at-least-once delivery with duplicate counting across round-robin consumers
 
 ## Build
 ### Building from Source
@@ -143,6 +145,53 @@ curl -X POST http://localhost:8080/proofs \
   "timeout" : 180
 }'
 ```
+
+### Pulsar Shared Subscription Verification
+
+To verify at-least-once delivery with Pulsar Shared subscriptions, configure the `pulsar` field with `subscriptionType: "Shared"`:
+
+```bash
+curl -X PUT http://localhost:8080/configs \
+  -H "Content-Type: application/json" \
+  -d '{
+  "workers": {
+    "worker.1": "http://worker:8088"
+  },
+  "drivers": {
+    "pulsar_driver": {
+      "driverType": "pulsar",
+      "driverConfigs": {
+        "pulsar.service.url": "pulsar://localhost:6650",
+        "pulsar.admin.url": "http://localhost:8080"
+      }
+    }
+  }
+}'
+```
+
+```bash
+curl -X POST http://localhost:8080/proofs \
+  -H "Content-Type: application/json" \
+  -d '{
+  "name": "Pulsar Shared subscription test",
+  "driver": "pulsar_driver",
+  "features": ["at_least_once"],
+  "partitions": 1,
+  "producers": 2,
+  "consumers": 4,
+  "msgRate": 500,
+  "keys": 10,
+  "checkPointInterval": 5,
+  "timeout": 180,
+  "pulsar": {
+    "consumerConfig": {
+      "subscriptionType": "Shared"
+    }
+  }
+}'
+```
+
+With Shared subscriptions, messages are round-robin distributed across consumers — per-key ordering is not guaranteed. The framework uses **high-watermark-based verification** instead of last-sequence comparison: it computes the highest contiguous sequence per key across all consumers, and verifies that every produced message has been consumed. Out-of-order delivery is expected and not flagged.
 
 5. Stop all the components:
 

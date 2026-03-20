@@ -24,6 +24,7 @@ import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
 import io.streamnative.streaming.proof.common.records.NewConsumers;
 import io.streamnative.streaming.proof.common.records.NewProducers;
 import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import org.asynchttpclient.AsyncHttpClient;
 
@@ -169,21 +170,28 @@ public class WorkerHttpClient {
 
     /**
      * Retrieves the checkpoint information for a group of consumers.
+     * Workers trim consumed ranges at or below each watermark before returning the checkpoint.
      *
      * @param id The unique identifier of the consumer group
+     * @param watermarks Map of key to high watermark; workers trim ranges at or below
+     *                   each watermark. Pass empty map to skip trimming.
      * @return A CompletableFuture that completes with the checkpoint information
      * @throws Exception if there's an error preparing the request or deserializing the response
      */
-    public CompletableFuture<ConsumerCheckPoint> consumerCheckpoint(String id) throws Exception {
-        return client.prepareGet(baseUrl + Util.CONSUMER_CHECKPOINTS.replace("{id}", id))
+    public CompletableFuture<ConsumerCheckPoint> consumerCheckpoint(String id, Map<String, Long> watermarks)
+            throws Exception {
+        return client.preparePost(baseUrl + Util.CONSUMER_CHECKPOINTS.replace("{id}", id))
+                .setBody(Util.JSON_WRITER.writeValueAsBytes(watermarks))
                 .execute()
                 .toCompletableFuture()
                 .thenApply(response -> {
                     if (response.getStatusCode() != HTTP_OK) {
-                        throw new RuntimeException("Failed to get consumer checkpoint: " + response.getStatusCode());
+                        throw new RuntimeException("Failed to get consumer checkpoint: "
+                                + response.getStatusCode());
                     }
                     try {
-                        return Util.JSON_MAPPER.readValue(response.getResponseBody(), ConsumerCheckPoint.class);
+                        return Util.JSON_MAPPER.readValue(response.getResponseBody(),
+                                ConsumerCheckPoint.class);
                     } catch (Exception e) {
                         throw new RuntimeException(e);
                     }
