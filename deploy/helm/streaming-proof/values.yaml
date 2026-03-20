@@ -14,6 +14,21 @@ coordinator:
     limits:
       cpu: "2"
       memory: "8Gi"
+  service:
+    type: LoadBalancer
+    port: 8080
+    targetPort: 8080
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: nlb
+      service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+      service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: external
+  # Allow overriding nodeSelector and tolerations for different environments
+  nodeSelector: {}
+  tolerations:
+    - effect: NoSchedule
+      key: karpenter.sh/capacity-type
+      operator: Equal
+      value: spot
 
 worker:
   replicas: 3
@@ -28,6 +43,13 @@ worker:
     limits:
       cpu: "2"
       memory: "8Gi"
+  # Allow overriding nodeSelector and tolerations for different environments
+  nodeSelector: {}
+  tolerations:
+    - effect: NoSchedule
+      key: karpenter.sh/capacity-type
+      operator: Equal
+      value: spot
 
 frontend:
   replicas: 1
@@ -38,9 +60,16 @@ frontend:
   resources: {}
   service:
     port: 80
+  # Allow overriding nodeSelector and tolerations for different environments
+  nodeSelector: {}
+  tolerations:
+    - effect: NoSchedule
+      key: karpenter.sh/capacity-type
+      operator: Equal
+      value: spot
 
 configs:
-  demo.yaml |
+  demo.yaml: |
     workers:
       worker.1: "http://streaming-proof-worker-0.streaming-proof-worker-headless.streaming-proof.svc.cluster.local:8088"
       worker.2: "http://streaming-proof-worker-1.streaming-proof-worker-headless.streaming-proof.svc.cluster.local:8088"

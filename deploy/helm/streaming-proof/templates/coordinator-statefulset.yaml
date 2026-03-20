@@ -25,12 +25,14 @@ spec:
       - name: config-volume
         configMap:
           name: streaming-proof-configs
-      tolerations:
-      - effect: NoSchedule
-        key: nodepool
-        value: non-spot
+      {{- with .Values.coordinator.nodeSelector }}
       nodeSelector:
-        karpenter.sh/capacity-type: on-demand
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.coordinator.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
       - args:
         - |

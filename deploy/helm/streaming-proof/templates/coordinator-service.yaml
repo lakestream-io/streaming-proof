@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: streaming-proof-coordinator
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "streaming-proof.labels" . | nindent 4 }}
+    app: streaming-proof
+    component: streaming-proof-coordinator
+  {{- with .Values.coordinator.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.coordinator.service.type }}
+  ports:
+  - port: {{ .Values.coordinator.service.port }}
+    protocol: TCP
+    targetPort: {{ .Values.coordinator.service.targetPort }}
+  selector:
+    app: streaming-proof
+    component: streaming-proof-coordinator

@@ -22,12 +22,14 @@ spec:
         prometheus.io/port: "8000"
         prometheus.io/scrape: "true"
     spec:
-      tolerations:
-      - effect: NoSchedule
-        key: nodepool
-        value: non-spot
+      {{- with .Values.worker.nodeSelector }}
       nodeSelector:
-        karpenter.sh/capacity-type: on-demand
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
       - args:
         - |
