@@ -61,6 +61,30 @@ public class OffloadConditionTest {
     }
 
     @Test
+    public void shouldNotWaitAgainForSameLedgerAfterEnteringDegradedMode() {
+        TestTopicsState state = new TestTopicsState(1);
+        String partition0 = TopicName.get("wPG0v").getPartition(0).toString();
+        state.failTopics.add(partition0);
+
+        OffloadCondition condition = new OffloadCondition(
+                createAdminProxy(createTopicsProxy(state)),
+                "wPG0v",
+                0,
+                40,
+                1,
+                5,
+                true);
+
+        condition.waitOffloadConditionMeetForMessage(createMessageId(123L));
+        int firstCallCount = state.getInternalStatsCalls;
+
+        condition.waitOffloadConditionMeetForMessage(createMessageId(123L));
+
+        assertTrue(condition.isDegradedMode());
+        assertEquals(state.getInternalStatsCalls, firstCallCount);
+    }
+
+    @Test
     public void shouldContinueWhenOnePartitionFailsAndTargetLedgerIsOffloaded() {
         TestTopicsState state = new TestTopicsState(2);
         String partition0 = TopicName.get("wPG0v").getPartition(0).toString();

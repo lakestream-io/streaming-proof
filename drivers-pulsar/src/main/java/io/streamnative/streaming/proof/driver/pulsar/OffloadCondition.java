@@ -52,6 +52,7 @@ public class OffloadCondition {
     private final boolean allowDegradedMode;
     private final Map<String, PersistentTopicInternalStats> topicInternalStatsCache = new LinkedHashMap<>();
     private final Set<Long> offloadedLedgersCache = new HashSet<>();
+    private final Set<Long> degradedLedgersCache = new HashSet<>();
     private volatile boolean degradedMode;
 
     public static Optional<OffloadCondition> getOffloadCondition(
@@ -93,7 +94,7 @@ public class OffloadCondition {
 
     public void waitOffloadConditionMeetForMessage(MessageIdAdv messageIdAdv) {
         long ledgerId = messageIdAdv.getLedgerId();
-        if (offloadedLedgersCache.contains(ledgerId)) {
+        if (offloadedLedgersCache.contains(ledgerId) || degradedLedgersCache.contains(ledgerId)) {
             return;
         }
         log.info("Checking offload condition for topic: {}, ledgerId: {}", topic, ledgerId);
@@ -103,7 +104,10 @@ public class OffloadCondition {
             return offloadedLedgers.contains(ledgerId);
         });
         if (conditionMet) {
+            degradedLedgersCache.remove(ledgerId);
             unloadTopics();
+        } else if (allowDegradedMode && degradedMode) {
+            degradedLedgersCache.add(ledgerId);
         }
     }
 
