@@ -319,6 +319,7 @@
                         <exclude>**/data/**</exclude>
                         <exclude>**/mockito-extensions/**</exclude>
                         <exclude>deploy/**</exclude>
+                        <exclude>tlaplus/**</exclude>
                     </excludes>
                     <mapping>
                         <proto>JAVADOC_STYLE</proto>

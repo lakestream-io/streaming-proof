@@ -36,3 +36,4 @@ build/
 
 node_modules
 package.json
+tlaplus/ci/tla2tools.jar
