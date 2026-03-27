@@ -399,6 +399,55 @@ public class ProofTask {
 
         log.info("Stopping proof task {} after reaching the specified duration of {} seconds",
                 proof.getId(), proof.getDuration());
+
+        // Run a final checkpoint aggregation and verification cycle so the last
+        // batch of messages is counted as verified.
+        try {
+            Pair<ProducerCheckpoint, ConsumerCheckPoint> checkpoints = aggregateCheckpoints();
+            latestProducerCheckpoint = checkpoints.getLeft();
+            latestConsumerCheckpoint = checkpoints.getRight();
+            inCheck = latestProducerCheckpoint;
+
+            if (sharedMode) {
+                Map<String, Long> newWatermarks =
+                        latestConsumerCheckpoint.computeHighWatermarks(highWatermarks);
+                highWatermarks = newWatermarks;
+
+                boolean fulfilled = true;
+                for (Map.Entry<String, LongSeq> entry : inCheck.getPublished().entrySet()) {
+                    long expectedSeq = entry.getValue().seq();
+                    Long watermark = newWatermarks.get(entry.getKey());
+                    if (watermark == null || watermark < expectedSeq) {
+                        fulfilled = false;
+                        break;
+                    }
+                }
+                if (fulfilled) {
+                    lastVerifiedProducerCheckpoint = inCheck;
+                    lastVerifiedConsumerCheckpoint = latestConsumerCheckpoint;
+                }
+            } else {
+                boolean fulfilled = true;
+                for (Map.Entry<String, LongSeq> entry : inCheck.getPublished().entrySet()) {
+                    LongSeq expectedSeq = entry.getValue();
+                    LongSeq actualSeq = latestConsumerCheckpoint.getLastSeq(entry.getKey());
+                    if (actualSeq == null || actualSeq.compareTo(expectedSeq) < 0) {
+                        fulfilled = false;
+                        break;
+                    }
+                }
+                if (fulfilled) {
+                    Map<String, Long> newWatermarks =
+                            latestConsumerCheckpoint.computeHighWatermarks(highWatermarks);
+                    lastVerifiedProducerCheckpoint = inCheck;
+                    lastVerifiedConsumerCheckpoint = latestConsumerCheckpoint;
+                    highWatermarks = newWatermarks;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Final checkpoint verification failed for proof {}", proof.getId(), e);
+        }
+
         sendCompletionNotification(getSummary());
         stop();
     }
@@ -448,7 +497,7 @@ public class ProofTask {
                     this.getTimeouts());
         }
         long verified = this.getLastVerifiedProducerCheckpoint().getPublished().values().stream()
-                .mapToLong(LongSeq::seq).sum();
+                .mapToLong(s -> s.seq() + 1).sum();
         ConsumerCheckPoint lastVerifiedConsumerCheckpoint = this.getLastVerifiedConsumerCheckpoint();
         lastVerifiedConsumerCheckpoint.calculate();
         return new ProofSummary(

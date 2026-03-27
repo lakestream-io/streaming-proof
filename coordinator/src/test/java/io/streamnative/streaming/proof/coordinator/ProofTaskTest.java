@@ -18,21 +18,34 @@
  */
 package io.streamnative.streaming.proof.coordinator;
 
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
 
+import io.streamnative.streaming.proof.common.LongSeq;
+import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.records.Configs;
+import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
+import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
 import io.streamnative.streaming.proof.common.records.Proof;
+import io.streamnative.streaming.proof.common.records.ProofSummary;
 import io.streamnative.streaming.proof.common.records.PulsarProofConfig;
+import java.lang.reflect.Method;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
+import org.apache.commons.lang3.tuple.Pair;
 import org.mockito.InOrder;
 import org.testng.annotations.Test;
 
@@ -123,6 +136,206 @@ public class ProofTaskTest {
         ProofTask task = new ProofTask(proof, new Configs(Map.of(), Map.of()), driver);
         try {
             assertFalse(task.isSharedMode());
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testGetSummaryVerifiedCountUsesSeqPlusOne() {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof proof = Proof.builder()
+                .topic("test-topic")
+                .features(List.of("at_least_once", "ordering"))
+                .build();
+        ProofTask task = new ProofTask(proof, new Configs(Map.of(), Map.of()), driver);
+        try {
+            // Simulate 4 keys each with 125 messages (seq 0-124)
+            ProducerCheckpoint producerCp = task.getLastVerifiedProducerCheckpoint();
+            producerCp.addPublished("key0", new LongSeq(124, MessageMetadata.empty()));
+            producerCp.addPublished("key1", new LongSeq(124, MessageMetadata.empty()));
+            producerCp.addPublished("key2", new LongSeq(124, MessageMetadata.empty()));
+            producerCp.addPublished("key3", new LongSeq(124, MessageMetadata.empty()));
+
+            ProofSummary summary = task.getSummary();
+
+            // With the fix: (124+1)*4 = 500, not 124*4 = 496
+            assertEquals(summary.verified(), 500L);
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testGetSummaryVerifiedCountSingleKey() {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof proof = Proof.builder()
+                .topic("test-topic")
+                .features(List.of("at_least_once"))
+                .build();
+        ProofTask task = new ProofTask(proof, new Configs(Map.of(), Map.of()), driver);
+        try {
+            // Single key with 1000 messages (seq 0-999)
+            task.getLastVerifiedProducerCheckpoint()
+                    .addPublished("key0", new LongSeq(999, MessageMetadata.empty()));
+
+            ProofSummary summary = task.getSummary();
+            assertEquals(summary.verified(), 1000L);
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testCompleteProofAfterDurationRunsFinalVerification() throws Exception {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof proof = Proof.builder()
+                .id("test-proof")
+                .topic("test-topic")
+                .features(List.of("at_least_once", "ordering"))
+                .duration(20)
+                .checkPointInterval(5)
+                .timeout(30)
+                .build();
+        proof.setStartTime(DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(
+                LocalDateTime.now().minusSeconds(25)));
+
+        ProofTask task = spy(new ProofTask(proof, new Configs(Map.of(), Map.of()), driver));
+
+        try {
+            // Build producer checkpoint: 4 keys, each with seq 0-249 (250 msgs each)
+            ProducerCheckpoint producerCp = new ProducerCheckpoint();
+            producerCp.addPublished("key0", new LongSeq(249, MessageMetadata.empty()));
+            producerCp.addPublished("key1", new LongSeq(249, MessageMetadata.empty()));
+            producerCp.addPublished("key2", new LongSeq(249, MessageMetadata.empty()));
+            producerCp.addPublished("key3", new LongSeq(249, MessageMetadata.empty()));
+
+            // Build consumer checkpoint: consumer has received all messages
+            ConsumerCheckPoint consumerCp = new ConsumerCheckPoint();
+            for (String key : List.of("key0", "key1", "key2", "key3")) {
+                ConsumerCheckPoint.SeqRange range = new ConsumerCheckPoint.SeqRange();
+                range.setStart(new LongSeq(0, MessageMetadata.empty()));
+                range.setEnd(new LongSeq(249, MessageMetadata.empty()));
+                TreeMap<String, ConsumerCheckPoint.SeqRange> rangeMap = new TreeMap<>();
+                rangeMap.put("t0", range);
+                consumerCp.addKey(key, rangeMap);
+            }
+
+            doReturn(Pair.of(producerCp, consumerCp)).when(task).aggregateCheckpoints();
+
+            // Invoke private completeProofAfterDuration via reflection
+            Method method = ProofTask.class.getDeclaredMethod("completeProofAfterDuration");
+            method.setAccessible(true);
+            method.invoke(task);
+
+            // After final verification, lastVerifiedProducerCheckpoint should be updated
+            ProofSummary summary = task.getSummary();
+            // (249+1) * 4 = 1000
+            assertEquals(summary.verified(), 1000L);
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testCompleteProofAfterDurationWhenConsumerLagsBehind() throws Exception {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof proof = Proof.builder()
+                .id("test-proof")
+                .topic("test-topic")
+                .features(List.of("at_least_once", "ordering"))
+                .duration(20)
+                .checkPointInterval(5)
+                .timeout(30)
+                .build();
+        proof.setStartTime(DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(
+                LocalDateTime.now().minusSeconds(25)));
+
+        ProofTask task = spy(new ProofTask(proof, new Configs(Map.of(), Map.of()), driver));
+
+        try {
+            // Simulate a prior verified checkpoint at seq 124 per key
+            task.getLastVerifiedProducerCheckpoint()
+                    .addPublished("key0", new LongSeq(124, MessageMetadata.empty()));
+            task.getLastVerifiedProducerCheckpoint()
+                    .addPublished("key1", new LongSeq(124, MessageMetadata.empty()));
+
+            // Latest producer checkpoint has seq 249 but consumer only reached 200
+            ProducerCheckpoint producerCp = new ProducerCheckpoint();
+            producerCp.addPublished("key0", new LongSeq(249, MessageMetadata.empty()));
+            producerCp.addPublished("key1", new LongSeq(249, MessageMetadata.empty()));
+
+            ConsumerCheckPoint consumerCp = new ConsumerCheckPoint();
+            for (String key : List.of("key0", "key1")) {
+                ConsumerCheckPoint.SeqRange range = new ConsumerCheckPoint.SeqRange();
+                range.setStart(new LongSeq(0, MessageMetadata.empty()));
+                range.setEnd(new LongSeq(200, MessageMetadata.empty()));
+                TreeMap<String, ConsumerCheckPoint.SeqRange> rangeMap = new TreeMap<>();
+                rangeMap.put("t0", range);
+                consumerCp.addKey(key, rangeMap);
+            }
+
+            doReturn(Pair.of(producerCp, consumerCp)).when(task).aggregateCheckpoints();
+
+            Method method = ProofTask.class.getDeclaredMethod("completeProofAfterDuration");
+            method.setAccessible(true);
+            method.invoke(task);
+
+            // Consumer hasn't caught up (200 < 249), so lastVerified stays at prior checkpoint
+            ProofSummary summary = task.getSummary();
+            // Prior checkpoint: (124+1) * 2 = 250
+            assertEquals(summary.verified(), 250L);
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testCompleteProofAfterDurationSharedMode() throws Exception {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof proof = Proof.builder()
+                .id("test-proof")
+                .topic("test-topic")
+                .features(List.of("at_least_once"))
+                .duration(20)
+                .checkPointInterval(5)
+                .timeout(30)
+                .pulsar(PulsarProofConfig.builder()
+                        .consumerConfig(Map.of("subscriptionType", "Shared"))
+                        .build())
+                .build();
+        proof.setStartTime(DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(
+                LocalDateTime.now().minusSeconds(25)));
+
+        ProofTask task = spy(new ProofTask(proof, new Configs(Map.of(), Map.of()), driver));
+
+        try {
+            assertTrue(task.isSharedMode());
+
+            ProducerCheckpoint producerCp = new ProducerCheckpoint();
+            producerCp.addPublished("key0", new LongSeq(249, MessageMetadata.empty()));
+            producerCp.addPublished("key1", new LongSeq(249, MessageMetadata.empty()));
+
+            ConsumerCheckPoint consumerCp = new ConsumerCheckPoint();
+            for (String key : List.of("key0", "key1")) {
+                ConsumerCheckPoint.SeqRange range = new ConsumerCheckPoint.SeqRange();
+                range.setStart(new LongSeq(0, MessageMetadata.empty()));
+                range.setEnd(new LongSeq(249, MessageMetadata.empty()));
+                TreeMap<String, ConsumerCheckPoint.SeqRange> rangeMap = new TreeMap<>();
+                rangeMap.put("t0", range);
+                consumerCp.addKey(key, rangeMap);
+            }
+
+            doReturn(Pair.of(producerCp, consumerCp)).when(task).aggregateCheckpoints();
+
+            Method method = ProofTask.class.getDeclaredMethod("completeProofAfterDuration");
+            method.setAccessible(true);
+            method.invoke(task);
+
+            // Shared mode: verified = sum of (watermark + 1)
+            // Watermarks should be 249 per key → (249+1)*2 = 500
+            ProofSummary summary = task.getSummary();
+            assertEquals(summary.verified(), 500L);
         } finally {
             task.getExecutor().shutdownNow();
         }
