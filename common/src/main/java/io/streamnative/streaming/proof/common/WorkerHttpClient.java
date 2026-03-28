@@ -151,19 +151,20 @@ public class WorkerHttpClient {
     }
 
     /**
-     * Stops a group of consumers identified by the given ID.
+     * Stops a group of consumers identified by the given ID and removes the
+     * associated producer group from the registry.
      *
-     * @param id The unique identifier of the consumer group to stop
+     * @param id The unique identifier of the consumer group to stop and remove
      * @return A CompletableFuture that completes when the consumers are stopped
      * @throws Exception if there's an error preparing the request
      */
-    public CompletableFuture<Void> stopConsumers(String id) throws Exception {
+    public CompletableFuture<Void> stopAndRemoveConsumers(String id) throws Exception {
         return client.preparePost(baseUrl + Util.STOP_CONSUMER.replace("{id}", id))
                 .execute()
                 .toCompletableFuture()
                 .thenAccept(response -> {
                     if (response.getStatusCode() != HTTP_OK) {
-                        throw new RuntimeException("Failed to stop consumers: " + response.getStatusCode());
+                        throw new RuntimeException("Failed to stop and remove consumers: " + response.getStatusCode());
                     }
                 });
     }

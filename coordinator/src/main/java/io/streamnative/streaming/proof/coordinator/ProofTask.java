@@ -399,9 +399,11 @@ public class ProofTask {
 
         log.info("Stopping proof task {} after reaching the specified duration of {} seconds",
                 proof.getId(), proof.getDuration());
+        sendCompletionNotification(getSummary());
+        stop();
+    }
 
-        // Run a final checkpoint aggregation and verification cycle so the last
-        // batch of messages is counted as verified.
+    private void runFinalVerification() {
         try {
             Pair<ProducerCheckpoint, ConsumerCheckPoint> checkpoints = aggregateCheckpoints();
             latestProducerCheckpoint = checkpoints.getLeft();
@@ -447,9 +449,6 @@ public class ProofTask {
         } catch (Exception e) {
             log.warn("Final checkpoint verification failed for proof {}", proof.getId(), e);
         }
-
-        sendCompletionNotification(getSummary());
-        stop();
     }
 
     Pair<ProducerCheckpoint, ConsumerCheckPoint> aggregateCheckpoints() {
@@ -627,14 +626,24 @@ public class ProofTask {
 
         executor.shutdown();
 
+        // Stop producers first so no more messages are sent.  The producer
+        // state remains on the worker until consumers are stopped, so the
+        // subsequent checkpoint can still read the final published sequences.
         clients.forEach(client -> {
             try {
                 client.stopProducers(proof.getId()).join();
             } catch (Exception e) {
                 log.warn("Failed to stop producers for proof {}", proof.getId(), e);
             }
+        });
+
+        // Run final verification after producers have stopped but while
+        // consumers are still active, capturing every published message.
+        runFinalVerification();
+
+        clients.forEach(client -> {
             try {
-                client.stopConsumers(proof.getId()).join();
+                client.stopAndRemoveConsumers(proof.getId()).join();
             } catch (Exception e) {
                 log.warn("Failed to stop consumers for proof {}", proof.getId(), e);
             }

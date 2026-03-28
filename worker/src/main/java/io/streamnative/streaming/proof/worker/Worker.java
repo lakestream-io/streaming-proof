@@ -82,14 +82,26 @@ public class Worker {
     /**
      * Stops a group of producers identified by the given ID.
      *
+     * <p>Note: The producer is not removed from the registry immediately to allow
+     * the final checkpoint retrieval during verification. The producer will be
+     * removed from the registry when {@link #removeProducers(String)} is called.
+     *
      * @param id The unique identifier of the producer group to stop
      */
     public void stopProducers(String id) {
         ProofProducers producer = producers.get(id);
         if (producer != null) {
             producer.stop();
-            producers.remove(id);
         }
+    }
+
+    /**
+     * Removes a stopped producer group from the registry.
+     *
+     * @param id The unique identifier of the producer group to remove
+     */
+    public void removeProducers(String id) {
+        producers.remove(id);
     }
 
     /**
@@ -119,16 +131,23 @@ public class Worker {
     }
 
     /**
-     * Stops a group of consumers identified by the given ID.
+     * Stops a group of consumers identified by the given ID and removes the
+     * associated producer group from the registry.
      *
-     * @param id The unique identifier of the consumer group to stop
+     * <p>This method should be called after the final verification is complete
+     * to clean up both consumers and any producer that was kept for checkpoint
+     * retrieval.
+     *
+     * @param id The unique identifier of the consumer group to stop and remove
      */
-    public void stopConsumers(String id) {
+    public void stopAndRemoveConsumers(String id) {
         ProofConsumers consumer = consumers.get(id);
         if (consumer != null) {
             consumer.stop();
             consumers.remove(id);
         }
+        // Clean up any stopped producer that was kept for final checkpoint retrieval
+        removeProducers(id);
     }
 
     /**

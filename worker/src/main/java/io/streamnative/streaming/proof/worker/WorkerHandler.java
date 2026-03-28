@@ -167,7 +167,7 @@ public class WorkerHandler {
     }
 
     /**
-     * Handles requests to stop a consumer group.
+     * Handles requests to stop a consumer group and remove the associated producer.
      * Stops all consumers in the group identified by the proof ID.
      *
      * @param ctx The Javalin context containing the proof ID in path parameters
@@ -175,6 +175,6 @@ public class WorkerHandler {
      */
     private void handleStopConsumer(Context ctx) throws Exception {
         String proofID = ctx.pathParam("id");
-        worker.stopConsumers(proofID);
+        worker.stopAndRemoveConsumers(proofID);
     }
 }

@@ -39,12 +39,14 @@ import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
 import io.streamnative.streaming.proof.common.records.Proof;
 import io.streamnative.streaming.proof.common.records.ProofSummary;
 import io.streamnative.streaming.proof.common.records.PulsarProofConfig;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.commons.lang3.tuple.Pair;
 import org.mockito.InOrder;
 import org.testng.annotations.Test;
@@ -203,6 +205,9 @@ public class ProofTaskTest {
         ProofTask task = spy(new ProofTask(proof, new Configs(Map.of(), Map.of()), driver));
 
         try {
+            // stop() requires running=true to proceed past the CAS guard
+            getRunningFlag(task).set(true);
+
             // Build producer checkpoint: 4 keys, each with seq 0-249 (250 msgs each)
             ProducerCheckpoint producerCp = new ProducerCheckpoint();
             producerCp.addPublished("key0", new LongSeq(249, MessageMetadata.empty()));
@@ -254,6 +259,8 @@ public class ProofTaskTest {
         ProofTask task = spy(new ProofTask(proof, new Configs(Map.of(), Map.of()), driver));
 
         try {
+            getRunningFlag(task).set(true);
+
             // Simulate a prior verified checkpoint at seq 124 per key
             task.getLastVerifiedProducerCheckpoint()
                     .addPublished("key0", new LongSeq(124, MessageMetadata.empty()));
@@ -311,6 +318,7 @@ public class ProofTaskTest {
 
         try {
             assertTrue(task.isSharedMode());
+            getRunningFlag(task).set(true);
 
             ProducerCheckpoint producerCp = new ProducerCheckpoint();
             producerCp.addPublished("key0", new LongSeq(249, MessageMetadata.empty()));
@@ -339,5 +347,11 @@ public class ProofTaskTest {
         } finally {
             task.getExecutor().shutdownNow();
         }
+    }
+
+    private static AtomicBoolean getRunningFlag(ProofTask task) throws Exception {
+        Field runningField = ProofTask.class.getDeclaredField("running");
+        runningField.setAccessible(true);
+        return (AtomicBoolean) runningField.get(task);
     }
 }
