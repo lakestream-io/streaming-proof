@@ -151,12 +151,78 @@ public class MessageMetadataTest {
         MessageMetadata metadata1 = new MessageMetadata(100L, 1L, 2L, 3, 10L);
         MessageMetadata metadata2 = new MessageMetadata(100L, 1L, 2L, 3, 10L);
         MessageMetadata metadata3 = new MessageMetadata(200L, 1L, 2L, 3, 10L);
-        
+
         // Same values should be equal
         assertEquals(metadata1, metadata2);
         assertEquals(metadata1.hashCode(), metadata2.hashCode());
-        
+
         // Different values should not be equal
         assertFalse(metadata1.equals(metadata3));
+    }
+
+    @Test
+    public void testBatchIndexConstructor() {
+        MessageMetadata metadata = new MessageMetadata(10L, 100L, 5);
+        assertNull(metadata.offset());
+        assertEquals(metadata.ledgerId(), Long.valueOf(10L));
+        assertEquals(metadata.entryId(), Long.valueOf(100L));
+        assertEquals(metadata.batchIndex(), Integer.valueOf(5));
+    }
+
+    @Test
+    public void testIsAfterWithBatchIndex() {
+        // Same ledger and entry, different batch index
+        MessageMetadata batch0 = new MessageMetadata(1L, 100L, 0);
+        MessageMetadata batch1 = new MessageMetadata(1L, 100L, 1);
+        MessageMetadata batch2 = new MessageMetadata(1L, 100L, 2);
+
+        assertTrue(batch1.isAfter(batch0));
+        assertTrue(batch2.isAfter(batch1));
+        assertFalse(batch0.isAfter(batch1));
+        assertFalse(batch1.isAfter(batch2));
+
+        // Same batch index should not be after
+        assertFalse(batch1.isAfter(new MessageMetadata(1L, 100L, 1)));
+    }
+
+    @Test
+    public void testIsAfterBatchIndexVsNoBatchIndex() {
+        // Message with batch index vs message without (null batch index)
+        MessageMetadata withBatch = new MessageMetadata(1L, 100L, 0);
+        MessageMetadata noBatch = new MessageMetadata(1L, 100L);
+
+        // batchIndex=0 > null(-1), so withBatch is after noBatch
+        assertTrue(withBatch.isAfter(noBatch));
+        assertFalse(noBatch.isAfter(withBatch));
+    }
+
+    @Test
+    public void testIsAfterDifferentEntryIgnoresBatchIndex() {
+        // Different entries — batch index should not matter
+        MessageMetadata entry1batch5 = new MessageMetadata(1L, 1L, 5);
+        MessageMetadata entry2batch0 = new MessageMetadata(1L, 2L, 0);
+
+        assertTrue(entry2batch0.isAfter(entry1batch5));
+        assertFalse(entry1batch5.isAfter(entry2batch0));
+    }
+
+    @Test
+    public void testBatchIndexSerialization() throws JsonProcessingException {
+        MessageMetadata metadata = new MessageMetadata(10L, 100L, 3);
+        String json = metadata.toString();
+
+        MessageMetadata parsed = Util.JSON_MAPPER.readValue(json, MessageMetadata.class);
+        assertEquals(parsed.ledgerId(), Long.valueOf(10L));
+        assertEquals(parsed.entryId(), Long.valueOf(100L));
+        assertEquals(parsed.batchIndex(), Integer.valueOf(3));
+    }
+
+    @Test
+    public void testBatchIndexNullNotSerialized() throws JsonProcessingException {
+        MessageMetadata metadata = new MessageMetadata(10L, 100L);
+        String json = metadata.toString();
+
+        // batchIndex is null, should not appear in JSON
+        assertFalse(json.contains("batchIndex"));
     }
 }

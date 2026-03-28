@@ -72,40 +72,60 @@ public record MessageMetadata(
         Integer partition,
 
         @JsonInclude(Include.NON_NULL)
-        Long originalOffset
+        Long originalOffset,
+
+        @JsonInclude(Include.NON_NULL)
+        Integer batchIndex
 ) {
 
-    public static MessageMetadata empty() {
-        return new MessageMetadata(-1L, -1L, -1L, null, -1L);
+    public MessageMetadata(Long offset, Long ledgerId, Long entryId, Integer partition, Long originalOffset) {
+        this(offset, ledgerId, entryId, partition, originalOffset, null);
     }
+
+    public static MessageMetadata empty() {
+        return new MessageMetadata(-1L, -1L, -1L, null, -1L, null);
+    }
+
     public MessageMetadata(long offset) {
-        this(offset, null, null, null, -1L);
+        this(offset, null, null, null, -1L, null);
     }
 
     public MessageMetadata(long offset, int partition) {
-        this(offset, null, null, partition, -1L);
+        this(offset, null, null, partition, -1L, null);
     }
 
     public static MessageMetadata kafkaMetadata(long offset, int partition, Long originalOffset) {
-        return new MessageMetadata(offset, null, null, partition, originalOffset);
+        return new MessageMetadata(offset, null, null, partition, originalOffset, null);
     }
 
     public MessageMetadata(long ledgerId, long entryId) {
-        this(null, ledgerId, entryId, null, -1L);
+        this(null, ledgerId, entryId, null, -1L, null);
+    }
+
+    public MessageMetadata(long ledgerId, long entryId, int batchIndex) {
+        this(null, ledgerId, entryId, null, -1L, batchIndex);
     }
 
     public boolean isAfter(MessageMetadata other) {
         if (other == null) {
             return true;
         }
-        
+
         // If both have ledger and entry IDs, compare them
         if (this.ledgerId != null && this.entryId != null
                 && other.ledgerId != null && other.entryId != null) {
-            return this.ledgerId > other.ledgerId
-                    || (this.ledgerId.equals(other.ledgerId) && this.entryId > other.entryId);
+            if (!this.ledgerId.equals(other.ledgerId)) {
+                return this.ledgerId > other.ledgerId;
+            }
+            if (!this.entryId.equals(other.entryId)) {
+                return this.entryId > other.entryId;
+            }
+            // Same ledger and entry — compare batch index for batched messages
+            int thisBatch = this.batchIndex != null ? this.batchIndex : -1;
+            int otherBatch = other.batchIndex != null ? other.batchIndex : -1;
+            return thisBatch > otherBatch;
         }
-        
+
         // Otherwise compare by offset
         return this.offset > other.offset;
     }
