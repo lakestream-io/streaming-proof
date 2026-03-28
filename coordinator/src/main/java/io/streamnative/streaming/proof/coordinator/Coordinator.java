@@ -178,6 +178,18 @@ public class Coordinator {
         return List.copyOf(proofs.values().stream().map(ProofTask::getProof).toList());
     }
 
+    public List<java.util.Map<String, Object>> listProofsWithStatus() {
+        return proofs.values().stream()
+                .map(task -> {
+                    java.util.Map<String, Object> map = new java.util.HashMap<>();
+                    map.put("proof", task.getProof());
+                    ProofReport report = task.getReport();
+                    map.put("status", report.status());
+                    return map;
+                })
+                .toList();
+    }
+
     /**
      * Retrieves detailed information about a specific proof test.
      * This method provides comprehensive information including:

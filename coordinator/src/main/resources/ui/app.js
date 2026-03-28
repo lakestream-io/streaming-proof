@@ -17,114 +17,666 @@
  * under the License.
  */
 
-const proofListEl = document.getElementById("proof-list");
-const refreshButton = document.getElementById("refresh-button");
-const heroTitleEl = document.getElementById("hero-title");
-const heroSubtitleEl = document.getElementById("hero-subtitle");
-const heroStatusEl = document.getElementById("hero-status");
-const heroProgressValueEl = document.getElementById("hero-progress-value");
+// ── DOM refs ──────────────────────────────────────────────────────
+
+const proofListEl        = document.getElementById("proof-list");
+const refreshButton      = document.getElementById("refresh-button");
+const lastUpdatedEl      = document.getElementById("last-updated");
+const heroTitleEl        = document.getElementById("hero-title");
+const heroSubtitleEl     = document.getElementById("hero-subtitle");
+const heroStatusEl       = document.getElementById("hero-status");
+const heroMetaEl         = document.getElementById("hero-meta");
+const heroProgressValueEl  = document.getElementById("hero-progress-value");
 const heroProgressDetailEl = document.getElementById("hero-progress-detail");
-const heroProgressFillEl = document.getElementById("hero-progress-fill");
-const emptyStateEl = document.getElementById("empty-state");
-const detailsViewEl = document.getElementById("details-view");
-const proofJsonLinkEl = document.getElementById("proof-json-link");
-const clusterTargetsEl = document.getElementById("cluster-targets");
+const heroProgressFillEl   = document.getElementById("hero-progress-fill");
+const emptyStateEl       = document.getElementById("empty-state");
+const detailsViewEl      = document.getElementById("details-view");
+const proofJsonLinkEl    = document.getElementById("proof-json-link");
 
 const metricEls = {
-  verified: document.getElementById("metric-verified"),
-  missed: document.getElementById("metric-missed"),
+  verified:    document.getElementById("metric-verified"),
+  missed:      document.getElementById("metric-missed"),
   outOfOrders: document.getElementById("metric-out-of-orders"),
-  duplicates: document.getElementById("metric-duplicates"),
-  errors: document.getElementById("metric-errors"),
-  timeouts: document.getElementById("metric-timeouts")
+  duplicates:  document.getElementById("metric-duplicates"),
+  errors:      document.getElementById("metric-errors"),
+  timeouts:    document.getElementById("metric-timeouts")
 };
 
-const performanceMetricEls = {
-  publishRate: document.getElementById("perf-publish-rate"),
-  consumeRate: document.getElementById("perf-consume-rate"),
-  publishErrorRate: document.getElementById("perf-publish-error-rate"),
-  backlog: document.getElementById("perf-backlog"),
-  publishLatencyP95: document.getElementById("perf-publish-latency-p95"),
-  publishLatencyP99: document.getElementById("perf-publish-latency-p99"),
+const perfEls = {
+  publishRate:        document.getElementById("perf-publish-rate"),
+  consumeRate:        document.getElementById("perf-consume-rate"),
+  publishThroughput:  document.getElementById("perf-publish-throughput"),
+  consumeThroughput:  document.getElementById("perf-consume-throughput"),
+  publishErrorRate:   document.getElementById("perf-publish-error-rate"),
+  backlog:            document.getElementById("perf-backlog"),
+  publishLatencyP95:  document.getElementById("perf-publish-latency-p95"),
+  publishLatencyP99:  document.getElementById("perf-publish-latency-p99"),
   endToEndLatencyP95: document.getElementById("perf-e2e-latency-p95"),
   endToEndLatencyP99: document.getElementById("perf-e2e-latency-p99")
 };
 
-const proofConfigEl = document.getElementById("proof-config");
-const proofCheckpointsEl = document.getElementById("proof-checkpoints");
-const proofPerformanceEl = document.getElementById("proof-performance");
-const proofFlowEl = document.getElementById("proof-flow");
-const publishLatencyLadderEl = document.getElementById("publish-latency-ladder");
-const e2eLatencyLadderEl = document.getElementById("e2e-latency-ladder");
-const throughputChartEl = document.getElementById("throughput-chart");
-const backlogChartEl = document.getElementById("backlog-chart");
-const publishLatencyChartEl = document.getElementById("publish-latency-chart");
-const e2eLatencyChartEl = document.getElementById("e2e-latency-chart");
+const cfgEls = {
+  driver:              document.getElementById("cfg-driver"),
+  topic:               document.getElementById("cfg-topic"),
+  partitions:          document.getElementById("cfg-partitions"),
+  producers:           document.getElementById("cfg-producers"),
+  consumers:           document.getElementById("cfg-consumers"),
+  msgRate:             document.getElementById("cfg-msg-rate"),
+  duration:            document.getElementById("cfg-duration"),
+  checkpointInterval:  document.getElementById("cfg-checkpoint-interval"),
+  timeout:             document.getElementById("cfg-timeout"),
+  features:            document.getElementById("cfg-features")
+};
 
-let proofs = [];
+const clusterTargetCountEl  = document.getElementById("cluster-target-count");
+const clusterTargetsEl      = document.getElementById("cluster-targets");
+
+// ── State ─────────────────────────────────────────────────────────
+
+let proofs          = [];
 let selectedProofId = new URLSearchParams(window.location.search).get("proofId");
+let autoRefreshTimer = null;
+const chartInstances = {};
 
-function formatValue(value) {
-  if (value === null || value === undefined || value === "") {
-    return "N/A";
-  }
-  if (Array.isArray(value)) {
-    return value.join(", ");
-  }
-  if (typeof value === "object") {
-    return JSON.stringify(value);
-  }
-  return String(value);
+// ── Theme toggle ─────────────────────────────────────────────────
+
+function getTheme() {
+  return localStorage.getItem("sp-theme") || "dark";
 }
 
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll("\"", "&quot;")
-    .replaceAll("'", "&#39;");
+function applyTheme(theme) {
+  if (theme === "light") {
+    document.documentElement.setAttribute("data-theme", "light");
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+  }
+  // Re-render charts with updated colors
+  Object.values(chartInstances).forEach(c => c.dispose());
+  Object.keys(chartInstances).forEach(k => delete chartInstances[k]);
+  if (selectedProofId) loadProofDetails(selectedProofId);
 }
 
-function isStructuredValue(value) {
-  return value !== null && typeof value === "object";
+(function initTheme() {
+  const saved = getTheme();
+  if (saved === "light") {
+    document.documentElement.setAttribute("data-theme", "light");
+  }
+  const toggleBtn = document.getElementById("theme-toggle");
+  if (toggleBtn) {
+    toggleBtn.addEventListener("click", () => {
+      const current = getTheme();
+      const next = current === "dark" ? "light" : "dark";
+      localStorage.setItem("sp-theme", next);
+      applyTheme(next);
+    });
+  }
+
+  // Sidebar toggle
+  const sidebarToggleBtn = document.getElementById("sidebar-toggle");
+  const layoutEl = document.querySelector(".layout");
+  if (sidebarToggleBtn && layoutEl) {
+    // Restore saved state
+    const sidebarCollapsed = localStorage.getItem("sp-sidebar-collapsed") === "true";
+    if (sidebarCollapsed) {
+      layoutEl.classList.add("sidebar-collapsed");
+    }
+
+    sidebarToggleBtn.addEventListener("click", () => {
+      layoutEl.classList.toggle("sidebar-collapsed");
+      const isCollapsed = layoutEl.classList.contains("sidebar-collapsed");
+      localStorage.setItem("sp-sidebar-collapsed", isCollapsed);
+
+      // Trigger chart resize after transition
+      setTimeout(() => {
+        Object.values(chartInstances).forEach(chart => chart.resize());
+      }, 220);
+    });
+  }
+})();
+
+/** Read a CSS variable from the current theme. */
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
+
+// ── ECharts helpers ───────────────────────────────────────────────
+
+/**
+ * Returns an ECharts instance for the given element id.
+ * Creates and wires a ResizeObserver on first call.
+ */
+function getChart(id) {
+  if (!chartInstances[id]) {
+    const el = document.getElementById(id);
+    chartInstances[id] = echarts.init(el, null, {renderer: "canvas"});
+    new ResizeObserver(() => chartInstances[id].resize()).observe(el);
+  }
+  return chartInstances[id];
+}
+
+/** Shared base option applied to every chart. */
+function baseChartOption(useIntegerFormatter = false) {
+  const gridColor    = cssVar("--chart-grid");
+  const labelColor   = cssVar("--chart-label");
+  const tooltipBg    = cssVar("--surface");
+  const tooltipBorder = cssVar("--border-strong");
+  const tooltipText  = cssVar("--text");
+  const pointerColor = cssVar("--chart-pointer");
+  const mutedColor   = cssVar("--muted");
+
+  return {
+    backgroundColor: "transparent",
+    animation: true,
+    animationDuration: 400,
+    grid: {top: 12, right: 14, bottom: 58, left: 56},
+    tooltip: {
+      trigger: "axis",
+      backgroundColor: tooltipBg,
+      borderColor: tooltipBorder,
+      borderWidth: 1,
+      padding: [10, 14],
+      textStyle: {
+        color: tooltipText,
+        fontSize: 12,
+        fontFamily: "'JetBrains Mono', monospace"
+      },
+      axisPointer: {
+        lineStyle: {color: pointerColor, width: 1}
+      },
+      formatter(params) {
+        const sec = params[0]?.data?.[0] ?? 0;
+        const timeLabel = formatSecondsShort(sec);
+        let rows = `<div style="color:${mutedColor};font-size:11px;margin-bottom:6px">${timeLabel}</div>`;
+        for (const p of params) {
+          let val;
+          if (typeof p.data?.[1] !== "number") {
+            val = "—";
+          } else if (useIntegerFormatter) {
+            val = Math.round(p.data[1]).toLocaleString();
+          } else {
+            val = p.data[1].toFixed(2);
+          }
+          rows += `<div style="display:flex;align-items:center;gap:8px;margin:2px 0">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};flex-shrink:0"></span>
+            <span style="color:${labelColor};flex:1">${p.seriesName}</span>
+            <span style="font-weight:600;color:${tooltipText};padding-left:12px">${val}</span>
+          </div>`;
+        }
+        return rows;
+      }
+    },
+    xAxis: {
+      type: "value",
+      axisLabel: {
+        color: labelColor,
+        fontSize: 11,
+        fontFamily: "'JetBrains Mono', monospace",
+        formatter: (v) => formatSecondsShort(v)
+      },
+      axisLine: {lineStyle: {color: gridColor}},
+      splitLine: {lineStyle: {color: gridColor, type: "dashed"}},
+      minorSplitLine: {show: false}
+    },
+    yAxis: {
+      type: "value",
+      axisLabel: {
+        color: labelColor,
+        fontSize: 11,
+        fontFamily: "'JetBrains Mono', monospace"
+      },
+      axisLine: {show: false},
+      splitLine: {lineStyle: {color: gridColor, type: "dashed"}}
+    }
+  };
+}
+
+/** Builds a smooth area line series config. */
+function areaSeries(name, color, data) {
+  return {
+    name,
+    type: "line",
+    smooth: 0.4,
+    showSymbol: false,
+    data,
+    lineStyle: {color, width: 1.8},
+    itemStyle: {color},
+    areaStyle: {
+      color: {
+        type: "linear", x: 0, y: 0, x2: 0, y2: 1,
+        colorStops: [
+          {offset: 0, color: color + "28"},
+          {offset: 1, color: color + "04"}
+        ]
+      }
+    }
+  };
+}
+
+/** Renders message rate (publish + consume msg/s) chart. */
+function renderRateChart(timeSeries) {
+  const chart = getChart("rate-chart");
+  const opt = baseChartOption();
+  opt.legend = legendOption(["Publish Rate", "Consume Rate"]);
+  opt.series = [
+    areaSeries("Publish Rate", "#60a5fa", timeSeries.map((p) => [p.elapsedSeconds, Number(p.publishRate || 0)])),
+    areaSeries("Consume Rate", "#34d399", timeSeries.map((p) => [p.elapsedSeconds, Number(p.consumeRate || 0)]))
+  ];
+  chart.setOption(opt, {notMerge: true});
+}
+
+/** Renders throughput (publish + consume bytes/s) chart. */
+function renderThroughputChart(timeSeries) {
+  const chart = getChart("throughput-chart");
+  const opt = baseChartOption();
+  opt.legend = legendOption(["Publish", "Consume"]);
+  opt.tooltip.valueFormatter = (v) => formatBytes(v) + "/s";
+  opt.yAxis.axisLabel = {
+    color: cssVar("--chart-label"),
+    fontSize: 10,
+    formatter: (v) => formatBytes(v) + "/s"
+  };
+  opt.series = [
+    areaSeries("Publish", "#f97316", timeSeries.map((p) => [p.elapsedSeconds, Number(p.publishBytesRate || 0)])),
+    areaSeries("Consume", "#a78bfa", timeSeries.map((p) => [p.elapsedSeconds, Number(p.consumeBytesRate || 0)]))
+  ];
+  chart.setOption(opt, {notMerge: true});
+}
+
+function formatBytes(bytes) {
+  if (bytes == null || bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const i = Math.min(Math.floor(Math.log(Math.abs(bytes)) / Math.log(1024)), units.length - 1);
+  const val = bytes / Math.pow(1024, i);
+  return val.toFixed(val < 10 ? 2 : 1) + " " + units[i];
+}
+
+/** Renders backlog chart. */
+function renderBacklogChart(timeSeries) {
+  const chart = getChart("backlog-chart");
+  const opt = baseChartOption(true);
+  opt.legend = legendOption(["Backlog"]);
+  opt.series = [
+    areaSeries("Backlog", "#fbbf24", timeSeries.map((p) => [p.elapsedSeconds, Number(p.backlogMessages || 0)]))
+  ];
+  chart.setOption(opt, {notMerge: true});
+}
+
+/** Renders cumulative messages (published / consumed / verified) chart. */
+function renderMessagesChart(timeSeries) {
+  const chart = getChart("messages-chart");
+  const opt = baseChartOption(true);
+  opt.legend = legendOption(["Published", "Consumed", "Verified"]);
+  opt.series = [
+    areaSeries("Published", "#60a5fa", timeSeries.map((p) => [p.elapsedSeconds, Number(p.publishedMessages || 0)])),
+    areaSeries("Consumed",  "#34d399", timeSeries.map((p) => [p.elapsedSeconds, Number(p.consumedMessages || 0)])),
+    areaSeries("Verified",  "#fbbf24", timeSeries.map((p) => [p.elapsedSeconds, Number(p.verifiedMessages || 0)]))
+  ];
+  chart.setOption(opt, {notMerge: true});
+}
+
+/** Renders anomalies (missed / duplicates / out-of-order) chart. */
+function renderAnomaliesChart(timeSeries) {
+  const chart = getChart("anomalies-chart");
+  const opt = baseChartOption(true);
+  opt.legend = legendOption(["Errors", "Missed", "Duplicates", "Out-of-Order"]);
+  opt.series = [
+    areaSeries("Errors",       "#f97316", timeSeries.map((p) => [p.elapsedSeconds, Number(p.errors || 0)])),
+    areaSeries("Missed",       "#f87171", timeSeries.map((p) => [p.elapsedSeconds, Number(p.missed || 0)])),
+    areaSeries("Duplicates",   "#fbbf24", timeSeries.map((p) => [p.elapsedSeconds, Number(p.duplicates || 0)])),
+    areaSeries("Out-of-Order", "#a78bfa", timeSeries.map((p) => [p.elapsedSeconds, Number(p.outOfOrders || 0)]))
+  ];
+  chart.setOption(opt, {notMerge: true});
+}
+
+/** Renders publish latency (P95 + P99) chart. */
+function renderPublishLatencyChart(timeSeries) {
+  const chart = getChart("publish-latency-chart");
+  const opt = baseChartOption();
+  opt.legend = legendOption(["P95", "P99"]);
+  opt.series = [
+    areaSeries("P95", "#f97316", timeSeries.map((p) => [p.elapsedSeconds, Number(p.publishLatencyP95 || 0)])),
+    areaSeries("P99", "#a78bfa", timeSeries.map((p) => [p.elapsedSeconds, Number(p.publishLatencyP99 || 0)]))
+  ];
+  chart.setOption(opt, {notMerge: true});
+}
+
+/** Renders end-to-end latency (P95 + P99) chart. */
+function renderE2ELatencyChart(timeSeries) {
+  const chart = getChart("e2e-latency-chart");
+  const opt = baseChartOption();
+  opt.legend = legendOption(["P95", "P99"]);
+  opt.series = [
+    areaSeries("P95", "#f87171", timeSeries.map((p) => [p.elapsedSeconds, Number(p.endToEndLatencyP95 || 0)])),
+    areaSeries("P99", "#22d3ee", timeSeries.map((p) => [p.elapsedSeconds, Number(p.endToEndLatencyP99 || 0)]))
+  ];
+  chart.setOption(opt, {notMerge: true});
+}
+
+function legendOption(names) {
+  return {
+    data: names,
+    bottom: 4,
+    left: "center",
+    textStyle: {color: cssVar("--chart-label"), fontSize: 11},
+    itemWidth: 10,
+    itemHeight: 10,
+    itemGap: 16,
+    icon: "circle"
+  };
+}
+
+// ── Format helpers ────────────────────────────────────────────────
 
 function formatNumber(value) {
   if (typeof value === "number") {
     return new Intl.NumberFormat().format(value);
   }
-  return formatValue(value);
+  return value == null ? "—" : String(value);
 }
 
 function formatDecimal(value) {
   if (typeof value !== "number" || Number.isNaN(value)) {
-    return "N/A";
+    return "—";
   }
-  return new Intl.NumberFormat(undefined, {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2
-  }).format(value);
+  return new Intl.NumberFormat(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2}).format(value);
 }
 
 function formatDuration(seconds) {
   if (typeof seconds !== "number" || Number.isNaN(seconds) || seconds < 0) {
-    return "N/A";
+    return "—";
   }
-
-  const totalSeconds = Math.round(seconds);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const remainingSeconds = totalSeconds % 60;
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m ${remainingSeconds}s`;
+  const s = Math.round(seconds);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = s % 60;
+  if (h > 0) {
+    return `${h}h ${m}m ${r}s`;
   }
-  if (minutes > 0) {
-    return `${minutes}m ${remainingSeconds}s`;
+  if (m > 0) {
+    return `${m}m ${r}s`;
   }
-  return `${remainingSeconds}s`;
+  return `${r}s`;
 }
+
+function formatSecondsShort(sec) {
+  const s = Math.round(sec);
+  if (s >= 3600) {
+    return `${Math.floor(s / 3600)}h`;
+  }
+  if (s >= 60) {
+    return `${Math.floor(s / 60)}m`;
+  }
+  return `${s}s`;
+}
+
+function formatValue(value) {
+  if (value === null || value === undefined || value === "") {
+    return "—";
+  }
+  if (Array.isArray(value)) {
+    return value.join(", ");
+  }
+  return String(value);
+}
+
+// ── KPI card state ────────────────────────────────────────────────
+
+/** Updates KPI card styling based on whether the anomaly count is zero. */
+function updateKpiCard(cardId, count) {
+  const el = document.getElementById(cardId);
+  if (!el) {
+    return;
+  }
+  el.classList.remove("kpi-danger", "kpi-warn");
+  if (count > 0) {
+    el.classList.add("kpi-danger");
+  }
+}
+
+function updateKpiCardWarn(cardId, count) {
+  const el = document.getElementById(cardId);
+  if (!el) {
+    return;
+  }
+  el.classList.remove("kpi-danger", "kpi-warn");
+  if (count > 0) {
+    el.classList.add("kpi-warn");
+  }
+}
+
+// ── Config summary ───────────────────────────────────────────────
+
+const cfgDescEl = document.getElementById("cfg-desc");
+
+/** Human-readable feature labels */
+const FEATURE_LABELS = {
+  exactly_once:  "Exactly-Once Delivery",
+  at_least_once: "At-Least-Once Delivery",
+  ordering:      "Message Ordering",
+};
+
+function featureLabel(f) {
+  return FEATURE_LABELS[f] || String(f).replace(/_/g, " ");
+}
+
+function formatStartTime(value) {
+  if (!value) {
+    return null;
+  }
+  return String(value).replace("T", " ").replace(/\.\d+$/, "");
+}
+
+function resolveDriverInfo(proof, clusterTargets) {
+  const driverName = proof.driver || "unknown";
+  const target = clusterTargets.find((t) => t.driverName === driverName) || {};
+  return {
+    driverName,
+    driverType: target.driverType || null
+  };
+}
+
+function renderConfigSummary(proof, clusterTargets) {
+  if (!cfgDescEl) {
+    return;
+  }
+
+  const {driverName, driverType} = resolveDriverInfo(proof, clusterTargets);
+  const p = {
+    partitions: proof.partitions ?? "?",
+    producers:  proof.producers ?? "?",
+    consumers:  proof.consumers ?? "?",
+    rate:       proof.msgRate ?? "?",
+    duration:   proof.duration != null ? `${proof.duration}s` : "?",
+    checkpoint: proof.checkPointInterval != null ? `${proof.checkPointInterval}s` : "?",
+    timeout:    proof.timeout != null ? `${proof.timeout}s` : "?",
+    features:   Array.isArray(proof.features) ? proof.features : [],
+  };
+
+  // Build guarantee chips
+  const guarantees = p.features.length > 0
+    ? p.features.map(f => `<span class="cfg-guarantee">${escapeHtml(featureLabel(f))}</span>`).join("")
+    : `<span class="cfg-guarantee cfg-guarantee-dim">No guarantees configured</span>`;
+
+  cfgDescEl.innerHTML = `
+    <div class="cfg-compact-row">
+      <div class="cfg-compact-item">
+        <span class="cfg-compact-label">Topic</span>
+        <span class="cfg-compact-value">
+          <span class="cfg-compact-em">${escapeHtml(String(proof.topic || "Not set"))}</span>
+        </span>
+      </div>
+      <div class="cfg-compact-item">
+        <span class="cfg-compact-label">Publish Rate</span>
+        <span class="cfg-compact-value">
+          <span class="cfg-compact-em">${escapeHtml(String(p.rate))}</span>
+          <span class="cfg-compact-unit">msg/s</span>
+        </span>
+      </div>
+      <div class="cfg-compact-item">
+        <span class="cfg-compact-label">Topology</span>
+        <span class="cfg-compact-value cfg-compact-value-topology">
+          <span><span class="cfg-compact-em">${escapeHtml(String(p.producers))}</span> producers</span>
+          <span class="cfg-compact-dot"></span>
+          <span><span class="cfg-compact-em">${escapeHtml(String(p.partitions))}</span> partitions</span>
+          <span class="cfg-compact-dot"></span>
+          <span><span class="cfg-compact-em">${escapeHtml(String(p.consumers))}</span> consumers</span>
+        </span>
+      </div>
+      <div class="cfg-compact-item">
+        <span class="cfg-compact-label">Window</span>
+        <span class="cfg-compact-value">
+          checkpoint <span class="cfg-compact-em">${escapeHtml(p.checkpoint)}</span>
+          <span class="cfg-compact-dot"></span>
+          timeout <span class="cfg-compact-em">${escapeHtml(p.timeout)}</span>
+        </span>
+      </div>
+      <div class="cfg-compact-item cfg-compact-item-guarantees">
+        <span class="cfg-compact-label">Guarantees</span>
+        <div class="cfg-guarantees">${guarantees}</div>
+      </div>
+    </div>
+  `;
+}
+
+// ── Cluster targets ───────────────────────────────────────────────
+
+function escapeHtml(str) {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+/** Builds a condensed one-line summary for a component. e.g. "3 replicas · CPU 4 · MEM 8Gi" */
+function componentSummaryLine(component) {
+  if (!component || typeof component !== "object") {
+    return null;
+  }
+  const parts = [];
+  if (component.replicas != null) {
+    parts.push(`<strong>${component.replicas}</strong> replicas`);
+  }
+  const limits = component.resources?.limits || {};
+  if (limits.cpu)    { parts.push(`${escapeHtml(limits.cpu)} vCPU`); }
+  if (limits.memory) { parts.push(`${escapeHtml(limits.memory)}`); }
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/** Builds a condensed storage summary line. e.g. "Journal ssd-retain 100Gi · Ledger ssd-retain 500Gi" */
+function storageSummaryLine(component) {
+  if (!component || typeof component !== "object") {
+    return null;
+  }
+  const fields = [
+    ["Storage", component.storage],
+    ["Journal", component.journal],
+    ["Ledger",  component.ledger],
+    ["Data",    component.data],
+    ["DataLog", component.dataLog]
+  ];
+  const parts = [];
+  for (const [label, block] of fields) {
+    if (!block || typeof block !== "object") { continue; }
+    const pieces = [label + ":"];
+    if (block.storageClassName)  { pieces.push(escapeHtml(block.storageClassName)); }
+    if (block.requests?.storage) { pieces.push(escapeHtml(block.requests.storage)); }
+    if (pieces.length > 1) { parts.push(pieces.join(" ")); }
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/** Builds a JVM options line. e.g. "-Xms 48g / -Xmx 64g / MaxDirectMemory 32g" */
+function jvmSummaryLine(component) {
+  if (!component || typeof component !== "object") {
+    return null;
+  }
+  const jvm = component.jvmOptions;
+  if (!jvm || typeof jvm !== "object" || Object.keys(jvm).length === 0) {
+    return null;
+  }
+  return "JVM: " + Object.entries(jvm).map(([k, v]) => `${escapeHtml(k)} ${escapeHtml(v)}`).join(" / ");
+}
+
+/** Renders a single component card (Broker / BookKeeper / ZooKeeper / Oxia). */
+function renderComponentCard(title, component) {
+  if (!component || typeof component !== "object") {
+    return "";
+  }
+  const main    = componentSummaryLine(component);
+  const storage = storageSummaryLine(component);
+  const jvm     = jvmSummaryLine(component);
+  if (!main && !storage && !jvm) {
+    return "";
+  }
+  return `
+    <div class="res-card">
+      <div class="res-card-title">${escapeHtml(title)}</div>
+      ${main    ? `<div class="res-card-line">${main}</div>` : ""}
+      ${storage ? `<div class="res-card-sub">${storage}</div>` : ""}
+      ${jvm     ? `<div class="res-card-sub">${jvm}</div>` : ""}
+    </div>`;
+}
+
+function renderClusterTargets(targets) {
+  if (!Array.isArray(targets) || targets.length === 0) {
+    clusterTargetCountEl.textContent = "0";
+    clusterTargetsEl.innerHTML = `<p class="cluster-empty">No cluster target info attached to this run yet.</p>`;
+    return;
+  }
+
+  clusterTargetCountEl.textContent = targets.length;
+
+  clusterTargetsEl.innerHTML = targets.map((target) => {
+    const metadata         = target.metadata || {};
+    const clusterResources = metadata.clusterResources || {};
+    const pulsarConfig     = metadata.pulsarConfig || {};
+
+    // Metadata card: Oxia or ZooKeeper (they serve the same coordination role)
+    const metadataSource = clusterResources.oxia || clusterResources.zookeeper;
+    const metadataLabel  = clusterResources.oxia ? "Metadata (Oxia)" : "Metadata (ZooKeeper)";
+
+    // Component resource cards
+    const cards = [
+      renderComponentCard("Brokers",    clusterResources.broker),
+      renderComponentCard("BookKeeper", clusterResources.bookkeeper),
+      metadataSource ? renderComponentCard(metadataLabel, metadataSource) : ""
+    ].filter(Boolean).join("");
+
+    // Pulsar advanced config (flat key: "value" list)
+    const pulsarEntries = Object.entries(pulsarConfig).sort(([a], [b]) => a.localeCompare(b));
+    const pulsarBlock = pulsarEntries.length > 0
+      ? `<div class="adv-config-section">
+           <div class="adv-config-title">Broker Advanced Config</div>
+           <div class="adv-config-list">${pulsarEntries.map(([k, v]) =>
+             `<div class="adv-config-row">${escapeHtml(k)}: <span class="adv-config-val">"${escapeHtml(formatValue(v))}"</span></div>`
+           ).join("")}</div>
+         </div>`
+      : "";
+
+    const hasContent = cards.length > 0 || pulsarEntries.length > 0;
+
+    const emptyNotice = !hasContent
+      ? `<p class="cluster-empty">No cluster resources synced yet — metadata-sync populates this from K8s CRDs.</p>`
+      : "";
+
+    return `
+      <div class="cluster-target-card">
+        <div class="cluster-target-header">
+          <span class="cluster-target-role">${escapeHtml(target.role || "default")}</span>
+          <span class="cluster-target-name">${escapeHtml(target.driverName || "unnamed")}</span>
+          <span class="cluster-target-type">${escapeHtml(target.driverType || "unknown")}</span>
+        </div>
+        ${hasContent ? `
+          <div class="res-card-row">${cards}</div>
+          ${pulsarBlock}
+        ` : emptyNotice}
+      </div>`;
+  }).join("");
+}
+
+// ── URL state ─────────────────────────────────────────────────────
 
 function setSelectedProofId(proofId) {
   selectedProofId = proofId;
@@ -137,350 +689,88 @@ function setSelectedProofId(proofId) {
   window.history.replaceState({}, "", url);
 }
 
-function renderKeyValueList(target, entries) {
-  target.innerHTML = "";
-  entries.forEach(([key, value]) => {
-    const dt = document.createElement("dt");
-    dt.textContent = key;
+// ── Auto-refresh ──────────────────────────────────────────────────
 
-    const dd = document.createElement("dd");
-    if (isStructuredValue(value)) {
-      const pre = document.createElement("pre");
-      pre.className = "inline-json";
-      pre.textContent = JSON.stringify(value, null, 2);
-      dd.appendChild(pre);
-    } else {
-      dd.textContent = formatValue(value);
-    }
-
-    target.appendChild(dt);
-    target.appendChild(dd);
-  });
+function scheduleAutoRefresh(running) {
+  clearTimeout(autoRefreshTimer);
+  autoRefreshTimer = null;
+  if (running) {
+    autoRefreshTimer = setTimeout(() => {
+      void loadProofDetails(selectedProofId);
+    }, 5000);
+  }
 }
 
-function formatNamedResource(resource) {
-  if (!resource || typeof resource !== "object") {
-    return "N/A";
-  }
-  const pieces = [];
-  if (resource.cpu) {
-    pieces.push(`CPU ${resource.cpu}`);
-  }
-  if (resource.memory) {
-    pieces.push(`Memory ${resource.memory}`);
-  }
-  if (resource.storage) {
-    pieces.push(`Storage ${resource.storage}`);
-  }
-  return pieces.length > 0 ? pieces.join(" / ") : "N/A";
-}
-
-function formatResourceBlock(resource) {
-  if (!resource || typeof resource !== "object") {
-    return "N/A";
-  }
-
-  if (resource.limits) {
-    return formatNamedResource(resource.limits);
-  }
-  return "N/A";
-}
-
-function formatStorageBlock(block) {
-  if (!block || typeof block !== "object") {
-    return null;
-  }
-
-  const parts = [];
-  if (block.storageClassName) {
-    parts.push(block.storageClassName);
-  }
-  if (block.requests?.storage) {
-    parts.push(block.requests.storage);
-  }
-  return parts.length > 0 ? parts.join(" / ") : null;
-}
-
-function formatJvmOptions(jvmOptions) {
-  if (!jvmOptions || typeof jvmOptions !== "object" || Object.keys(jvmOptions).length === 0) {
-    return "N/A";
-  }
-  return Object.entries(jvmOptions)
-    .map(([key, value]) => `${key}=${value}`)
-    .join(" · ");
-}
-
-function renderResourceCard(title, resource) {
-  if (!resource || typeof resource !== "object") {
-    return "";
-  }
-
-  const storageLines = [
-    ["Storage", formatStorageBlock(resource.storage)],
-    ["Journal", formatStorageBlock(resource.journal)],
-    ["Ledger", formatStorageBlock(resource.ledger)],
-    ["Data", formatStorageBlock(resource.data)],
-    ["Data Log", formatStorageBlock(resource.dataLog)]
-  ].filter(([, value]) => value);
-
-  const detailRows = [
-    ["Replicas", resource.replicas ?? "N/A"],
-    ["Limit", formatResourceBlock(resource.resources)],
-    ["JVM", formatJvmOptions(resource.jvmOptions)],
-    ["Coordinator Limit", formatResourceBlock(resource.coordinatorResources)]
-  ].filter(([, value]) => value && value !== "N/A");
-
-  const allRows = [...detailRows, ...storageLines];
-  if (allRows.length === 0) {
-    return "";
-  }
-
-  return `
-    <article class="resource-card">
-      <h4>${escapeHtml(title)}</h4>
-      <dl class="compact-list">
-        ${allRows.map(([key, value]) => `
-          <dt>${escapeHtml(key)}</dt>
-          <dd>${escapeHtml(formatValue(value))}</dd>
-        `).join("")}
-      </dl>
-    </article>
-  `;
-}
-
-function renderPulsarConfig(config) {
-  if (!config || typeof config !== "object" || Object.keys(config).length === 0) {
-    return `<p class="cluster-empty">No custom pulsar config attached to this driver.</p>`;
-  }
-
-  const rows = Object.entries(config)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, value]) => `
-      <div class="config-row">
-        <span class="config-key">${escapeHtml(key)}</span>
-        <span class="config-value">${escapeHtml(formatValue(value))}</span>
-      </div>
-    `)
-    .join("");
-
-  return `<div class="config-list">${rows}</div>`;
-}
-
-function renderClusterTargets(targets) {
-  if (!Array.isArray(targets) || targets.length === 0) {
-    clusterTargetsEl.innerHTML = `<p class="cluster-empty">No cluster target information is attached to this run yet.</p>`;
-    return;
-  }
-
-  clusterTargetsEl.innerHTML = targets.map((target) => {
-    const metadata = target.metadata || {};
-    const clusterResources = metadata.clusterResources || {};
-    const pulsarConfig = metadata.pulsarConfig || {};
-    const endpoints = target.endpoints || {};
-
-    const resourceCards = [
-      renderResourceCard("Broker", clusterResources.broker),
-      renderResourceCard("BookKeeper", clusterResources.bookkeeper),
-      renderResourceCard("ZooKeeper", clusterResources.zookeeper),
-      renderResourceCard("Oxia", clusterResources.oxia)
-    ].filter(Boolean).join("");
-
-    const endpointRows = Object.entries(endpoints)
-      .map(([key, value]) => `
-        <div class="endpoint-row">
-          <span class="endpoint-key">${escapeHtml(key)}</span>
-          <span class="endpoint-value">${escapeHtml(formatValue(value))}</span>
-        </div>
-      `)
-      .join("");
-
-    return `
-      <section class="target-card">
-        <div class="target-card-header">
-          <div>
-            <p class="target-role">${escapeHtml(target.role || "default target")}</p>
-            <h4>${escapeHtml(target.driverName || "Unnamed driver")}</h4>
-          </div>
-          <span class="target-type">${escapeHtml(target.driverType || "unknown")}</span>
-        </div>
-
-        <div class="target-section">
-          <p class="target-section-title">Endpoints</p>
-          <div class="endpoint-list">
-            ${endpointRows || `<p class="cluster-empty">No endpoints available.</p>`}
-          </div>
-        </div>
-
-        <div class="target-section">
-          <p class="target-section-title">Cluster Resources</p>
-          <div class="resource-grid">
-            ${resourceCards || `<p class="cluster-empty">No cluster resources attached yet.</p>`}
-          </div>
-        </div>
-
-        <div class="target-section">
-          <p class="target-section-title">Pulsar Config</p>
-          ${renderPulsarConfig(pulsarConfig)}
-        </div>
-      </section>
-    `;
-  }).join("");
-}
-
-function renderLatencyLadder(target, summary) {
-  const max = Math.max(
-    Number(summary?.max || 0),
-    Number(summary?.p99 || 0),
-    Number(summary?.p95 || 0),
-    Number(summary?.p50 || 0),
-    Number(summary?.avg || 0),
-    1
-  );
-  const rows = [
-    ["Avg", summary?.avg || 0],
-    ["P50", summary?.p50 || 0],
-    ["P95", summary?.p95 || 0],
-    ["P99", summary?.p99 || 0],
-    ["Max", summary?.max || 0]
-  ];
-
-  target.innerHTML = rows.map(([label, value]) => {
-    const width = Math.max(4, Math.round((Number(value) / max) * 100));
-    return `
-      <div class="latency-row">
-        <span class="latency-key">${label}</span>
-        <div class="latency-bar">
-          <div class="latency-bar-fill" style="width:${width}%"></div>
-        </div>
-        <span class="latency-value">${formatDecimal(Number(value))} ms</span>
-      </div>
-    `;
-  }).join("");
-}
-
-function renderFlowStrip(performanceSummary) {
-  const targetRate = Number(performanceSummary.targetMsgRate || 0);
-  const publishRate = Number(performanceSummary.publishRate || 0);
-  const consumeRate = Number(performanceSummary.consumeRate || 0);
-  const publishUtilization = targetRate > 0 ? Math.min(100, (publishRate / targetRate) * 100) : 0;
-
-  proofFlowEl.innerHTML = `
-    <div class="flow-row">
-      <div class="flow-row-header">
-        <span class="flow-row-label">Publish Throughput</span>
-        <span class="flow-row-value">${formatDecimal(publishRate)}</span>
-      </div>
-      <p class="flow-row-meta">${formatDecimal(publishUtilization)}% of target ${formatNumber(targetRate)} msg/s</p>
-    </div>
-    <div class="flow-row">
-      <div class="flow-row-header">
-        <span class="flow-row-label">Consume Throughput</span>
-        <span class="flow-row-value">${formatDecimal(consumeRate)}</span>
-      </div>
-      <p class="flow-row-meta">${formatNumber(performanceSummary.consumedMessages || 0)} messages received so far</p>
-    </div>
-    <div class="flow-row">
-      <div class="flow-row-header">
-        <span class="flow-row-label">Backlog</span>
-        <span class="flow-row-value">${formatNumber(performanceSummary.backlogMessages || 0)}</span>
-      </div>
-      <p class="flow-row-meta">${formatDecimal(performanceSummary.publishErrorRate || 0)} producer errors per second</p>
-    </div>
-  `;
-}
-
-function buildLinePath(points, xAccessor, yAccessor, width, height, maxX, maxY) {
-  if (points.length === 0) {
-    return "";
-  }
-  return points.map((point, index) => {
-    const x = maxX <= 0 ? 0 : (xAccessor(point) / maxX) * width;
-    const y = height - (maxY <= 0 ? 0 : (yAccessor(point) / maxY) * height);
-    return `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
-  }).join(" ");
-}
-
-function renderChart(target, series, ySuffix) {
-  if (!Array.isArray(series.points) || series.points.length < 2) {
-    target.innerHTML = `<div class="chart-empty">Need at least two checkpoints before drawing a trend.</div>`;
-    return;
-  }
-
-  const width = 640;
-  const height = 180;
-  const maxX = Math.max(...series.points.map((point) => point.elapsedSeconds || 0), 1);
-  const maxY = Math.max(
-    ...series.lines.flatMap((line) => series.points.map((point) => Number(line.accessor(point) || 0))),
-    1
-  );
-  const gridLines = [0.25, 0.5, 0.75].map((ratio) => {
-    const y = (height * ratio).toFixed(2);
-    return `<line class="chart-grid-line" x1="0" y1="${y}" x2="${width}" y2="${y}"></line>`;
-  }).join("");
-  const paths = series.lines.map((line) => {
-    const d = buildLinePath(series.points, (point) => point.elapsedSeconds || 0, line.accessor, width, height, maxX, maxY);
-    return `<path class="chart-series" d="${d}" style="stroke:${line.color}"></path>`;
-  }).join("");
-  const legend = series.lines.map((line) => `
-    <span class="chart-legend-item">
-      <span class="chart-legend-swatch" style="background:${line.color}"></span>
-      <span>${line.label}</span>
-    </span>
-  `).join("");
-
-  target.innerHTML = `
-    <div class="chart-shell">
-      <div class="chart-legend">${legend}</div>
-      <svg class="chart-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
-        ${gridLines}
-        <line class="chart-axis" x1="0" y1="${height}" x2="${width}" y2="${height}"></line>
-        ${paths}
-      </svg>
-      <div class="chart-axis-labels">
-        <span>0s</span>
-        <span>${formatDecimal(maxY)} ${ySuffix}</span>
-        <span>${formatNumber(maxX)}s</span>
-      </div>
-    </div>
-  `;
-}
+// ── Render proof list ─────────────────────────────────────────────
 
 function renderProofList() {
   if (proofs.length === 0) {
     proofListEl.innerHTML = `
       <div class="proof-item">
         <p class="proof-item-title">No active proofs</p>
-        <p class="proof-item-meta">Start a proof and refresh this page.</p>
-      </div>
-    `;
+        <p class="proof-item-meta">Start a proof and refresh.</p>
+      </div>`;
     return;
   }
 
   proofListEl.innerHTML = proofs.map((proof) => {
-    const activeClass = proof.id === selectedProofId ? " active" : "";
+    const active = proof.id === selectedProofId ? " active" : "";
+    const status = proof._status || "unknown";
+    const statusClass = status.toLowerCase();
     return `
-      <button class="proof-item${activeClass}" data-proof-id="${proof.id}" type="button">
-        <p class="proof-item-title">${proof.name || proof.id}</p>
-        <p class="proof-item-meta">${proof.driver || "unknown driver"} · ${proof.topic || "no topic"}</p>
-      </button>
-    `;
+      <button class="proof-item${active} status-${statusClass}" data-proof-id="${proof.id}" type="button">
+        <span class="status-indicator"></span>
+        <div class="proof-item-content">
+          <p class="proof-item-title">${proof.name || proof.id}</p>
+          <p class="proof-item-meta">${proof.id} · ${proof.driver || "unknown"}</p>
+        </div>
+      </button>`;
   }).join("");
 
-  proofListEl.querySelectorAll("[data-proof-id]").forEach((button) => {
-    button.addEventListener("click", () => {
-      setSelectedProofId(button.dataset.proofId);
+  proofListEl.querySelectorAll("[data-proof-id]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setSelectedProofId(btn.dataset.proofId);
       renderProofList();
       void loadProofDetails(selectedProofId);
     });
   });
 }
 
+// ── Empty state ───────────────────────────────────────────────────
+
+function showEmptyState(title, subtitle) {
+  heroTitleEl.textContent = title;
+  heroSubtitleEl.textContent = subtitle;
+  heroSubtitleEl.classList.remove("hidden");
+  heroStatusEl.textContent = "waiting";
+  heroStatusEl.className = "status-badge";
+  if (heroMetaEl) {
+    heroMetaEl.innerHTML = "";
+  }
+  heroProgressValueEl.textContent = "—";
+  heroProgressDetailEl.innerHTML = "—";
+  heroProgressFillEl.style.width = "0%";
+  emptyStateEl.classList.remove("hidden");
+  detailsViewEl.classList.add("hidden");
+  scheduleAutoRefresh(false);
+}
+
+// ── Load proof list ───────────────────────────────────────────────
+
 async function loadProofs() {
   const response = await fetch("/proofs");
   if (!response.ok) {
     throw new Error(`Failed to load proofs: ${response.status}`);
   }
-  proofs = await response.json();
+  const proofItems = await response.json();
+  proofs = proofItems.map(item => ({
+    ...item.proof,
+    _status: item.status || "unknown"
+  }));
+  // Check if selected proof still exists, if not clear it
+  if (selectedProofId && !proofs.some(p => p.id === selectedProofId)) {
+    setSelectedProofId(null);
+  }
   if (!selectedProofId && proofs.length > 0) {
     setSelectedProofId(proofs[0].id);
   }
@@ -492,17 +782,7 @@ async function loadProofs() {
   }
 }
 
-function showEmptyState(title, subtitle) {
-  heroTitleEl.textContent = title;
-  heroSubtitleEl.textContent = subtitle;
-  heroStatusEl.textContent = "waiting";
-  heroStatusEl.className = "status-badge";
-  heroProgressValueEl.textContent = "0s left";
-  heroProgressDetailEl.textContent = "Elapsed 0s · Remaining 0s · Total 0s";
-  heroProgressFillEl.style.width = "0%";
-  emptyStateEl.classList.remove("hidden");
-  detailsViewEl.classList.add("hidden");
-}
+// ── Load proof details ────────────────────────────────────────────
 
 async function loadProofDetails(proofId) {
   if (!proofId) {
@@ -517,143 +797,171 @@ async function loadProofDetails(proofId) {
   }
 
   const data = await response.json();
-  const proof = data.proof || {};
-  const summary = data.summary || {};
-  const checkpointSummary = data.checkpointSummary || {};
+  const proof              = data.proof || {};
+  const summary            = data.summary || {};
   const performanceSummary = data.performanceSummary || {};
-  const timeSeries = Array.isArray(data.timeSeries) ? data.timeSeries : [];
-  const resultStatus = data.resultStatus || data.status || "unknown";
-  const executionStatus = data.status || "unknown";
-  const elapsedSeconds = Number(performanceSummary.elapsedSeconds || 0);
-  const plannedDurationSeconds = Number(performanceSummary.plannedDurationSeconds || proof.duration || 0);
-  const remainingSeconds = Number(
+  const timeSeries         = Array.isArray(data.timeSeries) ? data.timeSeries : [];
+  const resultStatus       = data.status || "unknown";
+  const clusterTargets     = Array.isArray(data.clusterTargets) ? data.clusterTargets : [];
+
+  const elapsedSeconds          = Number(performanceSummary.elapsedSeconds || 0);
+  const plannedDurationSeconds  = Number(performanceSummary.plannedDurationSeconds || proof.duration || 0);
+  const remainingSeconds        = Number(
     performanceSummary.remainingSeconds ?? Math.max(0, plannedDurationSeconds - elapsedSeconds)
   );
-  const remainingPercent = plannedDurationSeconds > 0
-    ? Math.max(0, Math.min(100, (remainingSeconds / plannedDurationSeconds) * 100))
-    : 0;
-  const progressPercent = plannedDurationSeconds > 0
+  const rawProgress = plannedDurationSeconds > 0
     ? Math.max(0, Math.min(100, (elapsedSeconds / plannedDurationSeconds) * 100))
     : Math.max(0, Math.min(100, Number(performanceSummary.progressPercent || 0)));
+  // Cap at 99.99% while still running; only show 100% once fully stopped
+  const progressPercent = (resultStatus === "running" && rawProgress >= 100) ? 99.99 : rawProgress;
+  const startedAt = formatStartTime(proof.startTime);
+  const {driverName, driverType} = resolveDriverInfo(proof, clusterTargets);
+  const driverLabel = driverType && driverType !== driverName
+    ? `${driverType} / ${driverName}`
+    : driverName;
 
-  heroTitleEl.textContent = proof.name || proof.id || proofId;
+  // Hero
+  heroTitleEl.textContent    = proof.name || proof.id || proofId;
   heroSubtitleEl.textContent = [
-    `${executionStatus} · ${data.resultReason || "result pending"}`,
-    proof.driver || "unknown driver",
-    proof.topic || "no topic",
-    proof.startTime || "no start time"
-  ].join(" · ");
+    resultStatus || "unknown",
+    data.resultReason || "Live verification summary"
+  ].filter(Boolean).join(" · ");
+  heroSubtitleEl.classList.remove("hidden");
+
+  if (heroMetaEl) {
+    heroMetaEl.innerHTML = [
+      {label: "Driver Type", value: (driverType || "Unknown").toUpperCase(), className: "hero-meta-item-type"},
+      {label: "Driver", value: driverName || "Unknown", className: "hero-meta-item-driver"}
+    ].map((item) => `
+      <div class="hero-meta-item ${item.className}">
+        <span class="hero-meta-label">${escapeHtml(item.label)}</span>
+        <span class="hero-meta-value">${escapeHtml(item.value)}</span>
+      </div>
+    `).join("");
+  }
+
   heroStatusEl.textContent = resultStatus || "unknown";
-  heroStatusEl.className = `status-badge ${String(resultStatus || "").toLowerCase()}`.trim();
-  heroProgressValueEl.textContent = `${formatDecimal(progressPercent)}%`;
-  heroProgressDetailEl.textContent =
-    `Elapsed ${formatDuration(elapsedSeconds)} · Remaining ${formatDuration(remainingSeconds)} · `
-    + `Total ${formatDuration(plannedDurationSeconds)}`;
+  heroStatusEl.className   = `status-badge ${String(resultStatus || "").toLowerCase()}`.trim();
+
+  heroProgressValueEl.textContent  = `${formatDecimal(progressPercent)}%`;
+  heroProgressDetailEl.innerHTML = [
+    {label: "Started", value: startedAt || "Pending"},
+    {label: "Elapsed", value: formatDuration(elapsedSeconds)},
+    {label: "Remaining", value: formatDuration(remainingSeconds)},
+    {label: "Total", value: formatDuration(plannedDurationSeconds)}
+  ].map((item) => `
+    <span class="progress-detail-item">
+      <span class="progress-detail-label">${escapeHtml(item.label)}</span>
+      <span class="progress-detail-value">${escapeHtml(item.value)}</span>
+    </span>
+  `).join('<span class="progress-detail-sep">·</span>');
   heroProgressFillEl.style.width = `${progressPercent}%`;
 
-  metricEls.verified.textContent = formatNumber(summary.verified || 0);
-  metricEls.missed.textContent = formatNumber(summary.missed || 0);
-  metricEls.outOfOrders.textContent = formatNumber(summary.outOfOrders || 0);
-  metricEls.duplicates.textContent = formatNumber(summary.duplicates || 0);
-  metricEls.errors.textContent = formatNumber(summary.errors || 0);
-  metricEls.timeouts.textContent = formatNumber(summary.timeouts || 0);
-  performanceMetricEls.publishRate.textContent = formatDecimal(performanceSummary.publishRate || 0);
-  performanceMetricEls.consumeRate.textContent = formatDecimal(performanceSummary.consumeRate || 0);
-  performanceMetricEls.publishErrorRate.textContent = formatDecimal(performanceSummary.publishErrorRate || 0);
-  performanceMetricEls.backlog.textContent = formatNumber(performanceSummary.backlogMessages || 0);
-  performanceMetricEls.publishLatencyP95.textContent = formatDecimal(performanceSummary.publishLatency?.p95 || 0);
-  performanceMetricEls.publishLatencyP99.textContent = formatDecimal(performanceSummary.publishLatency?.p99 || 0);
-  performanceMetricEls.endToEndLatencyP95.textContent = formatDecimal(performanceSummary.endToEndLatency?.p95 || 0);
-  performanceMetricEls.endToEndLatencyP99.textContent = formatDecimal(performanceSummary.endToEndLatency?.p99 || 0);
-  renderFlowStrip(performanceSummary);
-  renderLatencyLadder(publishLatencyLadderEl, performanceSummary.publishLatency);
-  renderLatencyLadder(e2eLatencyLadderEl, performanceSummary.endToEndLatency);
-  renderChart(throughputChartEl, {
-    points: timeSeries,
-    lines: [
-      {label: "Publish Rate", color: "#2563eb", accessor: (point) => Number(point.publishRate || 0)},
-      {label: "Consume Rate", color: "#0f766e", accessor: (point) => Number(point.consumeRate || 0)}
-    ]
-  }, "msg/s");
-  renderChart(backlogChartEl, {
-    points: timeSeries,
-    lines: [
-      {label: "Backlog", color: "#b45309", accessor: (point) => Number(point.backlogMessages || 0)}
-    ]
-  }, "messages");
-  renderChart(publishLatencyChartEl, {
-    points: timeSeries,
-    lines: [
-      {label: "P95", color: "#f97316", accessor: (point) => Number(point.publishLatencyP95 || 0)},
-      {label: "P99", color: "#7c3aed", accessor: (point) => Number(point.publishLatencyP99 || 0)}
-    ]
-  }, "ms");
-  renderChart(e2eLatencyChartEl, {
-    points: timeSeries,
-    lines: [
-      {label: "P95", color: "#dc2626", accessor: (point) => Number(point.endToEndLatencyP95 || 0)},
-      {label: "P99", color: "#0f766e", accessor: (point) => Number(point.endToEndLatencyP99 || 0)}
-    ]
-  }, "ms");
+  // Reliability KPIs
+  const missed      = Number(summary.missed      || 0);
+  const outOfOrders = Number(summary.outOfOrders || 0);
+  const duplicates  = Number(summary.duplicates  || 0);
+  const errors      = Number(summary.errors      || 0);
+  const timeouts    = Number(summary.timeouts    || 0);
 
-  renderKeyValueList(proofConfigEl, [
-    ["Proof ID", proof.id],
-    ["Driver", proof.driver],
-    ["Drivers", proof.drivers],
-    ["Features", proof.features],
-    ["Topic", proof.topic],
-    ["Partitions", proof.partitions],
-    ["Producers", proof.producers],
-    ["Consumers", proof.consumers],
-    ["Message Rate", proof.msgRate],
-    ["Keys", proof.keys],
-    ["Checkpoint Interval", proof.checkPointInterval],
-    ["Timeout", proof.timeout],
-    ["Duration", proof.duration],
-    ["Start Time", proof.startTime],
-    ["Description", proof.description],
-    ["Webhook Config", proof.webhookConfig],
-    ["Pulsar Config", proof.pulsar]
-  ]);
+  metricEls.verified.textContent    = formatNumber(summary.verified    || 0);
+  metricEls.missed.textContent      = formatNumber(missed);
+  metricEls.outOfOrders.textContent = formatNumber(outOfOrders);
+  metricEls.duplicates.textContent  = formatNumber(duplicates);
+  metricEls.errors.textContent      = formatNumber(errors);
+  metricEls.timeouts.textContent    = formatNumber(timeouts);
 
-  renderKeyValueList(proofCheckpointsEl, [
-    ["Current In Check Keys", checkpointSummary.inCheckKeys],
-    ["Latest Producer Keys", checkpointSummary.latestProducerKeys],
-    ["Latest Consumer Keys", checkpointSummary.latestConsumerKeys],
-    ["Last Verified Producer Keys", checkpointSummary.verifiedProducerKeys],
-    ["Last Verified Consumer Keys", checkpointSummary.verifiedConsumerKeys],
-    ["Last Failed Producer Keys", checkpointSummary.failedProducerKeys],
-    ["Last Failed Consumer Keys", checkpointSummary.failedConsumerKeys]
-  ]);
+  updateKpiCard("kpi-card-missed",  missed);
+  updateKpiCard("kpi-card-ooo",     outOfOrders);
+  updateKpiCardWarn("kpi-card-dups", duplicates);
+  updateKpiCard("kpi-card-errors",  errors);
+  updateKpiCardWarn("kpi-card-timeouts", timeouts);
 
-  renderClusterTargets(data.clusterTargets || []);
+  // Performance
+  perfEls.publishRate.textContent        = formatDecimal(performanceSummary.publishRate || 0);
+  perfEls.consumeRate.textContent        = formatDecimal(performanceSummary.consumeRate || 0);
+  perfEls.publishThroughput.textContent  = formatBytes(performanceSummary.publishBytesRate || 0);
+  perfEls.consumeThroughput.textContent  = formatBytes(performanceSummary.consumeBytesRate || 0);
+  perfEls.publishErrorRate.textContent   = formatNumber(performanceSummary.publishErrors || 0);
+  perfEls.backlog.textContent            = formatNumber(performanceSummary.backlogMessages || 0);
+  perfEls.publishLatencyP95.textContent  = formatDecimal(performanceSummary.publishLatency?.p95 || 0);
+  perfEls.publishLatencyP99.textContent  = formatDecimal(performanceSummary.publishLatency?.p99 || 0);
+  perfEls.endToEndLatencyP95.textContent = formatDecimal(performanceSummary.endToEndLatency?.p95 || 0);
+  perfEls.endToEndLatencyP99.textContent = formatDecimal(performanceSummary.endToEndLatency?.p99 || 0);
 
-  renderKeyValueList(proofPerformanceEl, [
-    ["Published Messages", performanceSummary.publishedMessages],
-    ["Publish Attempts", performanceSummary.publishAttempts],
-    ["Publish Errors", performanceSummary.publishErrors],
-    ["Consumed Messages", performanceSummary.consumedMessages],
-    ["Verified Messages", performanceSummary.verifiedMessages],
-    ["Backlog Messages", performanceSummary.backlogMessages]
-  ]);
+  // Charts
+  if (timeSeries.length >= 2) {
+    renderRateChart(timeSeries);
+    renderThroughputChart(timeSeries);
+    renderMessagesChart(timeSeries);
+    renderAnomaliesChart(timeSeries);
+    renderBacklogChart(timeSeries);
+    renderPublishLatencyChart(timeSeries);
+    renderE2ELatencyChart(timeSeries);
+  } else {
+    renderChartsEmpty();
+  }
 
-  proofJsonLinkEl.href = `/proofs/${proofId}/report`;
+  // Config summary
+  renderConfigSummary(proof, clusterTargets);
+  renderClusterTargets(clusterTargets);
 
+  if (proofJsonLinkEl) proofJsonLinkEl.href = `/proofs/${proofId}`;
+
+
+  // Show details
   emptyStateEl.classList.add("hidden");
   detailsViewEl.classList.remove("hidden");
+
+  // Update timestamp
+  lastUpdatedEl.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+
+  // Auto-refresh when running
+  scheduleAutoRefresh(resultStatus === "running");
 }
 
+/** Shows a minimal placeholder in each chart when there is not enough data yet. */
+function renderChartsEmpty() {
+  for (const id of ["rate-chart", "throughput-chart", "messages-chart", "anomalies-chart", "backlog-chart", "publish-latency-chart", "e2e-latency-chart"]) {
+    const chart = getChart(id);
+    chart.setOption({
+      backgroundColor: "transparent",
+      graphic: [{
+        type: "text",
+        left: "center",
+        top: "middle",
+        style: {
+          text: "Waiting for checkpoints…",
+          fill: cssVar("--muted"),
+          fontSize: 12,
+          fontFamily: "'DM Sans', sans-serif"
+        }
+      }],
+      series: []
+    }, {notMerge: true});
+  }
+}
+
+// ── Refresh ───────────────────────────────────────────────────────
+
 async function refresh() {
-  refreshButton.disabled = true;
-  refreshButton.textContent = "Refreshing...";
+  refreshButton.disabled     = true;
+  refreshButton.textContent  = "Refreshing…";
   try {
     await loadProofs();
   } catch (error) {
     console.error(error);
     showEmptyState("Failed to load proofs", error.message);
   } finally {
-    refreshButton.disabled = false;
-    refreshButton.textContent = "Refresh";
+    refreshButton.disabled    = false;
+    refreshButton.innerHTML   = `
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+        <path d="M3 3v5h5"/>
+        <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+        <path d="M16 16h5v5"/>
+      </svg>
+      Refresh`;
   }
 }
 

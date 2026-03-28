@@ -20,6 +20,8 @@ package io.streamnative.streaming.proof.coordinator;
 
 import io.javalin.Javalin;
 import io.javalin.http.staticfiles.Location;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.concurrent.Callable;
 import lombok.extern.slf4j.Slf4j;
 import picocli.CommandLine;
@@ -58,6 +60,10 @@ public class CoordinatorStarter implements Callable<Integer> {
     @Option(names = {"-p", "--port"}, description = "HTTP port to listen on.")
     private int httpPort = 8080;
 
+    /** Config directory path */
+    @Option(names = {"-c", "--config"}, description = "Config directory path.")
+    private String configPath = "/mnt/streaming-proof/configs";
+
     /** Javalin HTTP server instance */
     private Javalin app;
     
@@ -91,7 +97,8 @@ public class CoordinatorStarter implements Callable<Integer> {
                 staticFileConfig.location = Location.CLASSPATH;
             });
         });
-        new CoordinatorHandler(app, coordinator);
+        Path path = Paths.get(configPath);
+        new CoordinatorHandler(app, coordinator, path);
         app.get("/", ctx -> ctx.redirect("/ui/index.html"));
         app.get("/ui", ctx -> ctx.redirect("/ui/index.html"));
         app.start(port);
