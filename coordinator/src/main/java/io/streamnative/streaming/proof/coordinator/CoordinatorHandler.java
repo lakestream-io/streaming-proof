@@ -247,7 +247,7 @@ public class CoordinatorHandler {
      * @throws Exception if there's an error processing the request
      */
     private void handleListProofs(Context ctx) throws Exception {
-        ctx.result(Util.JSON_WRITER.writeValueAsString(coordinator.listProofsWithStatus()));
+        ctx.result(Util.JSON_WRITER.writeValueAsString(coordinator.listProofs()));
     }
 
     /**

@@ -41,6 +41,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 public record ProofReport(
         Proof proof,
         String status,
+        String resultStatus,
         String resultReason,
         java.util.List<ProofClusterTarget> clusterTargets,
         ProofSummary summary,

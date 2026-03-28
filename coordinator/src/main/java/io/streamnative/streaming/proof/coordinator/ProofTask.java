@@ -146,7 +146,6 @@ public class ProofTask {
 
     private boolean failed = false;
     private final AtomicBoolean running = new AtomicBoolean(false);
-    private final AtomicBoolean stopping = new AtomicBoolean(false);
     private final AtomicBoolean completionHandled = new AtomicBoolean(false);
     private final List<ProofTimeSeriesPoint> timeSeries = new ArrayList<>();
     private volatile ProofPerformanceSummary latestPerformanceSummary;
@@ -422,71 +421,51 @@ public class ProofTask {
     }
 
     private void runFinalVerification() {
-        int maxRetries = proof.getTimeout() > 0 ? proof.getTimeout() : 30;
-        for (int attempt = 0; attempt <= maxRetries; attempt++) {
-            try {
-                Pair<ProducerCheckpoint, ConsumerCheckPoint> checkpoints = aggregateCheckpoints();
-                latestProducerCheckpoint = checkpoints.getLeft();
-                latestConsumerCheckpoint = checkpoints.getRight();
-                inCheck = latestProducerCheckpoint;
+        try {
+            Pair<ProducerCheckpoint, ConsumerCheckPoint> checkpoints = aggregateCheckpoints();
+            latestProducerCheckpoint = checkpoints.getLeft();
+            latestConsumerCheckpoint = checkpoints.getRight();
+            inCheck = latestProducerCheckpoint;
 
-                boolean fulfilled;
-                if (sharedMode) {
-                    Map<String, Long> newWatermarks =
-                            latestConsumerCheckpoint.computeHighWatermarks(highWatermarks);
-                    highWatermarks = newWatermarks;
+            if (sharedMode) {
+                Map<String, Long> newWatermarks =
+                        latestConsumerCheckpoint.computeHighWatermarks(highWatermarks);
+                highWatermarks = newWatermarks;
 
-                    fulfilled = true;
-                    for (Map.Entry<String, LongSeq> entry : inCheck.getPublished().entrySet()) {
-                        long expectedSeq = entry.getValue().seq();
-                        Long watermark = newWatermarks.get(entry.getKey());
-                        if (watermark == null || watermark < expectedSeq) {
-                            fulfilled = false;
-                            break;
-                        }
-                    }
-                    if (fulfilled) {
-                        lastVerifiedProducerCheckpoint = inCheck;
-                        lastVerifiedConsumerCheckpoint = latestConsumerCheckpoint;
-                    }
-                } else {
-                    fulfilled = true;
-                    for (Map.Entry<String, LongSeq> entry : inCheck.getPublished().entrySet()) {
-                        LongSeq expectedSeq = entry.getValue();
-                        LongSeq actualSeq = latestConsumerCheckpoint.getLastSeq(entry.getKey());
-                        if (actualSeq == null || actualSeq.compareTo(expectedSeq) < 0) {
-                            fulfilled = false;
-                            break;
-                        }
-                    }
-                    if (fulfilled) {
-                        Map<String, Long> newWatermarks =
-                                latestConsumerCheckpoint.computeHighWatermarks(highWatermarks);
-                        lastVerifiedProducerCheckpoint = inCheck;
-                        lastVerifiedConsumerCheckpoint = latestConsumerCheckpoint;
-                        highWatermarks = newWatermarks;
+                boolean fulfilled = true;
+                for (Map.Entry<String, LongSeq> entry : inCheck.getPublished().entrySet()) {
+                    long expectedSeq = entry.getValue().seq();
+                    Long watermark = newWatermarks.get(entry.getKey());
+                    if (watermark == null || watermark < expectedSeq) {
+                        fulfilled = false;
+                        break;
                     }
                 }
                 if (fulfilled) {
-                    log.info("[{}] Final verification succeeded on attempt {}", proof.getId(), attempt + 1);
-                    return;
+                    lastVerifiedProducerCheckpoint = inCheck;
+                    lastVerifiedConsumerCheckpoint = latestConsumerCheckpoint;
                 }
-                if (attempt < maxRetries) {
-                    log.info("[{}] Final verification waiting for consumers to catch up (attempt {}/{})",
-                            proof.getId(), attempt + 1, maxRetries);
-                    Thread.sleep(1000);
+            } else {
+                boolean fulfilled = true;
+                for (Map.Entry<String, LongSeq> entry : inCheck.getPublished().entrySet()) {
+                    LongSeq expectedSeq = entry.getValue();
+                    LongSeq actualSeq = latestConsumerCheckpoint.getLastSeq(entry.getKey());
+                    if (actualSeq == null || actualSeq.compareTo(expectedSeq) < 0) {
+                        fulfilled = false;
+                        break;
+                    }
                 }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.warn("Final verification interrupted for proof {}", proof.getId());
-                return;
-            } catch (Exception e) {
-                log.warn("Final checkpoint verification failed for proof {}", proof.getId(), e);
-                return;
+                if (fulfilled) {
+                    Map<String, Long> newWatermarks =
+                            latestConsumerCheckpoint.computeHighWatermarks(highWatermarks);
+                    lastVerifiedProducerCheckpoint = inCheck;
+                    lastVerifiedConsumerCheckpoint = latestConsumerCheckpoint;
+                    highWatermarks = newWatermarks;
+                }
             }
+        } catch (Exception e) {
+            log.warn("Final checkpoint verification failed for proof {}", proof.getId(), e);
         }
-        log.warn("[{}] Final verification: consumers did not catch up within {} seconds",
-                proof.getId(), maxRetries);
     }
 
     Pair<ProducerCheckpoint, ConsumerCheckPoint> aggregateCheckpoints() {
@@ -623,19 +602,13 @@ public class ProofTask {
                 : latestPerformanceSummary != null
                         ? latestPerformanceSummary
                         : buildPerformanceSummary(summary);
-        String status = determineResultStatus(summary, performanceSummary);
-        String resultReason = determineResultReason(summary, performanceSummary, status);
-        // Append a real-time point so the chart's last value matches the KPI cards
-        List<ProofTimeSeriesPoint> reportTimeSeries = new ArrayList<>(timeSeries);
-        if (!reportTimeSeries.isEmpty()) {
-            ProofTimeSeriesPoint last = reportTimeSeries.getLast();
-            if (last.elapsedSeconds() != performanceSummary.elapsedSeconds()) {
-                reportTimeSeries.add(buildTimeSeriesPoint(performanceSummary, summary));
-            }
-        }
+        String executionStatus = isRunning() ? "running" : "stopped";
+        String resultStatus = determineResultStatus(summary, performanceSummary);
+        String resultReason = determineResultReason(summary, performanceSummary, resultStatus);
         return new ProofReport(
                 proof,
-                status,
+                executionStatus,
+                resultStatus,
                 resultReason,
                 resolveClusterTargets(),
                 summary,
@@ -648,7 +621,7 @@ public class ProofTask {
                         countProducerKeys(lastFailedProducerCheckpoint),
                         countConsumerKeys(lastFailedConsumerCheckpoint)),
                 performanceSummary,
-                List.copyOf(reportTimeSeries));
+                List.copyOf(timeSeries));
     }
 
     private List<ProofClusterTarget> resolveClusterTargets() {
@@ -771,8 +744,6 @@ public class ProofTask {
         double progressPercent = proof.getDuration() > 0
                 ? Math.min(100.0d, durationSeconds * 100.0d / proof.getDuration())
                 : 0.0d;
-        long publishedBytes = workerMetrics.acknowledgedBytes();
-        long consumedBytes = workerMetrics.receivedBytes();
         return new ProofPerformanceSummary(
                 elapsedSeconds,
                 plannedDurationSeconds,
@@ -789,8 +760,6 @@ public class ProofTask {
                 consumedMessages / durationSeconds,
                 publishErrors / durationSeconds,
                 summary.verified() / durationSeconds,
-                publishedBytes / durationSeconds,
-                consumedBytes / durationSeconds,
                 buildLatencySummary(workerMetrics.publishLatency()),
                 buildLatencySummary(workerMetrics.endToEndLatency()));
     }
@@ -866,10 +835,8 @@ public class ProofTask {
     private ProofWorkerMetricsSnapshot aggregateWorkerMetrics() {
         long sendAttempts = 0L;
         long acknowledgedMessages = 0L;
-        long acknowledgedBytes = 0L;
         long publishErrors = 0L;
         long receivedMessages = 0L;
-        long receivedBytes = 0L;
         LatencyMetricSnapshot publishLatency = null;
         LatencyMetricSnapshot endToEndLatency = null;
         for (WorkerHttpClient client : clients) {
@@ -877,10 +844,8 @@ public class ProofTask {
                 ProofWorkerMetricsSnapshot snapshot = client.metrics(proof.getId()).join();
                 sendAttempts += snapshot.sendAttempts();
                 acknowledgedMessages += snapshot.acknowledgedMessages();
-                acknowledgedBytes += snapshot.acknowledgedBytes();
                 publishErrors += snapshot.publishErrors();
                 receivedMessages += snapshot.receivedMessages();
-                receivedBytes += snapshot.receivedBytes();
                 publishLatency = mergeLatencySnapshots(publishLatency, snapshot.publishLatency());
                 endToEndLatency = mergeLatencySnapshots(endToEndLatency, snapshot.endToEndLatency());
             } catch (Exception e) {
@@ -890,10 +855,8 @@ public class ProofTask {
         return new ProofWorkerMetricsSnapshot(
                 sendAttempts,
                 acknowledgedMessages,
-                acknowledgedBytes,
                 publishErrors,
                 receivedMessages,
-                receivedBytes,
                 publishLatency,
                 endToEndLatency);
     }
@@ -947,47 +910,17 @@ public class ProofTask {
         return sortedSamples.get(index);
     }
 
-    private long timeSeriesSampleInterval() {
-        long checkpoint = proof.getCheckPointInterval();
-        if (checkpoint <= 0) {
-            checkpoint = 5;
-        }
-        // If user specified a custom interval on the proof, use it
-        int custom = proof.getTimeSeriesInterval();
-        if (custom > 0) {
-            return ((Math.max(custom, checkpoint) + checkpoint - 1) / checkpoint) * checkpoint;
-        }
-        // Auto-calculate based on maxTimeSeriesPoints from Configs report settings (default 240)
-        int maxPoints = configs.reportSetting("maxTimeSeriesPoints", 240);
-        long duration = proof.getDuration();
-        if (duration <= 0) {
-            return checkpoint;
-        }
-        long raw = Math.max(checkpoint, duration / maxPoints);
-        return ((raw + checkpoint - 1) / checkpoint) * checkpoint;
-    }
-
     private void recordTimeSeriesPoint() {
         ProofSummary summary = getSummary();
         ProofPerformanceSummary performanceSummary = buildPerformanceSummary(summary);
         latestPerformanceSummary = performanceSummary;
-
-        // Skip this point if not enough time has passed since the last one
-        long sampleInterval = timeSeriesSampleInterval();
         if (!timeSeries.isEmpty()) {
             ProofTimeSeriesPoint lastPoint = timeSeries.getLast();
             if (lastPoint.elapsedSeconds() == performanceSummary.elapsedSeconds()) {
                 timeSeries.removeLast();
-            } else if (performanceSummary.elapsedSeconds() - lastPoint.elapsedSeconds() < sampleInterval) {
-                return;
             }
         }
-        timeSeries.add(buildTimeSeriesPoint(performanceSummary, summary));
-    }
-
-    private ProofTimeSeriesPoint buildTimeSeriesPoint(
-            ProofPerformanceSummary performanceSummary, ProofSummary summary) {
-        return new ProofTimeSeriesPoint(
+        timeSeries.add(new ProofTimeSeriesPoint(
                 performanceSummary.elapsedSeconds(),
                 performanceSummary.publishRate(),
                 performanceSummary.consumeRate(),
@@ -996,16 +929,10 @@ public class ProofTask {
                 performanceSummary.publishLatency() == null ? 0.0d : performanceSummary.publishLatency().p95(),
                 performanceSummary.publishLatency() == null ? 0.0d : performanceSummary.publishLatency().p99(),
                 performanceSummary.endToEndLatency() == null ? 0.0d : performanceSummary.endToEndLatency().p95(),
-                performanceSummary.endToEndLatency() == null ? 0.0d : performanceSummary.endToEndLatency().p99(),
-                performanceSummary.publishBytesRate(),
-                performanceSummary.consumeBytesRate(),
-                summary.verified(),
-                performanceSummary.publishedMessages(),
-                performanceSummary.consumedMessages(),
-                summary.errors(),
-                summary.missed(),
-                summary.duplicates(),
-                summary.outOfOrders());
+                performanceSummary.endToEndLatency() == null ? 0.0d : performanceSummary.endToEndLatency().p99()));
+        if (timeSeries.size() > 512) {
+            timeSeries.removeFirst();
+        }
     }
 
     /**
@@ -1055,10 +982,10 @@ public class ProofTask {
      * Stops all producers and shuts down the executor service.
      */
     public void stop() {
-        if (!stopping.compareAndSet(false, true)) {
+        freezeClusterTargetsSnapshot();
+        if (!running.compareAndSet(true, false)) {
             return;
         }
-        freezeClusterTargetsSnapshot();
 
         executor.shutdown();
 
@@ -1077,10 +1004,6 @@ public class ProofTask {
         // consumers are still active, capturing every published message.
         runFinalVerification();
 
-        // Record a final time-series point so the chart reflects the
-        // fully-verified state after all consumers have caught up.
-        recordTimeSeriesPoint();
-
         // Build the final performance snapshot after verification has
         // settled, while worker metrics are still available.
         latestPerformanceSummary = buildPerformanceSummary(getSummary());
@@ -1097,9 +1020,6 @@ public class ProofTask {
             webhookService.close();
         }
 
-        // Mark as stopped only after all cleanup is complete, so the
-        // report API never returns "stopped" with stale data.
-        running.set(false);
         log.info("ProofTask {} stopped", proof.getId());
     }
 }
