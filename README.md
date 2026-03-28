@@ -208,6 +208,28 @@ cd streaming-proof/deploy/helm
 helm install streaming-proof ./streaming-proof -n streaming-proof 
 ```
 
+### Minimal UI Prototype
+
+The coordinator now includes a minimal dynamic UI prototype served from the same port as the API.
+
+After starting the coordinator, open:
+
+```bash
+http://localhost:8080/ui/index.html
+```
+
+The page reads from the live coordinator APIs:
+
+- `GET /proofs`
+- `GET /proofs/{id}/report`
+
+This is intentionally a small prototype to validate the browsing flow before adding
+performance latencies, persistence, and richer reporting.
+
+The current report view already includes a lightweight performance summary derived
+from the live checkpoints, such as elapsed time, publish and consume rates, and
+overall progress through the planned duration.
+
 ## Create proof
 
 1. Create workers and drivers configuration:
@@ -328,4 +350,3 @@ output:
 ## License
 
 Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
-

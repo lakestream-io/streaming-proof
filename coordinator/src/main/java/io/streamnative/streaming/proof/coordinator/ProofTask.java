@@ -25,17 +25,28 @@ import io.streamnative.streaming.proof.common.WorkerHttpClient;
 import io.streamnative.streaming.proof.common.records.Checkpoints;
 import io.streamnative.streaming.proof.common.records.Configs;
 import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
+import io.streamnative.streaming.proof.common.records.Driver;
+import io.streamnative.streaming.proof.common.records.LatencyMetricSnapshot;
+import io.streamnative.streaming.proof.common.records.LatencySummary;
 import io.streamnative.streaming.proof.common.records.NewConsumers;
 import io.streamnative.streaming.proof.common.records.NewProducers;
 import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
 import io.streamnative.streaming.proof.common.records.Proof;
+import io.streamnative.streaming.proof.common.records.ProofCheckpointSummary;
+import io.streamnative.streaming.proof.common.records.ProofClusterTarget;
 import io.streamnative.streaming.proof.common.records.ProofDetails;
+import io.streamnative.streaming.proof.common.records.ProofPerformanceSummary;
+import io.streamnative.streaming.proof.common.records.ProofReport;
 import io.streamnative.streaming.proof.common.records.ProofSummary;
+import io.streamnative.streaming.proof.common.records.ProofTimeSeriesPoint;
+import io.streamnative.streaming.proof.common.records.ProofWorkerMetricsSnapshot;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
@@ -136,6 +147,9 @@ public class ProofTask {
     private boolean failed = false;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean completionHandled = new AtomicBoolean(false);
+    private final List<ProofTimeSeriesPoint> timeSeries = new ArrayList<>();
+    private volatile ProofPerformanceSummary latestPerformanceSummary;
+    private volatile List<ProofClusterTarget> clusterTargetsSnapshot;
 
     public boolean isRunning() {
         return running.get();
@@ -345,6 +359,7 @@ public class ProofTask {
                     timeouts++;
                     ProofTask.this.checkPointInCheckTimeStamps = System.currentTimeMillis();
                 }
+                recordTimeSeriesPoint();
             } catch (Exception e) {
                 log.error("Unexpected proof task {} failed", proof.getId(), e);
             }
@@ -390,6 +405,7 @@ public class ProofTask {
             timeouts++;
             checkPointInCheckTimeStamps = System.currentTimeMillis();
         }
+        recordTimeSeriesPoint();
     }
 
     private void completeProofAfterDuration() {
@@ -399,6 +415,7 @@ public class ProofTask {
 
         log.info("Stopping proof task {} after reaching the specified duration of {} seconds",
                 proof.getId(), proof.getDuration());
+        recordTimeSeriesPoint();
         sendCompletionNotification(getSummary());
         stop();
     }
@@ -574,6 +591,351 @@ public class ProofTask {
     }
 
     /**
+     * Generates a lightweight report for UI consumption.
+     *
+     * @return A compact report view of the proof run
+     */
+    public ProofReport getReport() {
+        ProofSummary summary = getSummary();
+        ProofPerformanceSummary performanceSummary = running.get()
+                ? buildPerformanceSummary(summary)
+                : latestPerformanceSummary != null
+                        ? latestPerformanceSummary
+                        : buildPerformanceSummary(summary);
+        String executionStatus = isRunning() ? "running" : "stopped";
+        String resultStatus = determineResultStatus(summary, performanceSummary);
+        String resultReason = determineResultReason(summary, performanceSummary, resultStatus);
+        return new ProofReport(
+                proof,
+                executionStatus,
+                resultStatus,
+                resultReason,
+                resolveClusterTargets(),
+                summary,
+                new ProofCheckpointSummary(
+                        countProducerKeys(inCheck),
+                        countProducerKeys(latestProducerCheckpoint),
+                        countConsumerKeys(latestConsumerCheckpoint),
+                        countProducerKeys(lastVerifiedProducerCheckpoint),
+                        countConsumerKeys(lastVerifiedConsumerCheckpoint),
+                        countProducerKeys(lastFailedProducerCheckpoint),
+                        countConsumerKeys(lastFailedConsumerCheckpoint)),
+                performanceSummary,
+                List.copyOf(timeSeries));
+    }
+
+    private List<ProofClusterTarget> resolveClusterTargets() {
+        List<ProofClusterTarget> snapshot = clusterTargetsSnapshot;
+        return snapshot != null ? snapshot : buildClusterTargets();
+    }
+
+    private List<ProofClusterTarget> buildClusterTargets() {
+        List<ProofClusterTarget> targets = new ArrayList<>();
+        appendClusterTarget(targets, "default", proof.getDriver());
+
+        if (proof.getDrivers() != null) {
+            appendClusterTarget(targets, "admin", proof.getDrivers().admin());
+            appendClusterTarget(targets, "producer", proof.getDrivers().producer());
+            appendClusterTarget(targets, "consumer", proof.getDrivers().consumer());
+        }
+        return targets;
+    }
+
+    private void appendClusterTarget(List<ProofClusterTarget> targets, String role, String driverName) {
+        if (driverName == null || driverName.isBlank()) {
+            return;
+        }
+
+        Driver driverConfig = configs.drivers() != null ? configs.drivers().get(driverName) : null;
+        if (driverConfig == null) {
+            targets.add(new ProofClusterTarget(role, driverName, null, Map.of(), null));
+            return;
+        }
+
+        targets.add(new ProofClusterTarget(
+                role,
+                driverName,
+                driverConfig.driverType(),
+                sanitizeEndpointConfig(driverConfig.driverConfigs()),
+                deepCopyMap(driverConfig.metadata())));
+    }
+
+    private void freezeClusterTargetsSnapshot() {
+        if (clusterTargetsSnapshot != null) {
+            return;
+        }
+        clusterTargetsSnapshot = List.copyOf(buildClusterTargets());
+    }
+
+    private Map<String, Object> sanitizeEndpointConfig(Map<String, Object> driverConfigs) {
+        if (driverConfigs == null || driverConfigs.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<String, Object> endpoints = new LinkedHashMap<>();
+        copyEndpointValue(driverConfigs, endpoints, "pulsar.service.url");
+        copyEndpointValue(driverConfigs, endpoints, "pulsar.admin.url");
+        copyEndpointValue(driverConfigs, endpoints, "mqtt.service.url");
+        copyEndpointValue(driverConfigs, endpoints, "bootstrap.servers");
+        copyEndpointValue(driverConfigs, endpoints, "serviceUrl");
+        copyEndpointValue(driverConfigs, endpoints, "adminUrl");
+        return endpoints;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> deepCopyMap(Map<String, Object> source) {
+        if (source == null || source.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> copy = new LinkedHashMap<>();
+        source.forEach((key, value) -> copy.put(key, deepCopyValue(value)));
+        return copy;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Object deepCopyValue(Object value) {
+        if (value instanceof Map<?, ?> mapValue) {
+            Map<String, Object> nested = new LinkedHashMap<>();
+            mapValue.forEach((key, nestedValue) -> nested.put(String.valueOf(key), deepCopyValue(nestedValue)));
+            return nested;
+        }
+        if (value instanceof List<?> listValue) {
+            List<Object> nested = new ArrayList<>(listValue.size());
+            listValue.forEach(item -> nested.add(deepCopyValue(item)));
+            return nested;
+        }
+        return value;
+    }
+
+    private void copyEndpointValue(Map<String, Object> source, Map<String, Object> target, String key) {
+        Object value = source.get(key);
+        if (value != null) {
+            target.put(key, value);
+        }
+    }
+
+    private static int countProducerKeys(ProducerCheckpoint checkpoint) {
+        if (checkpoint == null || checkpoint.getPublished() == null) {
+            return 0;
+        }
+        return checkpoint.getPublished().size();
+    }
+
+    private static int countConsumerKeys(ConsumerCheckPoint checkpoint) {
+        if (checkpoint == null || checkpoint.getConsumed() == null) {
+            return 0;
+        }
+        return checkpoint.getConsumed().size();
+    }
+
+    private ProofPerformanceSummary buildPerformanceSummary(ProofSummary summary) {
+        ProofWorkerMetricsSnapshot workerMetrics = aggregateWorkerMetrics();
+        long elapsedSeconds = getElapsedSeconds();
+        long plannedDurationSeconds = Math.max(0L, proof.getDuration());
+        long remainingSeconds = plannedDurationSeconds > 0
+                ? Math.max(0L, plannedDurationSeconds - elapsedSeconds)
+                : 0L;
+        long publishedMessages = workerMetrics.acknowledgedMessages();
+        long publishErrors = workerMetrics.publishErrors();
+        long consumedMessages = workerMetrics.receivedMessages();
+        long publishAttempts = workerMetrics.sendAttempts();
+        long backlogMessages = Math.max(0L, publishedMessages - consumedMessages);
+        double durationSeconds = Math.max(1L, elapsedSeconds);
+        double progressPercent = proof.getDuration() > 0
+                ? Math.min(100.0d, durationSeconds * 100.0d / proof.getDuration())
+                : 0.0d;
+        return new ProofPerformanceSummary(
+                elapsedSeconds,
+                plannedDurationSeconds,
+                remainingSeconds,
+                progressPercent,
+                proof.getMsgRate(),
+                publishedMessages,
+                publishErrors,
+                publishAttempts,
+                consumedMessages,
+                backlogMessages,
+                summary.verified(),
+                publishedMessages / durationSeconds,
+                consumedMessages / durationSeconds,
+                publishErrors / durationSeconds,
+                summary.verified() / durationSeconds,
+                buildLatencySummary(workerMetrics.publishLatency()),
+                buildLatencySummary(workerMetrics.endToEndLatency()));
+    }
+
+    private String determineResultStatus(ProofSummary summary, ProofPerformanceSummary performanceSummary) {
+        if (running.get()) {
+            return "running";
+        }
+        if (summary.missed() > 0 || summary.outOfOrders() > 0) {
+            return "failed";
+        }
+        return "passed";
+    }
+
+    private String determineResultReason(
+            ProofSummary summary, ProofPerformanceSummary performanceSummary, String resultStatus) {
+        if (running.get()) {
+            return "Verification is still in progress.";
+        }
+        if (summary.outOfOrders() > 0) {
+            return "Out-of-order messages were detected.";
+        }
+        if (summary.missed() > 0) {
+            return "Some messages were not verified by consumers.";
+        }
+        if ("passed".equals(resultStatus)) {
+            return "The run completed without missed or out-of-order messages.";
+        }
+        return "The run completed with unresolved verification issues.";
+    }
+
+    private long getElapsedSeconds() {
+        if (proof.getStartTime() == null || proof.getStartTime().isBlank()) {
+            return 0L;
+        }
+        try {
+            LocalDateTime startTime = LocalDateTime.parse(proof.getStartTime(), DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+            return Math.max(0L, Duration.between(startTime, LocalDateTime.now()).toSeconds());
+        } catch (Exception e) {
+            log.debug("Failed to parse proof start time {}", proof.getStartTime(), e);
+            return 0L;
+        }
+    }
+
+    private static long countPublishedMessages(ProducerCheckpoint checkpoint) {
+        if (checkpoint == null || checkpoint.getPublished() == null) {
+            return 0L;
+        }
+        return checkpoint.getPublished().values().stream()
+                .mapToLong(longSeq -> Math.max(0L, longSeq.seq() + 1))
+                .sum();
+    }
+
+    private static long countProducerErrors(ProducerCheckpoint checkpoint) {
+        if (checkpoint == null || checkpoint.getErrors() == null) {
+            return 0L;
+        }
+        return checkpoint.getErrors().values().stream()
+                .mapToLong(Integer::longValue)
+                .sum();
+    }
+
+    private static long countConsumedMessages(ConsumerCheckPoint checkpoint) {
+        if (checkpoint == null || checkpoint.getConsumed() == null) {
+            return 0L;
+        }
+        return checkpoint.getConsumed().values().stream()
+                .flatMap(rangeMap -> rangeMap.values().stream())
+                .mapToLong(range -> (range.getEnd().seq() - range.getStart().seq() + 1) + range.getDuplicated())
+                .sum();
+    }
+
+    private ProofWorkerMetricsSnapshot aggregateWorkerMetrics() {
+        long sendAttempts = 0L;
+        long acknowledgedMessages = 0L;
+        long publishErrors = 0L;
+        long receivedMessages = 0L;
+        LatencyMetricSnapshot publishLatency = null;
+        LatencyMetricSnapshot endToEndLatency = null;
+        for (WorkerHttpClient client : clients) {
+            try {
+                ProofWorkerMetricsSnapshot snapshot = client.metrics(proof.getId()).join();
+                sendAttempts += snapshot.sendAttempts();
+                acknowledgedMessages += snapshot.acknowledgedMessages();
+                publishErrors += snapshot.publishErrors();
+                receivedMessages += snapshot.receivedMessages();
+                publishLatency = mergeLatencySnapshots(publishLatency, snapshot.publishLatency());
+                endToEndLatency = mergeLatencySnapshots(endToEndLatency, snapshot.endToEndLatency());
+            } catch (Exception e) {
+                log.warn("Failed to collect worker metrics for proof {}", proof.getId(), e);
+            }
+        }
+        return new ProofWorkerMetricsSnapshot(
+                sendAttempts,
+                acknowledgedMessages,
+                publishErrors,
+                receivedMessages,
+                publishLatency,
+                endToEndLatency);
+    }
+
+    private static LatencyMetricSnapshot mergeLatencySnapshots(
+            LatencyMetricSnapshot left, LatencyMetricSnapshot right) {
+        if (left == null) {
+            return right;
+        }
+        if (right == null) {
+            return left;
+        }
+        List<Long> mergedSamples = new ArrayList<>();
+        if (left.samplesMillis() != null) {
+            mergedSamples.addAll(left.samplesMillis());
+        }
+        if (right.samplesMillis() != null) {
+            mergedSamples.addAll(right.samplesMillis());
+        }
+        return new LatencyMetricSnapshot(
+                left.count() + right.count(),
+                left.sumMillis() + right.sumMillis(),
+                Math.max(left.maxMillis(), right.maxMillis()),
+                mergedSamples);
+    }
+
+    private static LatencySummary buildLatencySummary(LatencyMetricSnapshot snapshot) {
+        if (snapshot == null || snapshot.count() <= 0) {
+            return new LatencySummary(0L, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+        }
+        List<Long> sortedSamples = new ArrayList<>();
+        if (snapshot.samplesMillis() != null) {
+            sortedSamples.addAll(snapshot.samplesMillis().stream().filter(v -> v != null).toList());
+        }
+        sortedSamples.sort(Comparator.naturalOrder());
+        return new LatencySummary(
+                snapshot.count(),
+                snapshot.sumMillis() / Math.max(1L, snapshot.count()),
+                percentile(sortedSamples, 0.50d),
+                percentile(sortedSamples, 0.95d),
+                percentile(sortedSamples, 0.99d),
+                snapshot.maxMillis());
+    }
+
+    private static double percentile(List<Long> sortedSamples, double quantile) {
+        if (sortedSamples.isEmpty()) {
+            return 0.0d;
+        }
+        int index = (int) Math.ceil(quantile * sortedSamples.size()) - 1;
+        index = Math.max(0, Math.min(index, sortedSamples.size() - 1));
+        return sortedSamples.get(index);
+    }
+
+    private void recordTimeSeriesPoint() {
+        ProofSummary summary = getSummary();
+        ProofPerformanceSummary performanceSummary = buildPerformanceSummary(summary);
+        latestPerformanceSummary = performanceSummary;
+        if (!timeSeries.isEmpty()) {
+            ProofTimeSeriesPoint lastPoint = timeSeries.getLast();
+            if (lastPoint.elapsedSeconds() == performanceSummary.elapsedSeconds()) {
+                timeSeries.removeLast();
+            }
+        }
+        timeSeries.add(new ProofTimeSeriesPoint(
+                performanceSummary.elapsedSeconds(),
+                performanceSummary.publishRate(),
+                performanceSummary.consumeRate(),
+                performanceSummary.backlogMessages(),
+                performanceSummary.publishErrorRate(),
+                performanceSummary.publishLatency() == null ? 0.0d : performanceSummary.publishLatency().p95(),
+                performanceSummary.publishLatency() == null ? 0.0d : performanceSummary.publishLatency().p99(),
+                performanceSummary.endToEndLatency() == null ? 0.0d : performanceSummary.endToEndLatency().p95(),
+                performanceSummary.endToEndLatency() == null ? 0.0d : performanceSummary.endToEndLatency().p99()));
+        if (timeSeries.size() > 512) {
+            timeSeries.removeFirst();
+        }
+    }
+
+    /**
      * Removes all resources associated with this proof test.
      * Deletes the messaging system topic and performs cleanup.
      */
@@ -620,6 +982,7 @@ public class ProofTask {
      * Stops all producers and shuts down the executor service.
      */
     public void stop() {
+        freezeClusterTargetsSnapshot();
         if (!running.compareAndSet(true, false)) {
             return;
         }
@@ -640,6 +1003,10 @@ public class ProofTask {
         // Run final verification after producers have stopped but while
         // consumers are still active, capturing every published message.
         runFinalVerification();
+
+        // Build the final performance snapshot after verification has
+        // settled, while worker metrics are still available.
+        latestPerformanceSummary = buildPerformanceSummary(getSummary());
 
         clients.forEach(client -> {
             try {

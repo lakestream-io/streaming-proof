@@ -24,6 +24,7 @@ import static io.streamnative.streaming.proof.common.Util.DELETE_PROOF;
 import static io.streamnative.streaming.proof.common.Util.GET_CONFIG;
 import static io.streamnative.streaming.proof.common.Util.GET_PROOF;
 import static io.streamnative.streaming.proof.common.Util.GET_PROOF_DETAILS;
+import static io.streamnative.streaming.proof.common.Util.GET_PROOF_REPORT;
 import static io.streamnative.streaming.proof.common.Util.LIST_PROOFS;
 import static io.streamnative.streaming.proof.common.Util.PUT_CONFIG;
 import static io.streamnative.streaming.proof.common.Util.STOP_PROOF;
@@ -35,6 +36,7 @@ import io.streamnative.streaming.proof.common.Util;
 import io.streamnative.streaming.proof.common.records.Configs;
 import io.streamnative.streaming.proof.common.records.Proof;
 import io.streamnative.streaming.proof.common.records.ProofDetails;
+import io.streamnative.streaming.proof.common.records.ProofReport;
 import java.io.IOException;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
@@ -88,6 +90,7 @@ public class CoordinatorHandler {
         app.post(CREATE_PROOF, this::handleCreateProof);
         app.get(GET_PROOF, this::handleGetProof);
         app.get(GET_PROOF_DETAILS, this::handleGetProofDetails);
+        app.get(GET_PROOF_REPORT, this::handleGetProofReport);
         app.put(STOP_PROOF, this::handleStopProof);
         app.delete(DELETE_PROOF, this::handleDeleteProof);
         app.get(LIST_PROOFS, this::handleListProofs);
@@ -205,6 +208,16 @@ public class CoordinatorHandler {
             return;
         }
         ctx.result(Util.JSON_WRITER.writeValueAsString(proofDetails));
+    }
+
+    private void handleGetProofReport(Context ctx) throws Exception {
+        String id = ctx.pathParam("id");
+        ProofReport proofReport = coordinator.getProofReport(id);
+        if (proofReport == null) {
+            ctx.status(404).result("Proof test not found: " + id);
+            return;
+        }
+        ctx.result(Util.JSON_WRITER.writeValueAsString(proofReport));
     }
 
     private void handleStopProof(Context ctx) throws Exception {

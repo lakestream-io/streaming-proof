@@ -22,6 +22,7 @@ import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
 import io.streamnative.streaming.proof.common.records.NewConsumers;
 import io.streamnative.streaming.proof.common.records.NewProducers;
 import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
+import io.streamnative.streaming.proof.common.records.ProofWorkerMetricsSnapshot;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -206,5 +207,19 @@ public class Worker {
             return Map.of();
         }
         return consumer.checkPointDetails();
+    }
+
+    public ProofWorkerMetricsSnapshot metricsSnapshot(String id) {
+        ProofProducers producer = producers.get(id);
+        ProofConsumers consumer = consumers.get(id);
+        ProofWorkerMetricsSnapshot producerMetrics = producer == null ? null : producer.metricsSnapshot();
+        ProofWorkerMetricsSnapshot consumerMetrics = consumer == null ? null : consumer.metricsSnapshot();
+        return new ProofWorkerMetricsSnapshot(
+                producerMetrics == null ? 0L : producerMetrics.sendAttempts(),
+                producerMetrics == null ? 0L : producerMetrics.acknowledgedMessages(),
+                producerMetrics == null ? 0L : producerMetrics.publishErrors(),
+                consumerMetrics == null ? 0L : consumerMetrics.receivedMessages(),
+                producerMetrics == null ? null : producerMetrics.publishLatency(),
+                consumerMetrics == null ? null : consumerMetrics.endToEndLatency());
     }
 }

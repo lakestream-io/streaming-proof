@@ -20,8 +20,10 @@ package io.streamnative.streaming.proof.worker;
 
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.ProofProducer;
+import io.streamnative.streaming.proof.common.records.LatencyMetricSnapshot;
 import io.streamnative.streaming.proof.common.records.NewProducers;
 import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
+import io.streamnative.streaming.proof.common.records.ProofWorkerMetricsSnapshot;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -178,6 +180,27 @@ public class ProofProducers {
             task.getErrors().forEach(checkpoint::addErrors);
         }
         return checkpoint;
+    }
+
+    public ProofWorkerMetricsSnapshot metricsSnapshot() {
+        long sendAttempts = 0L;
+        long acknowledgedMessages = 0L;
+        long publishErrors = 0L;
+        LatencyRecorder publishLatency = new LatencyRecorder();
+        for (ProofProducerTask task : tasks) {
+            sendAttempts += task.getSendAttempts();
+            acknowledgedMessages += task.getAcknowledged();
+            publishErrors += task.getErrors().values().stream().mapToLong(Integer::longValue).sum();
+            LatencyMetricSnapshot latencySnapshot = task.getPublishLatencySnapshot();
+            publishLatency.mergeFrom(latencySnapshot);
+        }
+        return new ProofWorkerMetricsSnapshot(
+                sendAttempts,
+                acknowledgedMessages,
+                publishErrors,
+                0L,
+                publishLatency.snapshot(),
+                null);
     }
 
     /**

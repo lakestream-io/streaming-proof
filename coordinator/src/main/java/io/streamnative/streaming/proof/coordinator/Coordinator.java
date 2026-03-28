@@ -23,6 +23,7 @@ import io.streamnative.streaming.proof.common.records.Checkpoints;
 import io.streamnative.streaming.proof.common.records.Configs;
 import io.streamnative.streaming.proof.common.records.Proof;
 import io.streamnative.streaming.proof.common.records.ProofDetails;
+import io.streamnative.streaming.proof.common.records.ProofReport;
 import io.streamnative.streaming.proof.worker.DriverCache;
 import java.util.List;
 import java.util.Map;
@@ -215,6 +216,14 @@ public class Coordinator {
                 task.getLastFailedProducerCheckpoint(),
                 task.getLastFailedConsumerCheckpoint());
         return new ProofDetails(task.getProof(), task.getSummary(), checkpoints, null, null, null, null);
+    }
+
+    public ProofReport getProofReport(String proofID) {
+        ProofTask task = proofs.get(proofID);
+        if (task == null) {
+            return null;
+        }
+        return task.getReport();
     }
 
     /**

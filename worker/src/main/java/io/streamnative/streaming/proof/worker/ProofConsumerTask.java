@@ -23,12 +23,14 @@ import io.streamnative.streaming.proof.common.MessageListener;
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
+import io.streamnative.streaming.proof.common.records.LatencyMetricSnapshot;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicLong;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
@@ -76,6 +78,11 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
     @Getter
     private final Map<String, SortedMap<String, ConsumerCheckPoint.SeqRange>> writeDupsOrOutOrder = new HashMap<>();
 
+    @Getter
+    private final AtomicLong receivedMessages = new AtomicLong(0);
+
+    private final LatencyRecorder endToEndLatency = new LatencyRecorder();
+
     /**
      * Processes a received message and validates its sequence number against the expected order.
      * This method is synchronized to ensure thread-safe updates to the sequence tracking maps.
@@ -88,6 +95,10 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
      */
     @Override
     public synchronized void onMessage(String key, long value, MessageMetadata metadata) {
+        receivedMessages.incrementAndGet();
+        if (metadata != null && metadata.publishTimestampMillis() != null && metadata.publishTimestampMillis() > 0) {
+            endToEndLatency.record(System.currentTimeMillis() - metadata.publishTimestampMillis());
+        }
         LongSeq newMsg = new LongSeq(value, metadata);
         ConsumerCheckPoint.SeqRange lastConsumedRange = getLastSeq(key);
         if (lastConsumedRange == null) {
@@ -298,6 +309,10 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
      */
     public String getConsumerName() {
         return consumer.name();
+    }
+
+    public LatencyMetricSnapshot getEndToEndLatencySnapshot() {
+        return endToEndLatency.snapshot();
     }
 
     /**

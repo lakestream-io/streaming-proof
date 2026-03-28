@@ -1,0 +1,44 @@
+{{- if and .Values.metadataSync.enabled .Values.metadataSync.sourceNamespace }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: streaming-proof-metadata-sync-source
+  namespace: {{ .Values.metadataSync.sourceNamespace }}
+  labels:
+    {{- include "streaming-proof.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - pulsar.streamnative.io
+    resources:
+      - pulsarbrokers
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - bookkeeper.streamnative.io
+    resources:
+      - bookkeeperclusters
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - zookeeper.streamnative.io
+    resources:
+      - zookeeperclusters
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - k8s.streamnative.io
+      - config.streamnative.io
+      - core.oxia.io
+    resources:
+      - oxiaclusters
+    verbs:
+      - get
+      - list
+      - watch
+{{- end }}

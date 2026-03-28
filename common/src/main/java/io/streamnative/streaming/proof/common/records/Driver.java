@@ -18,6 +18,7 @@
  */
 package io.streamnative.streaming.proof.common.records;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.Map;
 
 /**
@@ -30,6 +31,14 @@ import java.util.Map;
  *                     The keys and values vary depending on the driver type.
  *                     For example, Kafka driver configs might include "bootstrap.servers",
  *                     "security.protocol", etc.
+ * @param metadata Optional descriptive metadata for reporting. This can include
+ *                 cluster display names, sizing summaries, worker notes, or any
+ *                 other non-sensitive environment context that should be shown in reports.
  */
-public record Driver(String driverType, Map<String, Object> driverConfigs) {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public record Driver(String driverType, Map<String, Object> driverConfigs, Map<String, Object> metadata) {
+
+    public Driver(String driverType, Map<String, Object> driverConfigs) {
+        this(driverType, driverConfigs, null);
+    }
 }

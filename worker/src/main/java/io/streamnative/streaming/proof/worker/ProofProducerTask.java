@@ -21,6 +21,7 @@ package io.streamnative.streaming.proof.worker;
 import io.streamnative.streaming.proof.common.LongSeq;
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofProducer;
+import io.streamnative.streaming.proof.common.records.LatencyMetricSnapshot;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -99,6 +100,15 @@ public class ProofProducerTask implements AutoCloseable {
     /** Counter for round-robin key selection */
     private final AtomicLong index = new AtomicLong(0);
 
+    /** Total send attempts */
+    private final AtomicLong sendAttempts = new AtomicLong(0);
+
+    /** Total acknowledged sends */
+    private final AtomicLong acknowledged = new AtomicLong(0);
+
+    /** Publish latency samples */
+    private final LatencyRecorder publishLatency = new LatencyRecorder();
+
     /**
      * Creates a new producer task with the specified number of unique keys.
      *
@@ -134,12 +144,16 @@ public class ProofProducerTask implements AutoCloseable {
     public CompletableFuture<MessageMetadata> sendAsync() {
         String key = keyArray[(int) (index.getAndIncrement() % keys)];
         long seq = keySeq.get(key).getAndIncrement();
+        long startedAtNanos = System.nanoTime();
+        sendAttempts.incrementAndGet();
         return producer.sendAsync(key, seq).whenComplete((metadata, e) -> {
             if (e != null) {
                 synchronized (errors) {
                     errors.compute(e.getMessage(), (k, v) -> v == null ? 1 : v + 1);
                 }
             } else {
+                acknowledged.incrementAndGet();
+                publishLatency.record((System.nanoTime() - startedAtNanos) / 1_000_000L);
                 synchronized (lastPublished) {
                     LongSeq newMsg = new LongSeq(seq, metadata);
                     LongSeq previousMsg = this.lastPublished.get(key);
@@ -164,6 +178,18 @@ public class ProofProducerTask implements AutoCloseable {
                 }
             }
         });
+    }
+
+    public long getSendAttempts() {
+        return sendAttempts.get();
+    }
+
+    public long getAcknowledged() {
+        return acknowledged.get();
+    }
+
+    public LatencyMetricSnapshot getPublishLatencySnapshot() {
+        return publishLatency.snapshot();
     }
 
     public synchronized Map<String, LongSeq> getLastPublished() {

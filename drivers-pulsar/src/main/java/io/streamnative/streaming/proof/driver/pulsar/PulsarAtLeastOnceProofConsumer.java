@@ -139,7 +139,8 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
                         long entryId = messageIdImpl.getEntryId();
                         int batchIndex = messageIdImpl.getBatchIndex();
 
-                        MessageMetadata metadata = new MessageMetadata(ledgerId, entryId, batchIndex);
+                        MessageMetadata metadata = new MessageMetadata(
+                                null, ledgerId, entryId, null, -1L, message.getPublishTime(), batchIndex);
                         messageListener.onMessage(key, value, metadata);
 
                         consumer.acknowledge(message);

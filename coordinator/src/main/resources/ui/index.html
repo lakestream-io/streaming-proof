@@ -1,0 +1,233 @@
+<!--
+
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements.  See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership.  The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License.  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied.  See the License for the
+    specific language governing permissions and limitations
+    under the License.
+
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Streaming Proof UI</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <p class="eyebrow">Streaming Proof</p>
+        <h1>Proof Runs</h1>
+        <p class="sidebar-copy">Minimal dynamic UI prototype backed by the current coordinator APIs.</p>
+      </div>
+      <div class="sidebar-actions">
+        <button id="refresh-button" type="button">Refresh</button>
+      </div>
+      <div id="proof-list" class="proof-list"></div>
+    </aside>
+    <main class="content">
+      <section class="hero">
+        <div class="hero-header">
+          <div>
+            <p class="eyebrow">Live Report</p>
+            <h2 id="hero-title">Select a proof run</h2>
+            <p id="hero-subtitle" class="hero-subtitle">Choose a run from the left to inspect the current report view from the coordinator.</p>
+          </div>
+          <div id="hero-status" class="status-badge">waiting</div>
+        </div>
+        <div class="hero-progress">
+          <div class="hero-progress-copy">
+            <span>Progress Through Planned Duration</span>
+            <span id="hero-progress-value">0s left</span>
+          </div>
+          <p id="hero-progress-detail" class="hero-progress-detail">Elapsed 0s · Remaining 0s · Total 0s</p>
+          <div class="progress-track">
+            <div id="hero-progress-fill" class="progress-fill"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="empty-state" class="empty-state">
+        <div class="panel">
+          <h3>No proof selected</h3>
+          <p>The UI is connected to the live coordinator. Once you start a proof, it will appear in the sidebar.</p>
+        </div>
+      </section>
+
+      <section id="details-view" class="details-view hidden">
+        <div class="grid metrics-grid">
+          <article class="metric-card">
+            <p class="metric-label">Verified</p>
+            <p id="metric-verified" class="metric-value">0</p>
+          </article>
+          <article class="metric-card">
+            <p class="metric-label">Missed</p>
+            <p id="metric-missed" class="metric-value">0</p>
+          </article>
+          <article class="metric-card">
+            <p class="metric-label">Out Of Orders</p>
+            <p id="metric-out-of-orders" class="metric-value">0</p>
+          </article>
+          <article class="metric-card">
+            <p class="metric-label">Duplicates</p>
+            <p id="metric-duplicates" class="metric-value">0</p>
+          </article>
+          <article class="metric-card">
+            <p class="metric-label">Errors</p>
+            <p id="metric-errors" class="metric-value">0</p>
+          </article>
+          <article class="metric-card">
+            <p class="metric-label">Timeouts</p>
+            <p id="metric-timeouts" class="metric-value">0</p>
+          </article>
+        </div>
+
+        <div class="grid metrics-grid performance-grid">
+          <article class="metric-card">
+            <p class="metric-label">Publish Rate</p>
+            <p id="perf-publish-rate" class="metric-value">0</p>
+            <p class="metric-meta">msg/s</p>
+          </article>
+          <article class="metric-card">
+            <p class="metric-label">Consume Rate</p>
+            <p id="perf-consume-rate" class="metric-value">0</p>
+            <p class="metric-meta">msg/s</p>
+          </article>
+          <article class="metric-card">
+            <p class="metric-label">Publish Error Rate</p>
+            <p id="perf-publish-error-rate" class="metric-value">0</p>
+            <p class="metric-meta">errors/s</p>
+          </article>
+          <article class="metric-card">
+            <p class="metric-label">Backlog</p>
+            <p id="perf-backlog" class="metric-value">0</p>
+            <p class="metric-meta">messages</p>
+          </article>
+          <article class="metric-card">
+            <p class="metric-label">Publish Latency P95</p>
+            <p id="perf-publish-latency-p95" class="metric-value">0</p>
+            <p class="metric-meta">ms</p>
+          </article>
+          <article class="metric-card">
+            <p class="metric-label">Publish Latency P99</p>
+            <p id="perf-publish-latency-p99" class="metric-value">0</p>
+            <p class="metric-meta">ms</p>
+          </article>
+          <article class="metric-card">
+            <p class="metric-label">End-to-End P95</p>
+            <p id="perf-e2e-latency-p95" class="metric-value">0</p>
+            <p class="metric-meta">ms</p>
+          </article>
+          <article class="metric-card">
+            <p class="metric-label">End-to-End P99</p>
+            <p id="perf-e2e-latency-p99" class="metric-value">0</p>
+            <p class="metric-meta">ms</p>
+          </article>
+        </div>
+
+        <div class="grid spotlight-grid">
+          <article class="panel">
+            <div class="panel-heading">
+              <h3>Flow Snapshot</h3>
+              <span class="panel-note">Throughput and backlog</span>
+            </div>
+            <div id="proof-flow" class="flow-strip"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-heading">
+              <h3>Latency Overview</h3>
+              <span class="panel-note">Client-side percentiles</span>
+            </div>
+            <div class="grid latency-grid">
+              <div>
+                <p class="latency-title">Publish Latency</p>
+                <div id="publish-latency-ladder" class="latency-ladder"></div>
+              </div>
+              <div>
+                <p class="latency-title">End-to-End Latency</p>
+                <div id="e2e-latency-ladder" class="latency-ladder"></div>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div class="grid charts-grid">
+          <article class="panel chart-panel">
+            <div class="panel-heading">
+              <h3>Throughput Over Time</h3>
+              <span class="panel-note">publish vs consume</span>
+            </div>
+            <div id="throughput-chart" class="chart-surface"></div>
+          </article>
+          <article class="panel chart-panel">
+            <div class="panel-heading">
+              <h3>Backlog Over Time</h3>
+              <span class="panel-note">messages waiting to catch up</span>
+            </div>
+            <div id="backlog-chart" class="chart-surface"></div>
+          </article>
+          <article class="panel chart-panel">
+            <div class="panel-heading">
+              <h3>Publish Latency Over Time</h3>
+              <span class="panel-note">p95 and p99</span>
+            </div>
+            <div id="publish-latency-chart" class="chart-surface"></div>
+          </article>
+          <article class="panel chart-panel">
+            <div class="panel-heading">
+              <h3>End-to-End Latency Over Time</h3>
+              <span class="panel-note">p95 and p99</span>
+            </div>
+            <div id="e2e-latency-chart" class="chart-surface"></div>
+          </article>
+        </div>
+
+        <div class="grid details-grid">
+          <article class="panel">
+            <div class="panel-heading">
+              <h3>Cluster Targets</h3>
+              <span class="panel-note">Resources and pulsar config</span>
+            </div>
+            <div id="cluster-targets" class="cluster-targets"></div>
+          </article>
+          <article class="panel">
+            <h3>Proof Configuration</h3>
+            <dl id="proof-config" class="description-list"></dl>
+          </article>
+          <article class="panel">
+            <h3>Checkpoint Snapshot</h3>
+            <dl id="proof-checkpoints" class="description-list"></dl>
+          </article>
+        </div>
+
+        <article class="panel">
+          <h3>Run Totals</h3>
+          <dl id="proof-performance" class="description-list"></dl>
+        </article>
+
+        <article class="panel">
+          <div class="panel-heading">
+            <h3>Proof Report API</h3>
+            <a id="proof-json-link" href="#" target="_blank" rel="noreferrer">Open report API</a>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+  <script src="./app.js"></script>
+</body>
+</html>

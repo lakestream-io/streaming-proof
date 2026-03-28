@@ -19,6 +19,7 @@
 package io.streamnative.streaming.proof.coordinator;
 
 import io.javalin.Javalin;
+import io.javalin.http.staticfiles.Location;
 import java.util.concurrent.Callable;
 import lombok.extern.slf4j.Slf4j;
 import picocli.CommandLine;
@@ -83,8 +84,16 @@ public class CoordinatorStarter implements Callable<Integer> {
      */
     public void start(int port) {
         log.info("Starting coordinator on port {}", port);
-        this.app = Javalin.create();
+        this.app = Javalin.create(config -> {
+            config.staticFiles.add(staticFileConfig -> {
+                staticFileConfig.hostedPath = "/ui";
+                staticFileConfig.directory = "/ui";
+                staticFileConfig.location = Location.CLASSPATH;
+            });
+        });
         new CoordinatorHandler(app, coordinator);
+        app.get("/", ctx -> ctx.redirect("/ui/index.html"));
+        app.get("/ui", ctx -> ctx.redirect("/ui/index.html"));
         app.start(port);
         log.info("Coordinator started successfully");
     }

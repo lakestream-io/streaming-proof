@@ -28,6 +28,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
 
 import io.streamnative.streaming.proof.common.LongSeq;
@@ -35,14 +36,17 @@ import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.records.Configs;
 import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
+import io.streamnative.streaming.proof.common.records.Driver;
 import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
 import io.streamnative.streaming.proof.common.records.Proof;
+import io.streamnative.streaming.proof.common.records.ProofClusterTarget;
 import io.streamnative.streaming.proof.common.records.ProofSummary;
 import io.streamnative.streaming.proof.common.records.PulsarProofConfig;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -189,6 +193,69 @@ public class ProofTaskTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    public void testReportPrefersFrozenClusterTargetSnapshotAfterStop() throws Exception {
+        ProofDriver driver = mock(ProofDriver.class);
+        Map<String, Object> brokerMetadata = new HashMap<>();
+        brokerMetadata.put("replicas", 2);
+        brokerMetadata.put("limits", new HashMap<>(Map.of("cpu", "2", "memory", "4Gi")));
+
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("clusterResources", new HashMap<>(Map.of("broker", brokerMetadata)));
+
+        Map<String, Object> driverConfigs = new HashMap<>();
+        driverConfigs.put("pulsar.service.url", "pulsar://cluster-a:6650");
+        driverConfigs.put("pulsar.admin.url", "http://cluster-a:8080");
+
+        Configs configs = new Configs(
+                Map.of(),
+                Map.of("local_pulsar", new Driver("pulsar", driverConfigs, metadata)));
+        Proof proof = Proof.builder()
+                .topic("test-topic")
+                .driver("local_pulsar")
+                .features(List.of("at_least_once"))
+                .build();
+        ProofTask task = new ProofTask(proof, configs, driver);
+        try {
+            ProofClusterTarget liveTarget = task.getReport().clusterTargets().getFirst();
+            assertEquals(liveTarget.endpoints().get("pulsar.service.url"), "pulsar://cluster-a:6650");
+            Map<String, Object> liveClusterResources =
+                    (Map<String, Object>) liveTarget.metadata().get("clusterResources");
+            Map<String, Object> liveBroker = (Map<String, Object>) liveClusterResources.get("broker");
+            assertEquals(liveBroker.get("replicas"), 2);
+
+            ((Map<String, Object>) brokerMetadata.get("limits")).put("memory", "8Gi");
+            driverConfigs.put("pulsar.service.url", "pulsar://cluster-b:6650");
+
+            ProofClusterTarget updatedLiveTarget = task.getReport().clusterTargets().getFirst();
+            assertEquals(updatedLiveTarget.endpoints().get("pulsar.service.url"), "pulsar://cluster-b:6650");
+            Map<String, Object> updatedLiveClusterResources =
+                    (Map<String, Object>) updatedLiveTarget.metadata().get("clusterResources");
+            Map<String, Object> updatedLiveBroker = (Map<String, Object>) updatedLiveClusterResources.get("broker");
+            Map<String, Object> updatedLiveLimits = (Map<String, Object>) updatedLiveBroker.get("limits");
+            assertEquals(updatedLiveLimits.get("memory"), "8Gi");
+
+            AtomicBoolean running = getRunningFlag(task);
+            running.set(true);
+            task.stop();
+
+            ((Map<String, Object>) brokerMetadata.get("limits")).put("memory", "16Gi");
+            driverConfigs.put("pulsar.service.url", "pulsar://cluster-c:6650");
+
+            ProofClusterTarget frozenTarget = task.getReport().clusterTargets().getFirst();
+            assertEquals(frozenTarget.endpoints().get("pulsar.service.url"), "pulsar://cluster-b:6650");
+            assertNotNull(frozenTarget.metadata());
+            Map<String, Object> frozenClusterResources =
+                    (Map<String, Object>) frozenTarget.metadata().get("clusterResources");
+            Map<String, Object> frozenBroker = (Map<String, Object>) frozenClusterResources.get("broker");
+            Map<String, Object> frozenLimits = (Map<String, Object>) frozenBroker.get("limits");
+            assertEquals(frozenLimits.get("memory"), "8Gi");
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
     public void testCompleteProofAfterDurationRunsFinalVerification() throws Exception {
         ProofDriver driver = mock(ProofDriver.class);
         Proof proof = Proof.builder()
@@ -318,6 +385,7 @@ public class ProofTaskTest {
 
         try {
             assertTrue(task.isSharedMode());
+            // stop() requires running=true to proceed past the CAS guard
             getRunningFlag(task).set(true);
 
             ProducerCheckpoint producerCp = new ProducerCheckpoint();

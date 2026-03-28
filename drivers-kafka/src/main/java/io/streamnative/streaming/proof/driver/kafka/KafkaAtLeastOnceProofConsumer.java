@@ -142,7 +142,8 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
                                     }
                                     callback.onMessage(record.key(), record.value(),
                                             MessageMetadata.kafkaMetadata(
-                                                    record.offset(), record.partition(), originalOffset));
+                                                    record.offset(), record.partition(),
+                                                    originalOffset, record.timestamp()));
 
                                     offsetMap.put(
                                             new TopicPartition(record.topic(), record.partition()),

@@ -53,6 +53,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
  *                  May be null if not applicable to the messaging system.
  * @param originalOffset The original offset of the message in the source topic,
  *                       this is for Kafka exactly-once verification.
+ * @param publishTimestampMillis The publish timestamp reported by the messaging system,
+ *                               when available. This is used for end-to-end latency.
  *
  * @see ProofProducer#sendAsync(String, long)
  * @see MessageListener#onMessage(String, long, MessageMetadata)
@@ -75,35 +77,53 @@ public record MessageMetadata(
         Long originalOffset,
 
         @JsonInclude(Include.NON_NULL)
+        Long publishTimestampMillis,
+
+        @JsonInclude(Include.NON_NULL)
         Integer batchIndex
 ) {
 
     public MessageMetadata(Long offset, Long ledgerId, Long entryId, Integer partition, Long originalOffset) {
-        this(offset, ledgerId, entryId, partition, originalOffset, null);
+        this(offset, ledgerId, entryId, partition, originalOffset, -1L, null);
+    }
+
+    public MessageMetadata(
+            Long offset, Long ledgerId, Long entryId, Integer partition,
+            Long originalOffset, Long publishTimestampMillis) {
+        this(offset, ledgerId, entryId, partition, originalOffset, publishTimestampMillis, null);
     }
 
     public static MessageMetadata empty() {
-        return new MessageMetadata(-1L, -1L, -1L, null, -1L, null);
+        return new MessageMetadata(-1L, -1L, -1L, null, -1L, -1L, null);
     }
 
     public MessageMetadata(long offset) {
-        this(offset, null, null, null, -1L, null);
+        this(offset, null, null, null, -1L, -1L, null);
     }
 
     public MessageMetadata(long offset, int partition) {
-        this(offset, null, null, partition, -1L, null);
+        this(offset, null, null, partition, -1L, -1L, null);
     }
 
     public static MessageMetadata kafkaMetadata(long offset, int partition, Long originalOffset) {
-        return new MessageMetadata(offset, null, null, partition, originalOffset, null);
+        return new MessageMetadata(offset, null, null, partition, originalOffset, -1L, null);
+    }
+
+    public static MessageMetadata kafkaMetadata(
+            long offset, int partition, Long originalOffset, Long publishTimestampMillis) {
+        return new MessageMetadata(offset, null, null, partition, originalOffset, publishTimestampMillis, null);
     }
 
     public MessageMetadata(long ledgerId, long entryId) {
-        this(null, ledgerId, entryId, null, -1L, null);
+        this(null, ledgerId, entryId, null, -1L, -1L, null);
     }
 
     public MessageMetadata(long ledgerId, long entryId, int batchIndex) {
-        this(null, ledgerId, entryId, null, -1L, batchIndex);
+        this(null, ledgerId, entryId, null, -1L, -1L, batchIndex);
+    }
+
+    public MessageMetadata(long ledgerId, long entryId, long publishTimestampMillis) {
+        this(null, ledgerId, entryId, null, -1L, publishTimestampMillis, null);
     }
 
     public boolean isAfter(MessageMetadata other) {

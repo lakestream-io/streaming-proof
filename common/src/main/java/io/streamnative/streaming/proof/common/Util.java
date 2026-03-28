@@ -69,6 +69,7 @@ public class Util {
     /** Endpoint to retrieve a specific proof test by ID */
     public static final String GET_PROOF = "/proofs/{id}";
     public static final String GET_PROOF_DETAILS = "/proofs/{id}/details";
+    public static final String GET_PROOF_REPORT = "/proofs/{id}/report";
     /** Endpoint to stop a running proof test */
     public static final String STOP_PROOF = "/proofs/{id}/stop";
     /** Endpoint to delete a proof test and its resources */
@@ -107,6 +108,7 @@ public class Util {
     /** Endpoint to retrieve consumer checkpoints for verification */
     public static final String CONSUMER_CHECKPOINTS = "/consumers/checkpoints/{id}";
     public static final String CONSUMER_CHECKPOINTS_DETAILS = "/consumers/checkpoints/{id}/details";
+    public static final String WORKER_METRICS = "/metrics/{id}";
     /** Endpoint to stop a running consumer */
     public static final String STOP_CONSUMER = "/consumers/stop/{id}";
 

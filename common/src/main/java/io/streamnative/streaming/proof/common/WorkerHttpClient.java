@@ -24,6 +24,7 @@ import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
 import io.streamnative.streaming.proof.common.records.NewConsumers;
 import io.streamnative.streaming.proof.common.records.NewProducers;
 import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
+import io.streamnative.streaming.proof.common.records.ProofWorkerMetricsSnapshot;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import org.asynchttpclient.AsyncHttpClient;
@@ -193,6 +194,22 @@ public class WorkerHttpClient {
                     try {
                         return Util.JSON_MAPPER.readValue(response.getResponseBody(),
                                 ConsumerCheckPoint.class);
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+    }
+
+    public CompletableFuture<ProofWorkerMetricsSnapshot> metrics(String id) throws Exception {
+        return client.prepareGet(baseUrl + Util.WORKER_METRICS.replace("{id}", id))
+                .execute()
+                .toCompletableFuture()
+                .thenApply(response -> {
+                    if (response.getStatusCode() != HTTP_OK) {
+                        throw new RuntimeException("Failed to get worker metrics: " + response.getStatusCode());
+                    }
+                    try {
+                        return Util.JSON_MAPPER.readValue(response.getResponseBody(), ProofWorkerMetricsSnapshot.class);
                     } catch (Exception e) {
                         throw new RuntimeException(e);
                     }

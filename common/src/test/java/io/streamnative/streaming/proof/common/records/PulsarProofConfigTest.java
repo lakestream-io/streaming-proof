@@ -109,4 +109,37 @@ public class PulsarProofConfigTest {
 
         assertNull(deserialized.pulsarConsumerConfig());
     }
+
+    @Test
+    public void testDriverMetadataDeserialization() throws Exception {
+        String json = """
+                {
+                  "workers": {
+                    "worker.1": "http://worker:8088"
+                  },
+                  "drivers": {
+                    "local_pulsar": {
+                      "driverType": "pulsar",
+                      "driverConfigs": {
+                        "pulsar.service.url": "pulsar://cluster:6650",
+                        "pulsar.admin.url": "http://cluster:8080"
+                      },
+                      "metadata": {
+                        "displayName": "Classic Stage",
+                        "brokers": "3 x n2-standard-8",
+                        "notes": "catchup validation cluster"
+                      }
+                    }
+                  }
+                }
+                """;
+
+        Configs configs = Util.JSON_MAPPER.readValue(json, Configs.class);
+        Driver driver = configs.drivers().get("local_pulsar");
+
+        assertNotNull(driver);
+        assertNotNull(driver.metadata());
+        assertEquals(driver.metadata().get("displayName"), "Classic Stage");
+        assertEquals(driver.metadata().get("brokers"), "3 x n2-standard-8");
+    }
 }

@@ -21,7 +21,9 @@ package io.streamnative.streaming.proof.worker;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
+import io.streamnative.streaming.proof.common.records.LatencyMetricSnapshot;
 import io.streamnative.streaming.proof.common.records.NewConsumers;
+import io.streamnative.streaming.proof.common.records.ProofWorkerMetricsSnapshot;
 import io.streamnative.streaming.proof.common.records.PulsarProofConfig;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -124,6 +126,23 @@ public class ProofConsumers {
             result.put(task.getConsumerName(), checkPoint);
         }
         return result;
+    }
+
+    public ProofWorkerMetricsSnapshot metricsSnapshot() {
+        long receivedMessages = 0L;
+        LatencyRecorder endToEndLatency = new LatencyRecorder();
+        for (ProofConsumerTask task : tasks) {
+            receivedMessages += task.getReceivedMessages().get();
+            LatencyMetricSnapshot latencySnapshot = task.getEndToEndLatencySnapshot();
+            endToEndLatency.mergeFrom(latencySnapshot);
+        }
+        return new ProofWorkerMetricsSnapshot(
+                0L,
+                0L,
+                0L,
+                receivedMessages,
+                null,
+                endToEndLatency.snapshot());
     }
 
     /**
