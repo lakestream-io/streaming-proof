@@ -316,13 +316,23 @@ function renderMessagesChart(timeSeries) {
   chart.setOption(opt, {notMerge: true});
 }
 
-/** Renders anomalies (missed / duplicates / out-of-order) chart. */
+/** Renders cumulative error count chart. */
+function renderErrorsChart(timeSeries) {
+  const chart = getChart("errors-chart");
+  const opt = baseChartOption(true);
+  opt.legend = legendOption(["Errors"]);
+  opt.series = [
+    areaSeries("Errors", "#f97316", timeSeries.map((p) => [p.elapsedSeconds, Number(p.errors || 0)]))
+  ];
+  chart.setOption(opt, {notMerge: true});
+}
+
+/** Renders unresolved anomalies (missed / duplicates / out-of-order) chart. */
 function renderAnomaliesChart(timeSeries) {
   const chart = getChart("anomalies-chart");
   const opt = baseChartOption(true);
-  opt.legend = legendOption(["Errors", "Missed", "Duplicates", "Out-of-Order"]);
+  opt.legend = legendOption(["Missed", "Duplicates", "Out-of-Order"]);
   opt.series = [
-    areaSeries("Errors",       "#f97316", timeSeries.map((p) => [p.elapsedSeconds, Number(p.errors || 0)])),
     areaSeries("Missed",       "#f87171", timeSeries.map((p) => [p.elapsedSeconds, Number(p.missed || 0)])),
     areaSeries("Duplicates",   "#fbbf24", timeSeries.map((p) => [p.elapsedSeconds, Number(p.duplicates || 0)])),
     areaSeries("Out-of-Order", "#a78bfa", timeSeries.map((p) => [p.elapsedSeconds, Number(p.outOfOrders || 0)]))
@@ -926,6 +936,7 @@ async function loadProofDetails(proofId) {
     renderRateChart(timeSeries);
     renderThroughputChart(timeSeries);
     renderMessagesChart(timeSeries);
+    renderErrorsChart(timeSeries);
     renderAnomaliesChart(timeSeries);
     renderBacklogChart(timeSeries);
     renderPublishLatencyChart(timeSeries);
@@ -954,7 +965,7 @@ async function loadProofDetails(proofId) {
 
 /** Shows a minimal placeholder in each chart when there is not enough data yet. */
 function renderChartsEmpty() {
-  for (const id of ["rate-chart", "throughput-chart", "messages-chart", "anomalies-chart", "backlog-chart", "publish-latency-chart", "e2e-latency-chart"]) {
+  for (const id of ["rate-chart", "throughput-chart", "messages-chart", "errors-chart", "anomalies-chart", "backlog-chart", "publish-latency-chart", "e2e-latency-chart"]) {
     const chart = getChart(id);
     chart.setOption({
       backgroundColor: "transparent",
