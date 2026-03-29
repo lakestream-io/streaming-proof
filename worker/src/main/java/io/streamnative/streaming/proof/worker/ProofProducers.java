@@ -197,7 +197,9 @@ public class ProofProducers {
         return new ProofWorkerMetricsSnapshot(
                 sendAttempts,
                 acknowledgedMessages,
+                tasks.stream().mapToLong(ProofProducerTask::getAcknowledgedBytes).sum(),
                 publishErrors,
+                0L,
                 0L,
                 publishLatency.snapshot(),
                 null);

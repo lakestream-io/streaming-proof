@@ -41,6 +41,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * @param consumeRate Consumed messages per second
  * @param publishErrorRate Publish errors per second
  * @param verifyRate Verified messages per second
+ * @param publishBytesRate Estimated published bytes per second
+ * @param consumeBytesRate Estimated consumed bytes per second
  * @param publishLatency Publish latency summary
  * @param endToEndLatency End-to-end latency summary
  */
@@ -61,6 +63,8 @@ public record ProofPerformanceSummary(
         double consumeRate,
         double publishErrorRate,
         double verifyRate,
+        double publishBytesRate,
+        double consumeBytesRate,
         LatencySummary publishLatency,
         LatencySummary endToEndLatency) {
 }

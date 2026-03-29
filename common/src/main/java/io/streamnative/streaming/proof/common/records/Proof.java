@@ -18,6 +18,7 @@
  */
 package io.streamnative.streaming.proof.common.records;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.streamnative.streaming.proof.common.WebhookConfig;
 import java.util.List;
 import lombok.Builder;
@@ -55,6 +56,7 @@ import lombok.Data;
 @Builder
 @lombok.AllArgsConstructor
 @lombok.NoArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Proof {
 
     /** Unique identifier for the proof test */
@@ -153,6 +155,13 @@ public class Proof {
 
     /** Human-readable timestamp when the proof test started */
     private String startTime;
+
+    /**
+     * Optional report sampling interval in seconds.
+     * A value of 0 lets the coordinator derive a suitable interval automatically.
+     */
+    @Builder.Default
+    private int timeSeriesInterval = 0;
     
     /** Webhook configuration for notifications */
     private WebhookConfig webhookConfig;

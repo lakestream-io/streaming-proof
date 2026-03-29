@@ -217,8 +217,10 @@ public class Worker {
         return new ProofWorkerMetricsSnapshot(
                 producerMetrics == null ? 0L : producerMetrics.sendAttempts(),
                 producerMetrics == null ? 0L : producerMetrics.acknowledgedMessages(),
+                producerMetrics == null ? 0L : producerMetrics.acknowledgedBytes(),
                 producerMetrics == null ? 0L : producerMetrics.publishErrors(),
                 consumerMetrics == null ? 0L : consumerMetrics.receivedMessages(),
+                consumerMetrics == null ? 0L : consumerMetrics.receivedBytes(),
                 producerMetrics == null ? null : producerMetrics.publishLatency(),
                 consumerMetrics == null ? null : consumerMetrics.endToEndLatency());
     }

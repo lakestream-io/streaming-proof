@@ -84,6 +84,9 @@ public class Coordinator {
         } else {
             this.configs.workers().putAll(configs.workers());
             this.configs.drivers().putAll(configs.drivers());
+            if (this.configs.report() != null && configs.report() != null) {
+                this.configs.report().putAll(configs.report());
+            }
         }
     }
 
@@ -95,6 +98,9 @@ public class Coordinator {
     public void deleteConfigs(Configs configs) {
         configs.workers().forEach((k, v) -> this.configs.workers().remove(k));
         configs.drivers().forEach((k, v) -> this.configs.drivers().remove(k));
+        if (configs.report() != null && this.configs.report() != null) {
+            configs.report().forEach((k, v) -> this.configs.report().remove(k));
+        }
     }
 
     /**
@@ -104,6 +110,9 @@ public class Coordinator {
         if (this.configs != null) {
             this.configs.workers().clear();
             this.configs.drivers().clear();
+            if (this.configs.report() != null) {
+                this.configs.report().clear();
+            }
             log.info("All configurations have been cleared");
         }
     }
@@ -176,6 +185,19 @@ public class Coordinator {
      */
     public List<Proof> listProofs() {
         return List.copyOf(proofs.values().stream().map(ProofTask::getProof).toList());
+    }
+
+    public List<java.util.Map<String, Object>> listProofsWithStatus() {
+        return proofs.values().stream()
+                .map(task -> {
+                    java.util.Map<String, Object> map = Util.JSON_MAPPER.convertValue(
+                            task.getProof(),
+                            new com.fasterxml.jackson.core.type.TypeReference<java.util.Map<String, Object>>() { });
+                    ProofReport report = task.getReport();
+                    map.put("status", report.status());
+                    return map;
+                })
+                .toList();
     }
 
     /**

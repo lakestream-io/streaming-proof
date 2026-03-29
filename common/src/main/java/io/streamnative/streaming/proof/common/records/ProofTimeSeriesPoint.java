@@ -32,6 +32,15 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * @param publishLatencyP99 Current publish latency p99 in milliseconds
  * @param endToEndLatencyP95 Current end-to-end latency p95 in milliseconds
  * @param endToEndLatencyP99 Current end-to-end latency p99 in milliseconds
+ * @param publishBytesRate Current published bytes per second
+ * @param consumeBytesRate Current consumed bytes per second
+ * @param verifiedMessages Current verified message count
+ * @param publishedMessages Current published message count
+ * @param consumedMessages Current consumed message count
+ * @param errors Current error count
+ * @param missed Current missed message count
+ * @param duplicates Current duplicate message count
+ * @param outOfOrders Current out-of-order message count
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ProofTimeSeriesPoint(
@@ -43,5 +52,14 @@ public record ProofTimeSeriesPoint(
         double publishLatencyP95,
         double publishLatencyP99,
         double endToEndLatencyP95,
-        double endToEndLatencyP99) {
+        double endToEndLatencyP99,
+        double publishBytesRate,
+        double consumeBytesRate,
+        long verifiedMessages,
+        long publishedMessages,
+        long consumedMessages,
+        long errors,
+        long missed,
+        long duplicates,
+        long outOfOrders) {
 }

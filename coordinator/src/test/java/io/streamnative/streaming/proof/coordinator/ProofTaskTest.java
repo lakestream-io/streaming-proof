@@ -365,6 +365,45 @@ public class ProofTaskTest {
     }
 
     @Test
+    public void testFinalVerificationUsesDedicatedTimeoutSetting() throws Exception {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof proof = Proof.builder()
+                .id("test-proof")
+                .topic("test-topic")
+                .features(List.of("at_least_once", "ordering"))
+                .timeout(180)
+                .build();
+
+        ProofTask task = spy(new ProofTask(
+                proof,
+                new Configs(Map.of(), Map.of(), Map.of("finalVerificationTimeoutSeconds", 0)),
+                driver));
+
+        try {
+            ProducerCheckpoint producerCp = new ProducerCheckpoint();
+            producerCp.addPublished("key0", new LongSeq(10, MessageMetadata.empty()));
+
+            ConsumerCheckPoint consumerCp = new ConsumerCheckPoint();
+            ConsumerCheckPoint.SeqRange range = new ConsumerCheckPoint.SeqRange();
+            range.setStart(new LongSeq(0, MessageMetadata.empty()));
+            range.setEnd(new LongSeq(5, MessageMetadata.empty()));
+            TreeMap<String, ConsumerCheckPoint.SeqRange> rangeMap = new TreeMap<>();
+            rangeMap.put("t0", range);
+            consumerCp.addKey("key0", rangeMap);
+
+            doReturn(Pair.of(producerCp, consumerCp)).when(task).aggregateCheckpoints();
+
+            Method method = ProofTask.class.getDeclaredMethod("runFinalVerification");
+            method.setAccessible(true);
+            method.invoke(task);
+
+            verify(task, times(1)).aggregateCheckpoints();
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
     public void testCompleteProofAfterDurationSharedMode() throws Exception {
         ProofDriver driver = mock(ProofDriver.class);
         Proof proof = Proof.builder()

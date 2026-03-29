@@ -130,9 +130,11 @@ public class ProofConsumers {
 
     public ProofWorkerMetricsSnapshot metricsSnapshot() {
         long receivedMessages = 0L;
+        long receivedBytes = 0L;
         LatencyRecorder endToEndLatency = new LatencyRecorder();
         for (ProofConsumerTask task : tasks) {
             receivedMessages += task.getReceivedMessages().get();
+            receivedBytes += task.getReceivedBytes().get();
             LatencyMetricSnapshot latencySnapshot = task.getEndToEndLatencySnapshot();
             endToEndLatency.mergeFrom(latencySnapshot);
         }
@@ -140,7 +142,9 @@ public class ProofConsumers {
                 0L,
                 0L,
                 0L,
+                0L,
                 receivedMessages,
+                receivedBytes,
                 null,
                 endToEndLatency.snapshot());
     }

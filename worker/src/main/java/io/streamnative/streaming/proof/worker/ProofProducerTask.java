@@ -22,6 +22,7 @@ import io.streamnative.streaming.proof.common.LongSeq;
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofProducer;
 import io.streamnative.streaming.proof.common.records.LatencyMetricSnapshot;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -106,6 +107,9 @@ public class ProofProducerTask implements AutoCloseable {
     /** Total acknowledged sends */
     private final AtomicLong acknowledged = new AtomicLong(0);
 
+    /** Estimated logical bytes acknowledged by the producer */
+    private final AtomicLong acknowledgedBytes = new AtomicLong(0);
+
     /** Publish latency samples */
     private final LatencyRecorder publishLatency = new LatencyRecorder();
 
@@ -153,6 +157,7 @@ public class ProofProducerTask implements AutoCloseable {
                 }
             } else {
                 acknowledged.incrementAndGet();
+                acknowledgedBytes.addAndGet(estimateMessageBytes(key));
                 publishLatency.record((System.nanoTime() - startedAtNanos) / 1_000_000L);
                 synchronized (lastPublished) {
                     LongSeq newMsg = new LongSeq(seq, metadata);
@@ -188,6 +193,10 @@ public class ProofProducerTask implements AutoCloseable {
         return acknowledged.get();
     }
 
+    public long getAcknowledgedBytes() {
+        return acknowledgedBytes.get();
+    }
+
     public LatencyMetricSnapshot getPublishLatencySnapshot() {
         return publishLatency.snapshot();
     }
@@ -198,6 +207,10 @@ public class ProofProducerTask implements AutoCloseable {
 
     public synchronized Map<String, Integer> getErrors() {
         return  Collections.unmodifiableMap(errors);
+    }
+
+    private static int estimateMessageBytes(String key) {
+        return (key == null ? 0 : key.getBytes(StandardCharsets.UTF_8).length) + Long.BYTES;
     }
 
     /**

@@ -24,6 +24,7 @@ import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
 import io.streamnative.streaming.proof.common.records.LatencyMetricSnapshot;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -81,6 +82,9 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
     @Getter
     private final AtomicLong receivedMessages = new AtomicLong(0);
 
+    @Getter
+    private final AtomicLong receivedBytes = new AtomicLong(0);
+
     private final LatencyRecorder endToEndLatency = new LatencyRecorder();
 
     /**
@@ -96,6 +100,7 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
     @Override
     public synchronized void onMessage(String key, long value, MessageMetadata metadata) {
         receivedMessages.incrementAndGet();
+        receivedBytes.addAndGet(estimateMessageBytes(key));
         if (metadata != null && metadata.publishTimestampMillis() != null && metadata.publishTimestampMillis() > 0) {
             endToEndLatency.record(System.currentTimeMillis() - metadata.publishTimestampMillis());
         }
@@ -245,6 +250,10 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
             return null;
         }
         return writeDupsOrOutOrder.get(key).lastEntry().getValue();
+    }
+
+    private static int estimateMessageBytes(String key) {
+        return (key == null ? 0 : key.getBytes(StandardCharsets.UTF_8).length) + Long.BYTES;
     }
 
     /**

@@ -19,6 +19,7 @@
 package io.streamnative.streaming.proof.coordinator;
 
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
@@ -237,8 +238,11 @@ public class KafkaIntegrationTest {
                 .build();
         httpClient.createProof(proof).join();
         List<Proof> proofs = httpClient.listProofs().join();
-        assertEquals(proofs.size(), 1);
-        String proofId = proofs.getFirst().getId();
+        Proof createdProof = proofs.stream()
+                .filter(p -> proof.getName().equals(p.getName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Expected proof to exist in /proofs list"));
+        String proofId = createdProof.getId();
         try {
             // Wait for multiple checkpoint cycles to succeed
             Awaitility.await().atMost(1, TimeUnit.MINUTES).untilAsserted(() -> {
@@ -383,35 +387,41 @@ public class KafkaIntegrationTest {
                 .build();
         httpClient.createProof(proof).join();
         List<Proof> proofs = httpClient.listProofs().join();
-        assertEquals(proofs.size(), 1);
+        Proof createdProof = proofs.stream()
+                .filter(p -> proof.getName().equals(p.getName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Expected proof to exist in /proofs list"));
+        String proofId = createdProof.getId();
 
-        // Verify that the proof starts producing messages
-        Awaitility.await().atMost(4, TimeUnit.SECONDS).untilAsserted(() -> {
-            ProofDetails details = httpClient.getProof(proofs.getFirst().getId()).join();
-            assertTrue(details.summary().verified() >= 0);
-        });
+        try {
+            // Verify that the proof starts producing messages
+            Awaitility.await().atMost(4, TimeUnit.SECONDS).untilAsserted(() -> {
+                ProofDetails details = httpClient.getProof(proofId).join();
+                assertTrue(totalPublished(details) > 0);
+            });
 
-        // Wait for the duration to expire (proof should auto-stop)
-        Thread.sleep(6000); // Wait a bit longer than the duration
+            // Wait for the duration to expire (proof should auto-stop)
+            Thread.sleep(6000); // Wait a bit longer than the duration
 
-        // Verify that the proof is still in the list but has stopped producing
-        List<Proof> proofsAfterDuration = httpClient.listProofs().join();
-        assertEquals(proofsAfterDuration.size(), 1);
+            // Verify that the proof is still in the list after auto-stop
+            List<Proof> proofsAfterDuration = httpClient.listProofs().join();
+            assertTrue(proofsAfterDuration.stream().anyMatch(p -> proofId.equals(p.getId())));
 
-        // Get the current verification count
-        ProofDetails detailsAfterStop = httpClient.getProof(proofs.getFirst().getId()).join();
-        long verifiedCount = detailsAfterStop.summary().verified();
+            // Get the current published count
+            ProofDetails detailsAfterStop = httpClient.getProof(proofId).join();
+            long publishedCount = totalPublished(detailsAfterStop);
 
-        // Wait a bit more and verify that the verification count hasn't increased
-        // This confirms the proof task has stopped producing messages
-        Thread.sleep(2000);
-        ProofDetails detailsAfterWait = httpClient.getProof(proofs.getFirst().getId()).join();
-        assertEquals(detailsAfterWait.summary().verified(), verifiedCount);
-
-        // Clean up
-        httpClient.deleteProof(proofs.getFirst().getId()).join();
-        List<Proof> proofs3 = httpClient.listProofs().join();
-        assertEquals(proofs3.size(), 0);
+            // Wait a bit more and verify that the published count hasn't increased.
+            // Consumers may still catch up briefly after producers stop, so verified
+            // can still move, but published must remain stable.
+            Thread.sleep(2000);
+            ProofDetails detailsAfterWait = httpClient.getProof(proofId).join();
+            assertEquals(totalPublished(detailsAfterWait), publishedCount);
+        } finally {
+            httpClient.deleteProof(proofId).join();
+            List<Proof> proofsAfterDelete = httpClient.listProofs().join();
+            assertFalse(proofsAfterDelete.stream().anyMatch(p -> proofId.equals(p.getId())));
+        }
     }
 
     @Test
@@ -513,6 +523,12 @@ public class KafkaIntegrationTest {
                 .anyMatch(range -> range.getStart().seq() > 0);
         assertTrue(anyTrimmed,
                 "Expected at least one consumer range to start above seq 0 after watermark trimming");
+    }
+
+    private static long totalPublished(ProofDetails details) {
+        return details.checkpoints().latestProducer().getPublished().values().stream()
+                .mapToLong(seq -> seq.seq() + 1)
+                .sum();
     }
 
     private static int getFreePort() {

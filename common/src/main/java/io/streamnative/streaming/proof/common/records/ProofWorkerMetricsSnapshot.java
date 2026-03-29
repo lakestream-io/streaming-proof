@@ -25,8 +25,10 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *
  * @param sendAttempts Total producer send attempts
  * @param acknowledgedMessages Total acknowledged producer sends
+ * @param acknowledgedBytes Estimated total bytes acknowledged by producers
  * @param publishErrors Total producer errors
  * @param receivedMessages Total consumed messages
+ * @param receivedBytes Estimated total bytes observed by consumers
  * @param publishLatency Snapshot for producer publish latency
  * @param endToEndLatency Snapshot for end-to-end latency
  */
@@ -34,8 +36,10 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 public record ProofWorkerMetricsSnapshot(
         long sendAttempts,
         long acknowledgedMessages,
+        long acknowledgedBytes,
         long publishErrors,
         long receivedMessages,
+        long receivedBytes,
         LatencyMetricSnapshot publishLatency,
         LatencyMetricSnapshot endToEndLatency) {
 }

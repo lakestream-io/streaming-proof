@@ -23,210 +23,301 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Streaming Proof UI</title>
+  <title>Streaming Proof</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <div class="layout">
-    <aside class="sidebar">
-      <div class="sidebar-header">
-        <p class="eyebrow">Streaming Proof</p>
-        <h1>Proof Runs</h1>
-        <p class="sidebar-copy">Minimal dynamic UI prototype backed by the current coordinator APIs.</p>
+  <div class="app">
+
+    <nav class="topbar">
+      <div class="topbar-brand">
+        <button id="sidebar-toggle" class="sidebar-toggle" type="button" title="Toggle sidebar">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+        <div class="brand-mark">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+            <path d="M9 1.5C4.86 1.5 1.5 4.86 1.5 9S4.86 16.5 9 16.5 16.5 13.14 16.5 9 13.14 1.5 9 1.5Z" stroke="currentColor" stroke-width="1.2" fill="none" opacity="0.4"/>
+            <path d="M3 9 Q6 4.5 9 4.5 Q12 4.5 15 9 Q12 13.5 9 13.5 Q6 13.5 3 9Z" stroke="currentColor" stroke-width="1.4" fill="none"/>
+            <circle cx="9" cy="9" r="2" fill="currentColor"/>
+          </svg>
+        </div>
+        <span class="brand-name">Streaming Proof Test</span>
       </div>
-      <div class="sidebar-actions">
-        <button id="refresh-button" type="button">Refresh</button>
+      <div class="topbar-right">
+        <span id="last-updated" class="last-updated"></span>
+        <button id="theme-toggle" class="theme-toggle" type="button" title="Toggle light/dark theme">
+          <svg class="theme-icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          <svg class="theme-icon-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+        <button id="refresh-button" class="refresh-btn" type="button">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+            <path d="M3 3v5h5"/>
+            <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+            <path d="M16 16h5v5"/>
+          </svg>
+          Refresh
+        </button>
       </div>
-      <div id="proof-list" class="proof-list"></div>
-    </aside>
-    <main class="content">
-      <section class="hero">
-        <div class="hero-header">
-          <div>
-            <p class="eyebrow">Live Report</p>
-            <h2 id="hero-title">Select a proof run</h2>
-            <p id="hero-subtitle" class="hero-subtitle">Choose a run from the left to inspect the current report view from the coordinator.</p>
-          </div>
-          <div id="hero-status" class="status-badge">waiting</div>
-        </div>
-        <div class="hero-progress">
-          <div class="hero-progress-copy">
-            <span>Progress Through Planned Duration</span>
-            <span id="hero-progress-value">0s left</span>
-          </div>
-          <p id="hero-progress-detail" class="hero-progress-detail">Elapsed 0s · Remaining 0s · Total 0s</p>
-          <div class="progress-track">
-            <div id="hero-progress-fill" class="progress-fill"></div>
-          </div>
-        </div>
-      </section>
+    </nav>
 
-      <section id="empty-state" class="empty-state">
-        <div class="panel">
-          <h3>No proof selected</h3>
-          <p>The UI is connected to the live coordinator. Once you start a proof, it will appear in the sidebar.</p>
-        </div>
-      </section>
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="sidebar-label">Proof Runs</div>
+        <div id="proof-list" class="proof-list"></div>
+      </aside>
 
-      <section id="details-view" class="details-view hidden">
-        <div class="grid metrics-grid">
-          <article class="metric-card">
-            <p class="metric-label">Verified</p>
-            <p id="metric-verified" class="metric-value">0</p>
-          </article>
-          <article class="metric-card">
-            <p class="metric-label">Missed</p>
-            <p id="metric-missed" class="metric-value">0</p>
-          </article>
-          <article class="metric-card">
-            <p class="metric-label">Out Of Orders</p>
-            <p id="metric-out-of-orders" class="metric-value">0</p>
-          </article>
-          <article class="metric-card">
-            <p class="metric-label">Duplicates</p>
-            <p id="metric-duplicates" class="metric-value">0</p>
-          </article>
-          <article class="metric-card">
-            <p class="metric-label">Errors</p>
-            <p id="metric-errors" class="metric-value">0</p>
-          </article>
-          <article class="metric-card">
-            <p class="metric-label">Timeouts</p>
-            <p id="metric-timeouts" class="metric-value">0</p>
-          </article>
-        </div>
+      <main class="main">
 
-        <div class="grid metrics-grid performance-grid">
-          <article class="metric-card">
-            <p class="metric-label">Publish Rate</p>
-            <p id="perf-publish-rate" class="metric-value">0</p>
-            <p class="metric-meta">msg/s</p>
-          </article>
-          <article class="metric-card">
-            <p class="metric-label">Consume Rate</p>
-            <p id="perf-consume-rate" class="metric-value">0</p>
-            <p class="metric-meta">msg/s</p>
-          </article>
-          <article class="metric-card">
-            <p class="metric-label">Publish Error Rate</p>
-            <p id="perf-publish-error-rate" class="metric-value">0</p>
-            <p class="metric-meta">errors/s</p>
-          </article>
-          <article class="metric-card">
-            <p class="metric-label">Backlog</p>
-            <p id="perf-backlog" class="metric-value">0</p>
-            <p class="metric-meta">messages</p>
-          </article>
-          <article class="metric-card">
-            <p class="metric-label">Publish Latency P95</p>
-            <p id="perf-publish-latency-p95" class="metric-value">0</p>
-            <p class="metric-meta">ms</p>
-          </article>
-          <article class="metric-card">
-            <p class="metric-label">Publish Latency P99</p>
-            <p id="perf-publish-latency-p99" class="metric-value">0</p>
-            <p class="metric-meta">ms</p>
-          </article>
-          <article class="metric-card">
-            <p class="metric-label">End-to-End P95</p>
-            <p id="perf-e2e-latency-p95" class="metric-value">0</p>
-            <p class="metric-meta">ms</p>
-          </article>
-          <article class="metric-card">
-            <p class="metric-label">End-to-End P99</p>
-            <p id="perf-e2e-latency-p99" class="metric-value">0</p>
-            <p class="metric-meta">ms</p>
-          </article>
-        </div>
-
-        <div class="grid spotlight-grid">
-          <article class="panel">
-            <div class="panel-heading">
-              <h3>Flow Snapshot</h3>
-              <span class="panel-note">Throughput and backlog</span>
-            </div>
-            <div id="proof-flow" class="flow-strip"></div>
-          </article>
-          <article class="panel">
-            <div class="panel-heading">
-              <h3>Latency Overview</h3>
-              <span class="panel-note">Client-side percentiles</span>
-            </div>
-            <div class="grid latency-grid">
-              <div>
-                <p class="latency-title">Publish Latency</p>
-                <div id="publish-latency-ladder" class="latency-ladder"></div>
+        <section class="hero">
+          <div class="hero-top">
+            <div class="hero-left">
+              <div class="hero-kicker">Run Overview</div>
+              <div class="hero-title-row">
+                <h1 id="hero-title">Select a proof run</h1>
+                <div id="hero-status" class="status-badge">waiting</div>
               </div>
-              <div>
-                <p class="latency-title">End-to-End Latency</p>
-                <div id="e2e-latency-ladder" class="latency-ladder"></div>
+              <p id="hero-subtitle" class="hero-subtitle hidden"></p>
+              <div id="hero-meta" class="hero-meta"></div>
+            </div>
+          </div>
+          <div class="hero-progress-panel">
+            <div class="hero-progress-head">
+              <div class="hero-progress-copy">
+                <div class="hero-progress-label">Progress Through Planned Duration</div>
+                <div id="hero-progress-detail" class="progress-detail">—</div>
+              </div>
+              <span id="hero-progress-value" class="progress-pct-large">—</span>
+            </div>
+            <div class="progress-track-wide">
+              <div id="hero-progress-fill" class="progress-fill-wide" style="width:0%"></div>
+            </div>
+          </div>
+        </section>
+
+        <div id="empty-state" class="empty-state">
+          <svg class="empty-icon" width="56" height="56" viewBox="0 0 56 56" fill="none" aria-hidden="true">
+            <circle cx="28" cy="28" r="26" stroke="#1f2937" stroke-width="1.5"/>
+            <path d="M18 28h20M28 18v20" stroke="#374151" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <div class="empty-text">
+            <h2>No proof selected</h2>
+            <p>Start a proof run and select it from the sidebar to see live metrics and charts.</p>
+          </div>
+        </div>
+
+        <div id="details-view" class="hidden">
+
+          <div class="cfg-summary">
+            <div class="cfg-summary-head">
+              <div class="cfg-summary-copy">
+                <div class="cfg-kicker">Test Case</div>
+              </div>
+              <a id="proof-json-link" class="cfg-json-link" href="#" target="_blank">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>
+              </a>
+            </div>
+            <div class="cfg-desc" id="cfg-desc"></div>
+            <span id="cfg-topic" class="hidden"></span>
+            <span id="cfg-driver" class="hidden"></span>
+            <span id="cfg-partitions" class="hidden"></span>
+            <span id="cfg-producers" class="hidden"></span>
+            <span id="cfg-consumers" class="hidden"></span>
+            <span id="cfg-msg-rate" class="hidden"></span>
+            <span id="cfg-duration" class="hidden"></span>
+            <span id="cfg-checkpoint-interval" class="hidden"></span>
+            <span id="cfg-timeout" class="hidden"></span>
+            <span id="cfg-features" class="hidden"></span>
+          </div>
+
+          <div class="section-divider">
+            <span class="section-divider-label">Reliability</span>
+          </div>
+          <div class="kpi-row">
+            <div class="kpi-card kpi-primary">
+              <div class="kpi-label">Verified</div>
+              <div id="metric-verified" class="kpi-value">0</div>
+              <div class="kpi-hint">messages confirmed</div>
+            </div>
+            <div class="kpi-card" id="kpi-card-missed">
+              <div class="kpi-label">Missed</div>
+              <div id="metric-missed" class="kpi-value">0</div>
+              <div class="kpi-hint">not received</div>
+            </div>
+            <div class="kpi-card" id="kpi-card-ooo">
+              <div class="kpi-label">Out-of-Order</div>
+              <div id="metric-out-of-orders" class="kpi-value">0</div>
+              <div class="kpi-hint">sequence violations</div>
+            </div>
+            <div class="kpi-card" id="kpi-card-dups">
+              <div class="kpi-label">Duplicates</div>
+              <div id="metric-duplicates" class="kpi-value">0</div>
+              <div class="kpi-hint">unexpected redeliveries</div>
+            </div>
+            <div class="kpi-card" id="kpi-card-errors">
+              <div class="kpi-label">Errors</div>
+              <div id="metric-errors" class="kpi-value">0</div>
+              <div class="kpi-hint">publish or consume</div>
+            </div>
+            <div class="kpi-card" id="kpi-card-timeouts">
+              <div class="kpi-label">Timeouts</div>
+              <div id="metric-timeouts" class="kpi-value">0</div>
+              <div class="kpi-hint">verification timed out</div>
+            </div>
+          </div>
+
+          <div class="section-divider">
+            <span class="section-divider-label">Performance</span>
+          </div>
+          <div class="perf-row">
+            <div class="perf-card">
+              <div class="perf-label">Publish Rate</div>
+              <div class="perf-num-row">
+                <span id="perf-publish-rate" class="perf-num">0</span>
+                <span class="perf-unit">msg/s</span>
               </div>
             </div>
-          </article>
-        </div>
-
-        <div class="grid charts-grid">
-          <article class="panel chart-panel">
-            <div class="panel-heading">
-              <h3>Throughput Over Time</h3>
-              <span class="panel-note">publish vs consume</span>
+            <div class="perf-card">
+              <div class="perf-label">Consume Rate</div>
+              <div class="perf-num-row">
+                <span id="perf-consume-rate" class="perf-num">0</span>
+                <span class="perf-unit">msg/s</span>
+              </div>
             </div>
-            <div id="throughput-chart" class="chart-surface"></div>
-          </article>
-          <article class="panel chart-panel">
-            <div class="panel-heading">
-              <h3>Backlog Over Time</h3>
-              <span class="panel-note">messages waiting to catch up</span>
+            <div class="perf-card">
+              <div class="perf-label">Pub Throughput</div>
+              <div class="perf-num-row">
+                <span id="perf-publish-throughput" class="perf-num">0</span>
+                <span class="perf-unit">/s</span>
+              </div>
             </div>
-            <div id="backlog-chart" class="chart-surface"></div>
-          </article>
-          <article class="panel chart-panel">
-            <div class="panel-heading">
-              <h3>Publish Latency Over Time</h3>
-              <span class="panel-note">p95 and p99</span>
+            <div class="perf-card">
+              <div class="perf-label">Con Throughput</div>
+              <div class="perf-num-row">
+                <span id="perf-consume-throughput" class="perf-num">0</span>
+                <span class="perf-unit">/s</span>
+              </div>
             </div>
-            <div id="publish-latency-chart" class="chart-surface"></div>
-          </article>
-          <article class="panel chart-panel">
-            <div class="panel-heading">
-              <h3>End-to-End Latency Over Time</h3>
-              <span class="panel-note">p95 and p99</span>
+            <div class="perf-card">
+              <div class="perf-label">Failed Publishes</div>
+              <div class="perf-num-row">
+                <span id="perf-publish-error-rate" class="perf-num">0</span>
+                <span class="perf-unit">total</span>
+              </div>
             </div>
-            <div id="e2e-latency-chart" class="chart-surface"></div>
-          </article>
-        </div>
-
-        <div class="grid details-grid">
-          <article class="panel">
-            <div class="panel-heading">
-              <h3>Cluster Targets</h3>
-              <span class="panel-note">Resources and pulsar config</span>
+            <div class="perf-card">
+              <div class="perf-label">Pub Latency P95</div>
+              <div class="perf-num-row">
+                <span id="perf-publish-latency-p95" class="perf-num">0</span>
+                <span class="perf-unit">ms</span>
+              </div>
             </div>
-            <div id="cluster-targets" class="cluster-targets"></div>
-          </article>
-          <article class="panel">
-            <h3>Proof Configuration</h3>
-            <dl id="proof-config" class="description-list"></dl>
-          </article>
-          <article class="panel">
-            <h3>Checkpoint Snapshot</h3>
-            <dl id="proof-checkpoints" class="description-list"></dl>
-          </article>
-        </div>
-
-        <article class="panel">
-          <h3>Run Totals</h3>
-          <dl id="proof-performance" class="description-list"></dl>
-        </article>
-
-        <article class="panel">
-          <div class="panel-heading">
-            <h3>Proof Report API</h3>
-            <a id="proof-json-link" href="#" target="_blank" rel="noreferrer">Open report API</a>
+            <div class="perf-card">
+              <div class="perf-label">Pub Latency P99</div>
+              <div class="perf-num-row">
+                <span id="perf-publish-latency-p99" class="perf-num">0</span>
+                <span class="perf-unit">ms</span>
+              </div>
+            </div>
+            <div class="perf-card">
+              <div class="perf-label">E2E Latency P95</div>
+              <div class="perf-num-row">
+                <span id="perf-e2e-latency-p95" class="perf-num">0</span>
+                <span class="perf-unit">ms</span>
+              </div>
+            </div>
+            <div class="perf-card">
+              <div class="perf-label">E2E Latency P99</div>
+              <div class="perf-num-row">
+                <span id="perf-e2e-latency-p99" class="perf-num">0</span>
+                <span class="perf-unit">ms</span>
+              </div>
+            </div>
+            <div class="perf-card">
+              <div class="perf-label">Backlog</div>
+              <div class="perf-num-row">
+                <span id="perf-backlog" class="perf-num">0</span>
+                <span class="perf-unit">msgs</span>
+              </div>
+            </div>
           </div>
-        </article>
-      </section>
-    </main>
+
+          <div class="section-divider">
+            <span class="section-divider-label">Time Series</span>
+          </div>
+          <div class="charts-grid">
+            <div class="chart-card">
+              <div class="chart-head">
+                <h3 class="chart-title">Messages</h3>
+                <span class="chart-sub">published / consumed / verified over time</span>
+              </div>
+              <div id="messages-chart" class="chart-body"></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-head">
+                <h3 class="chart-title">Anomalies</h3>
+                <span class="chart-sub">errors / missed / duplicates / out-of-order</span>
+              </div>
+              <div id="anomalies-chart" class="chart-body"></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-head">
+                <h3 class="chart-title">Rate</h3>
+                <span class="chart-sub">publish vs consume (msg/s)</span>
+              </div>
+              <div id="rate-chart" class="chart-body"></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-head">
+                <h3 class="chart-title">Throughput</h3>
+                <span class="chart-sub">publish vs consume (bytes/s)</span>
+              </div>
+              <div id="throughput-chart" class="chart-body"></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-head">
+                <h3 class="chart-title">Publish Latency</h3>
+                <span class="chart-sub">P95 and P99 (ms)</span>
+              </div>
+              <div id="publish-latency-chart" class="chart-body"></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-head">
+                <h3 class="chart-title">End-to-End Latency</h3>
+                <span class="chart-sub">P95 and P99 (ms)</span>
+              </div>
+              <div id="e2e-latency-chart" class="chart-body"></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-head">
+                <h3 class="chart-title">Backlog</h3>
+                <span class="chart-sub">unprocessed messages</span>
+              </div>
+              <div id="backlog-chart" class="chart-body"></div>
+            </div>
+          </div>
+
+          <div class="cluster-block">
+            <div class="info-card">
+              <div class="info-card-head">
+                <span class="info-card-title">Cluster Targets</span>
+                <span id="cluster-target-count" class="info-badge">0</span>
+              </div>
+              <div id="cluster-targets" class="cluster-targets-list"></div>
+            </div>
+          </div>
+
+        </div>
+      </main>
+    </div>
   </div>
   <script src="./app.js"></script>
 </body>

@@ -41,7 +41,11 @@ import java.util.Map;
  * Map<String, Driver> drivers = Map.of(
  *     "ursa", new Driver("kafka", kafkaConfigs)
  * );
- * Configs configs = new Configs(workers, drivers);
+ * Map<String, Object> report = Map.of(
+ *     "maxTimeSeriesPoints", 240,
+ *     "latencyUnit", "ms"
+ * );
+ * Configs configs = new Configs(workers, drivers, report);
  * }</pre>
  *
  * @param workers A map of worker configurations where the key is the worker identifier
@@ -51,9 +55,62 @@ import java.util.Map;
  *               (e.g., "ursa") and the value is a {@link Driver} instance containing
  *               the driver type and its specific configurations. The driver provides the
  *               interface to interact with the underlying messaging system.
+ * @param report Optional report-related settings such as time-series sampling limits
+ *               and display preferences.
  *
  * @see Driver
  * @see ProofDriver
  */
-public record Configs(Map<String, String> workers, Map<String, Driver> drivers) {
+public record Configs(Map<String, String> workers, Map<String, Driver> drivers, Map<String, Object> report) {
+
+    public Configs(Map<String, String> workers, Map<String, Driver> drivers) {
+        this(workers, drivers, null);
+    }
+
+    public int reportIntSetting(String key, int defaultValue) {
+        if (report == null) {
+            return defaultValue;
+        }
+
+        Object value = report.get(key);
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String text) {
+            try {
+                return Integer.parseInt(text);
+            } catch (NumberFormatException ignored) {
+                return defaultValue;
+            }
+        }
+        return defaultValue;
+    }
+
+    public String reportStringSetting(String key, String defaultValue) {
+        if (report == null) {
+            return defaultValue;
+        }
+
+        Object value = report.get(key);
+        return value == null ? defaultValue : String.valueOf(value);
+    }
+
+    public boolean reportBooleanSetting(String key, boolean defaultValue) {
+        if (report == null) {
+            return defaultValue;
+        }
+
+        Object value = report.get(key);
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        if (value instanceof String text) {
+            return Boolean.parseBoolean(text);
+        }
+        return defaultValue;
+    }
+
+    public int reportSetting(String key, int defaultValue) {
+        return reportIntSetting(key, defaultValue);
+    }
 }
