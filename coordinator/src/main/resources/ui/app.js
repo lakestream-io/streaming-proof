@@ -26,6 +26,7 @@ const heroTitleEl        = document.getElementById("hero-title");
 const heroSubtitleEl     = document.getElementById("hero-subtitle");
 const heroStatusEl       = document.getElementById("hero-status");
 const heroMetaEl         = document.getElementById("hero-meta");
+const stopProofButton    = document.getElementById("stop-proof-button");
 const heroProgressValueEl  = document.getElementById("hero-progress-value");
 const heroProgressDetailEl = document.getElementById("hero-progress-detail");
 const heroProgressFillEl   = document.getElementById("hero-progress-fill");
@@ -76,6 +77,7 @@ const clusterTargetsEl      = document.getElementById("cluster-targets");
 let proofs          = [];
 let selectedProofId = new URLSearchParams(window.location.search).get("proofId");
 let autoRefreshTimer = null;
+let stopRequestProofId = null;
 const chartInstances = {};
 
 // ── Theme toggle ─────────────────────────────────────────────────
@@ -776,6 +778,7 @@ function showEmptyState(title, subtitle) {
   heroProgressValueEl.textContent = "—";
   heroProgressDetailEl.innerHTML = "—";
   heroProgressFillEl.style.width = "0%";
+  updateStopButton(null, "unknown");
   emptyStateEl.classList.remove("hidden");
   detailsViewEl.classList.add("hidden");
   scheduleAutoRefresh(false);
@@ -831,6 +834,7 @@ async function loadProofDetails(proofId) {
   const clusterTargets     = Array.isArray(data.clusterTargets) ? data.clusterTargets : [];
 
   syncProofInList(proof, resultStatus);
+  updateStopButton(proofId, resultStatus);
 
   const elapsedSeconds          = Number(performanceSummary.elapsedSeconds || 0);
   const plannedDurationSeconds  = Number(performanceSummary.plannedDurationSeconds || proof.duration || 0);
@@ -945,7 +949,7 @@ async function loadProofDetails(proofId) {
   lastUpdatedEl.textContent = `Updated ${new Date().toLocaleTimeString()}`;
 
   // Auto-refresh when running
-  scheduleAutoRefresh(resultStatus === "running");
+  scheduleAutoRefresh(resultStatus === "running" || resultStatus === "stopping");
 }
 
 /** Shows a minimal placeholder in each chart when there is not enough data yet. */
@@ -968,6 +972,71 @@ function renderChartsEmpty() {
       series: []
     }, {notMerge: true});
   }
+}
+
+function updateStopButton(proofId, status) {
+  if (!stopProofButton) {
+    return;
+  }
+
+  if (!proofId || status !== "running") {
+    stopProofButton.classList.add("hidden");
+    stopProofButton.disabled = false;
+    stopProofButton.innerHTML = `
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+      </svg>
+      Stop`;
+    if (stopRequestProofId === proofId) {
+      stopRequestProofId = null;
+    }
+    return;
+  }
+
+  stopProofButton.classList.remove("hidden");
+  const isStopping = stopRequestProofId === proofId;
+  stopProofButton.disabled = isStopping;
+  stopProofButton.innerHTML = `
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+      </svg>
+      ${isStopping ? "Stopping..." : "Stop"}`;
+}
+
+async function stopSelectedProof() {
+  if (!selectedProofId) {
+    return;
+  }
+
+  const proof = proofs.find((item) => item.id === selectedProofId);
+  const proofName = proof?.name || selectedProofId;
+  if (!window.confirm(`Stop proof "${proofName}"?`)) {
+    return;
+  }
+
+  stopRequestProofId = selectedProofId;
+  heroStatusEl.textContent = "stopping";
+  heroStatusEl.className = "status-badge stopping";
+  heroSubtitleEl.textContent = "Stop requested. Final verification is still in progress.";
+  updateStopButton(selectedProofId, "stopping");
+  scheduleAutoRefresh(true);
+  setTimeout(() => {
+    void refresh();
+  }, 150);
+
+  fetch(`/proofs/${selectedProofId}/stop`, {method: "PUT"})
+    .then((response) => {
+    if (!response.ok) {
+      throw new Error(`Failed to stop proof: ${response.status}`);
+    }
+    return response;
+  })
+    .catch((error) => {
+    console.error(error);
+    stopRequestProofId = null;
+    updateStopButton(selectedProofId, "running");
+    window.alert(`Failed to stop proof: ${error.message}`);
+  });
 }
 
 // ── Refresh ───────────────────────────────────────────────────────
@@ -996,5 +1065,11 @@ async function refresh() {
 refreshButton.addEventListener("click", () => {
   void refresh();
 });
+
+if (stopProofButton) {
+  stopProofButton.addEventListener("click", () => {
+    void stopSelectedProof();
+  });
+}
 
 void refresh();

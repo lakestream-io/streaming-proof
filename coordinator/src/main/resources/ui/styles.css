@@ -371,6 +371,11 @@ svg {
   animation: pulse 2s ease-in-out infinite;
 }
 
+.proof-item.status-stopping .status-indicator {
+  background: var(--warning);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
@@ -463,6 +468,13 @@ svg {
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--text);
+}
+
+.hero-title-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
 .hero-subtitle {
@@ -630,8 +642,15 @@ svg {
   color: var(--success);
 }
 
+.status-badge.stopping {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
 .status-badge.running::before,
-.status-badge.passed::before {
+.status-badge.passed::before,
+.status-badge.stopping::before {
   content: "";
   width: 6px;
   height: 6px;
@@ -649,6 +668,40 @@ svg {
   border-color: var(--border-strong);
   background: var(--surface-soft);
   color: var(--muted);
+}
+
+.hero-stop-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--danger);
+  border-radius: 999px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, opacity 160ms ease, transform 160ms ease;
+}
+
+.hero-stop-button:hover:not(:disabled) {
+  background: var(--danger);
+  color: var(--bg);
+}
+
+.hero-stop-button:active:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 85%, black);
+}
+
+.hero-stop-button:disabled {
+  opacity: 0.55;
+  cursor: progress;
+  transform: none;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1251,6 +1304,16 @@ svg {
 
   .hero-title-row h1 {
     font-size: 20px;
+  }
+
+  .hero-title-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .hero-title-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .cfg-compact-row {

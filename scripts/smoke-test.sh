@@ -31,12 +31,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 COMPOSE_DIR="$PROJECT_ROOT/deploy/docker-compose/pulsar"
 COMPOSE_FILE="$COMPOSE_DIR/docker-compose-develop.yml"
+PROJECT_NAME="${COMPOSE_PROJECT_NAME:-$(basename "$COMPOSE_DIR")-streaming-proof-test}"
 COORDINATOR_URL="http://localhost:8080"
 
 # Proof parameters
 PROOF_DRIVER="serverless"
 PROOF_TOPIC="persistent://public/default/smoke-test"
-PROOF_DURATION=30
+PROOF_DURATION=120
 PROOF_MSG_RATE=100
 PROOF_CHECKPOINT_INTERVAL=3
 PROOF_TIMEOUT=60
@@ -54,7 +55,7 @@ fail()  { echo -e "${RED}[FAIL]${NC}  $*"; exit 1; }
 
 cleanup() {
   info "Tearing down Docker Compose stack..."
-  docker compose -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
+  docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
   ok "Stack removed."
 }
 
@@ -95,8 +96,8 @@ fi
 
 # ── Step 2: Start environment ─────────────────────────────────────
 info "Starting Docker Compose stack..."
-docker compose -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
-docker compose -f "$COMPOSE_FILE" up -d 2>/dev/null
+docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
+docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d 2>/dev/null
 ok "Stack started. Waiting for coordinator to be ready..."
 
 # Wait for coordinator

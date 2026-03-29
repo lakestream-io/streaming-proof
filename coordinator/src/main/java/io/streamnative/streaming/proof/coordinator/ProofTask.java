@@ -151,6 +151,7 @@ public class ProofTask {
     private boolean failed = false;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean stopping = new AtomicBoolean(false);
+    private final AtomicBoolean manuallyStopped = new AtomicBoolean(false);
     private final AtomicBoolean completionHandled = new AtomicBoolean(false);
     private final List<ProofTimeSeriesPoint> timeSeries = new ArrayList<>();
     private volatile ProofPerformanceSummary latestPerformanceSummary;
@@ -422,6 +423,11 @@ public class ProofTask {
                 proof.getId(), proof.getDuration());
         recordTimeSeriesPoint();
         sendCompletionNotification(getSummary());
+        stop();
+    }
+
+    public void requestStop() {
+        manuallyStopped.set(true);
         stop();
     }
 
@@ -803,7 +809,10 @@ public class ProofTask {
 
     private String determineResultStatus(ProofSummary summary, ProofPerformanceSummary performanceSummary) {
         if (running.get()) {
-            return "running";
+            return stopping.get() ? "stopping" : "running";
+        }
+        if (manuallyStopped.get()) {
+            return "stopped";
         }
         if (summary.missed() > 0 || summary.outOfOrders() > 0) {
             return "failed";
@@ -814,7 +823,13 @@ public class ProofTask {
     private String determineResultReason(
             ProofSummary summary, ProofPerformanceSummary performanceSummary, String resultStatus) {
         if (running.get()) {
+            if (stopping.get()) {
+                return "Stop requested. Final verification is still in progress.";
+            }
             return "Verification is still in progress.";
+        }
+        if (manuallyStopped.get()) {
+            return "The run was stopped manually.";
         }
         if (summary.outOfOrders() > 0) {
             return "Out-of-order messages were detected.";

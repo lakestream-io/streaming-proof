@@ -404,6 +404,30 @@ public class ProofTaskTest {
     }
 
     @Test
+    public void testManualStopReportsStoppedStatus() throws Exception {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof proof = Proof.builder()
+                .id("test-proof")
+                .topic("test-topic")
+                .features(List.of("at_least_once", "ordering"))
+                .timeout(30)
+                .build();
+
+        ProofTask task = new ProofTask(proof, new Configs(Map.of(), Map.of()), driver);
+
+        try {
+            getRunningFlag(task).set(true);
+
+            task.requestStop();
+
+            assertEquals(task.getReport().status(), "stopped");
+            assertEquals(task.getReport().resultReason(), "The run was stopped manually.");
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
     public void testCompleteProofAfterDurationSharedMode() throws Exception {
         ProofDriver driver = mock(ProofDriver.class);
         Proof proof = Proof.builder()

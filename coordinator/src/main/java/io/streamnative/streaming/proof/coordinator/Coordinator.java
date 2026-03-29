@@ -157,7 +157,7 @@ public class Coordinator {
      */
     public void stopProof(String proofID) {
         ProofTask task = proofs.get(proofID);
-        task.stop();
+        task.requestStop();
     }
 
     /**

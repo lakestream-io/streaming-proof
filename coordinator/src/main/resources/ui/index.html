@@ -83,7 +83,15 @@
               <div class="hero-kicker">Run Overview</div>
               <div class="hero-title-row">
                 <h1 id="hero-title">Select a proof run</h1>
-                <div id="hero-status" class="status-badge">waiting</div>
+                <div class="hero-title-actions">
+                  <div id="hero-status" class="status-badge">waiting</div>
+                  <button id="stop-proof-button" class="hero-stop-button hidden" type="button">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+                    </svg>
+                    Stop
+                  </button>
+                </div>
               </div>
               <p id="hero-subtitle" class="hero-subtitle hidden"></p>
               <div id="hero-meta" class="hero-meta"></div>
