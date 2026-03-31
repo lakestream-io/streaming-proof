@@ -156,6 +156,7 @@ public class ProofTask {
     private final List<ProofTimeSeriesPoint> timeSeries = new ArrayList<>();
     private volatile ProofPerformanceSummary latestPerformanceSummary;
     private volatile List<ProofClusterTarget> clusterTargetsSnapshot;
+    private volatile String startFailureReason;
 
     public boolean isRunning() {
         return running.get();
@@ -194,21 +195,63 @@ public class ProofTask {
      */
     public void start() {
         running.set(true);
-        // Create output topic (consumers read from this)
-        proofDriver.createTopic(proof.getTopic(), proof.getPartitions());
-        
-        // For exactly-once verification, also create input topic for transactional processing
-        if (proof.getFeatures().contains("exactly_once")) {
-            proofDriver.createTopic(proof.getTopic() + "_transactional", proof.getPartitions());
+        startFailureReason = null;
+        try {
+            // Create output topic (consumers read from this)
+            proofDriver.createTopic(proof.getTopic(), proof.getPartitions());
+
+            // For exactly-once verification, also create input topic for transactional processing
+            if (proof.getFeatures().contains("exactly_once")) {
+                proofDriver.createTopic(proof.getTopic() + "_transactional", proof.getPartitions());
+            }
+
+            startConsumers();
+            startProducers();
+            String formattedTimestamp = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+                    .format(LocalDateTime.now());
+            proof.setStartTime(formattedTimestamp);
+            scheduleCheckpoint();
+            log.info("Started the proof {}", proof);
+        } catch (Exception e) {
+            handleStartFailure(e);
+            throw e;
         }
-        
-        startConsumers();
-        startProducers();
-        String formattedTimestamp = DateTimeFormatter.ISO_LOCAL_DATE_TIME
-                .format(LocalDateTime.now());
-        proof.setStartTime(formattedTimestamp);
-        scheduleCheckpoint();
-        log.info("Started the proof {}", proof);
+    }
+
+    private void handleStartFailure(Exception error) {
+        startFailureReason = rootCauseMessage(error);
+        freezeClusterTargetsSnapshot();
+        cleanupPartiallyStartedWorkers();
+        latestPerformanceSummary = buildPerformanceSummary(getSummary());
+        running.set(false);
+        stopping.set(false);
+        log.warn("Proof {} failed to start: {}", proof.getId(), startFailureReason, error);
+    }
+
+    private void cleanupPartiallyStartedWorkers() {
+        clients.forEach(client -> {
+            try {
+                client.stopProducers(proof.getId()).join();
+            } catch (Exception e) {
+                log.debug("Ignoring producer cleanup failure for proof {}", proof.getId(), e);
+            }
+            try {
+                client.stopAndRemoveConsumers(proof.getId()).join();
+            } catch (Exception e) {
+                log.debug("Ignoring consumer cleanup failure for proof {}", proof.getId(), e);
+            }
+        });
+    }
+
+    private static String rootCauseMessage(Throwable error) {
+        Throwable current = error;
+        while (current.getCause() != null && current.getCause() != current) {
+            current = current.getCause();
+        }
+        if (current.getMessage() != null && !current.getMessage().isBlank()) {
+            return current.getMessage();
+        }
+        return current.getClass().getSimpleName();
     }
 
     /**
@@ -808,6 +851,9 @@ public class ProofTask {
     }
 
     private String determineResultStatus(ProofSummary summary, ProofPerformanceSummary performanceSummary) {
+        if (startFailureReason != null) {
+            return "failed";
+        }
         if (running.get()) {
             return stopping.get() ? "stopping" : "running";
         }
@@ -822,6 +868,9 @@ public class ProofTask {
 
     private String determineResultReason(
             ProofSummary summary, ProofPerformanceSummary performanceSummary, String resultStatus) {
+        if (startFailureReason != null) {
+            return "The run failed to start: " + startFailureReason;
+        }
         if (running.get()) {
             if (stopping.get()) {
                 return "Stop requested. Final verification is still in progress.";

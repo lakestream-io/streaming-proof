@@ -30,6 +30,7 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.fail;
 
 import io.streamnative.streaming.proof.common.LongSeq;
 import io.streamnative.streaming.proof.common.MessageMetadata;
@@ -422,6 +423,36 @@ public class ProofTaskTest {
 
             assertEquals(task.getReport().status(), "stopped");
             assertEquals(task.getReport().resultReason(), "The run was stopped manually.");
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testStartFailureMarksProofAsFailedInsteadOfRunning() {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof proof = Proof.builder()
+                .id("test-proof")
+                .topic("test-topic")
+                .features(List.of("at_least_once", "ordering"))
+                .build();
+
+        RuntimeException startFailure = new RuntimeException("producer startup failed");
+        doThrow(startFailure).when(driver).createTopic("test-topic", 10);
+
+        ProofTask task = new ProofTask(proof, new Configs(Map.of(), Map.of()), driver);
+
+        try {
+            try {
+                task.start();
+                fail("Expected start to fail");
+            } catch (RuntimeException e) {
+                assertEquals(e, startFailure);
+            }
+
+            assertFalse(task.isRunning());
+            assertEquals(task.getReport().status(), "failed");
+            assertEquals(task.getReport().resultReason(), "The run failed to start: producer startup failed");
         } finally {
             task.getExecutor().shutdownNow();
         }
