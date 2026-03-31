@@ -50,7 +50,7 @@ jobs:
               exit 0
             }
 
-            completed=$(echo "$proofs" | jq -c '[.[] | select(.status == "passed" or .status == "failed" or .status == "stopped")]')
+            completed=$(echo "$proofs" | jq -c '[.[] | select(.status == "passed" or .status == "failed")]')
             count=$(echo "$completed" | jq length)
             echo "Found ${count} completed proof(s)"
 
