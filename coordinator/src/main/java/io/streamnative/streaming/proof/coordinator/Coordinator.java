@@ -25,6 +25,9 @@ import io.streamnative.streaming.proof.common.records.Proof;
 import io.streamnative.streaming.proof.common.records.ProofDetails;
 import io.streamnative.streaming.proof.common.records.ProofReport;
 import io.streamnative.streaming.proof.worker.DriverCache;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -62,6 +65,10 @@ import org.apache.commons.lang3.RandomStringUtils;
 @Slf4j
 @Getter
 public class Coordinator {
+
+    private static final Comparator<Proof> PROOF_START_TIME_DESC_COMPARATOR = Comparator
+            .comparing(Coordinator::parseStartTime, Comparator.nullsLast(Comparator.reverseOrder()))
+            .thenComparing(Proof::getId, Comparator.nullsLast(Comparator.naturalOrder()));
 
     /** System-wide configuration for workers and drivers */
     private Configs configs;
@@ -184,11 +191,17 @@ public class Coordinator {
      *         registered in the system
      */
     public List<Proof> listProofs() {
-        return List.copyOf(proofs.values().stream().map(ProofTask::getProof).toList());
+        return List.copyOf(proofs.values().stream()
+                .map(ProofTask::getProof)
+                .sorted(PROOF_START_TIME_DESC_COMPARATOR)
+                .toList());
     }
 
     public List<java.util.Map<String, Object>> listProofsWithStatus() {
         return proofs.values().stream()
+                .sorted(Comparator.comparing(
+                        ProofTask::getProof,
+                        PROOF_START_TIME_DESC_COMPARATOR))
                 .map(task -> {
                     java.util.Map<String, Object> map = Util.JSON_MAPPER.convertValue(
                             task.getProof(),
@@ -198,6 +211,18 @@ public class Coordinator {
                     return map;
                 })
                 .toList();
+    }
+
+    private static LocalDateTime parseStartTime(Proof proof) {
+        String startTime = proof.getStartTime();
+        if (startTime == null || startTime.isBlank()) {
+            return null;
+        }
+        try {
+            return LocalDateTime.parse(startTime);
+        } catch (DateTimeParseException e) {
+            return null;
+        }
     }
 
     /**
