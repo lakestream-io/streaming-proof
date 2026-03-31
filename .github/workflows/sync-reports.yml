@@ -1,0 +1,131 @@
+name: Sync Proof Reports
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # every hour
+  workflow_dispatch:
+    inputs:
+      proof_id:
+        description: 'Sync a specific proof ID (leave empty to sync all completed proofs)'
+        required: false
+        default: ''
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout report-site branch
+        uses: actions/checkout@v4
+        with:
+          ref: report-site
+          fetch-depth: 1
+
+      - name: Sync reports from coordinator
+        env:
+          COORDINATOR_URL: http://k8s-streamin-streamin-981256241b-7365a0645776e9ad.elb.us-east-1.amazonaws.com:8080
+        run: |
+          set -euo pipefail
+
+          PROOF_ID="${{ github.event.inputs.proof_id }}"
+
+          if [ -n "$PROOF_ID" ]; then
+            # Sync a specific proof by ID
+            echo "Syncing specific proof: ${PROOF_ID}"
+            report=$(curl -sf "${COORDINATOR_URL}/proofs/${PROOF_ID}/report") || {
+              echo "::error::Failed to fetch report for ${PROOF_ID}"
+              exit 1
+            }
+            # Extract date from startTime for directory grouping
+            date_dir=$(echo "$report" | jq -r '.proof.startTime // empty' | cut -dT -f1)
+            if [ -z "$date_dir" ]; then
+              date_dir=$(date -u +%Y-%m-%d)
+            fi
+            mkdir -p "reports/${date_dir}"
+            echo "$report" | jq '.' > "reports/${date_dir}/${PROOF_ID}.json"
+            echo "Saved reports/${date_dir}/${PROOF_ID}.json"
+          else
+            # Sync all completed proofs
+            proofs=$(curl -sf "${COORDINATOR_URL}/proofs") || {
+              echo "::warning::Failed to reach coordinator at ${COORDINATOR_URL}"
+              exit 0
+            }
+
+            completed=$(echo "$proofs" | jq -c '[.[] | select(.status == "passed" or .status == "failed" or .status == "stopped")]')
+            count=$(echo "$completed" | jq length)
+            echo "Found ${count} completed proof(s)"
+
+            if [ "$count" -eq 0 ]; then
+              echo "No completed proofs to sync"
+              exit 0
+            fi
+
+            # Load existing IDs from all report files
+            existing_ids=$(find reports -name '*.json' ! -name 'index.json' ! -name '*.tmp' -exec basename {} .json \; 2>/dev/null || true)
+
+            # Download reports for new proofs
+            echo "$completed" | jq -c '.[]' | while read -r proof; do
+              id=$(echo "$proof" | jq -r '.id')
+
+              if echo "$existing_ids" | grep -qx "$id"; then
+                echo "Skipping ${id} (already synced)"
+                continue
+              fi
+
+              echo "Syncing report for ${id}..."
+              report=$(curl -sf "${COORDINATOR_URL}/proofs/${id}/report") || {
+                echo "::warning::Failed to fetch report for ${id}"
+                continue
+              }
+
+              date_dir=$(echo "$report" | jq -r '.proof.startTime // empty' | cut -dT -f1)
+              if [ -z "$date_dir" ]; then
+                date_dir=$(date -u +%Y-%m-%d)
+              fi
+              mkdir -p "reports/${date_dir}"
+              echo "$report" | jq '.' > "reports/${date_dir}/${id}.json"
+              echo "  Saved reports/${date_dir}/${id}.json"
+            done
+          fi
+
+          # Rebuild index.json from all report files
+          echo "Rebuilding index.json..."
+          echo '[' > reports/index.json.tmp
+          first=true
+          find reports -name '*.json' ! -name 'index.json' ! -name '*.tmp' | sort | while read -r file; do
+            entry=$(jq --arg path "$file" '{
+              id: .proof.id,
+              name: .proof.name,
+              status: .status,
+              driver: .proof.driver,
+              startTime: .proof.startTime,
+              duration: .proof.duration,
+              verified: .summary.verified,
+              missed: .summary.missed,
+              errors: .summary.errors,
+              path: $path
+            }' "$file")
+            if [ "$first" = true ]; then
+              first=false
+            else
+              echo ',' >> reports/index.json.tmp
+            fi
+            echo "$entry" >> reports/index.json.tmp
+          done
+          echo ']' >> reports/index.json.tmp
+          # Sort by startTime descending
+          jq 'sort_by(.startTime) | reverse' reports/index.json.tmp > reports/index.json
+          rm -f reports/index.json.tmp
+
+          echo "Index rebuilt with $(jq length reports/index.json) entries"
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add reports/
+          if git diff --cached --quiet; then
+            echo "No new reports to commit"
+          else
+            git commit -m "sync: update proof reports $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git push
+          fi
