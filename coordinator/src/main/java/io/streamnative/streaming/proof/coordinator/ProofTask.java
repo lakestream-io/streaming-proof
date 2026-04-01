@@ -1089,8 +1089,12 @@ public class ProofTask {
                         proof.getTopic() + "_transactional", proof.getId(), e);
             }
         }
-        proofDriver.deleteTopic(proof.getTopic());
-        System.out.println("ProofTask removed");
+        try {
+            proofDriver.deleteTopic(proof.getTopic());
+        } catch (Exception e) {
+            log.warn("Failed to delete topic {} for proof {}", proof.getTopic(), proof.getId(), e);
+        }
+        log.info("ProofTask {} removed", proof.getId());
     }
 
     /**
