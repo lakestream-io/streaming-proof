@@ -113,26 +113,38 @@ function applyTheme(theme) {
     });
   }
 
-  // Sidebar toggle
+  // Sidebar toggle - only available with ?sidebar=1 parameter
   const sidebarToggleBtn = document.getElementById("sidebar-toggle");
   const layoutEl = document.querySelector(".layout");
   if (sidebarToggleBtn && layoutEl) {
-    // Restore saved state
-    const sidebarCollapsed = localStorage.getItem("sp-sidebar-collapsed") === "true";
-    if (sidebarCollapsed) {
+    // Check URL param for sidebar visibility
+    const urlParams = new URLSearchParams(window.location.search);
+    const sidebarParam = urlParams.get("sidebar");
+    const showSidebar = sidebarParam === "1" || sidebarParam === "true";
+    
+    if (!showSidebar) {
+      // Hide sidebar completely - remove toggle button
+      sidebarToggleBtn.style.display = "none";
       layoutEl.classList.add("sidebar-collapsed");
+    } else {
+      // Show sidebar with toggle functionality
+      // Restore saved state
+      const savedCollapsed = localStorage.getItem("sp-sidebar-collapsed") === "true";
+      if (savedCollapsed) {
+        layoutEl.classList.add("sidebar-collapsed");
+      }
+
+      sidebarToggleBtn.addEventListener("click", () => {
+        layoutEl.classList.toggle("sidebar-collapsed");
+        const isCollapsed = layoutEl.classList.contains("sidebar-collapsed");
+        localStorage.setItem("sp-sidebar-collapsed", isCollapsed);
+
+        // Trigger chart resize after transition
+        setTimeout(() => {
+          Object.values(chartInstances).forEach(chart => chart.resize());
+        }, 220);
+      });
     }
-
-    sidebarToggleBtn.addEventListener("click", () => {
-      layoutEl.classList.toggle("sidebar-collapsed");
-      const isCollapsed = layoutEl.classList.contains("sidebar-collapsed");
-      localStorage.setItem("sp-sidebar-collapsed", isCollapsed);
-
-      // Trigger chart resize after transition
-      setTimeout(() => {
-        Object.values(chartInstances).forEach(chart => chart.resize());
-      }, 220);
-    });
   }
 })();
 
