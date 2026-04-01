@@ -42,7 +42,7 @@ import java.util.Map;
  *     "ursa", new Driver("kafka", kafkaConfigs)
  * );
  * Map<String, Object> report = Map.of(
- *     "maxTimeSeriesPoints", 240,
+ *     "maxTimeSeriesPoints", 481,
  *     "latencyUnit", "ms"
  * );
  * Configs configs = new Configs(workers, drivers, report);

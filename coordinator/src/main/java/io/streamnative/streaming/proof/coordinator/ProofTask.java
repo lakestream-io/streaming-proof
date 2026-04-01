@@ -1026,7 +1026,7 @@ public class ProofTask {
         if (custom > 0) {
             return ((Math.max(custom, checkpoint) + checkpoint - 1) / checkpoint) * checkpoint;
         }
-        int maxPoints = configs.reportIntSetting("maxTimeSeriesPoints", 240);
+        int maxPoints = configs.reportIntSetting("maxTimeSeriesPoints", 481);
         long duration = proof.getDuration();
         if (duration <= 0) {
             return checkpoint;

@@ -91,8 +91,13 @@ public class Coordinator {
         } else {
             this.configs.workers().putAll(configs.workers());
             this.configs.drivers().putAll(configs.drivers());
-            if (this.configs.report() != null && configs.report() != null) {
-                this.configs.report().putAll(configs.report());
+            if (configs.report() != null) {
+                if (this.configs.report() == null) {
+                    this.configs = new Configs(this.configs.workers(), this.configs.drivers(),
+                            new java.util.HashMap<>(configs.report()));
+                } else {
+                    this.configs.report().putAll(configs.report());
+                }
             }
         }
     }
