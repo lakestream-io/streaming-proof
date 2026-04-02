@@ -169,7 +169,7 @@ function getChart(id) {
 }
 
 /** Shared base option applied to every chart. */
-function baseChartOption(useIntegerFormatter = false) {
+function baseChartOption(useIntegerFormatter = false, xAxisMax = null) {
   const gridColor    = cssVar("--chart-grid");
   const labelColor   = cssVar("--chart-label");
   const tooltipBg    = cssVar("--surface");
@@ -199,7 +199,7 @@ function baseChartOption(useIntegerFormatter = false) {
       },
       formatter(params) {
         const sec = params[0]?.data?.[0] ?? 0;
-        const timeLabel = formatSecondsShort(sec);
+        const timeLabel = formatDuration(sec);
         let rows = `<div style="color:${mutedColor};font-size:11px;margin-bottom:6px">${timeLabel}</div>`;
         for (const p of params) {
           let val;
@@ -221,6 +221,9 @@ function baseChartOption(useIntegerFormatter = false) {
     },
     xAxis: {
       type: "value",
+      min: 0,
+      max: Number.isFinite(xAxisMax) && xAxisMax > 0 ? xAxisMax : null,
+      boundaryGap: [0, 0],
       axisLabel: {
         color: labelColor,
         fontSize: 11,
@@ -266,10 +269,19 @@ function areaSeries(name, color, data) {
   };
 }
 
+function resolveTimeAxisMax(timeSeries, plannedDurationSeconds = 0) {
+  const lastElapsedSeconds = timeSeries.length > 0
+    ? Number(timeSeries[timeSeries.length - 1]?.elapsedSeconds || 0)
+    : 0;
+  const planned = Number(plannedDurationSeconds || 0);
+  const axisMax = Math.max(lastElapsedSeconds, planned);
+  return axisMax > 0 ? axisMax : null;
+}
+
 /** Renders message rate (publish + consume msg/s) chart. */
-function renderRateChart(timeSeries) {
+function renderRateChart(timeSeries, xAxisMax) {
   const chart = getChart("rate-chart");
-  const opt = baseChartOption();
+  const opt = baseChartOption(false, xAxisMax);
   opt.legend = legendOption(["Publish Rate", "Consume Rate"]);
   opt.series = [
     areaSeries("Publish Rate", "#60a5fa", timeSeries.map((p) => [p.elapsedSeconds, Number(p.publishRate || 0)])),
@@ -279,9 +291,9 @@ function renderRateChart(timeSeries) {
 }
 
 /** Renders throughput (publish + consume bytes/s) chart. */
-function renderThroughputChart(timeSeries) {
+function renderThroughputChart(timeSeries, xAxisMax) {
   const chart = getChart("throughput-chart");
-  const opt = baseChartOption();
+  const opt = baseChartOption(false, xAxisMax);
   opt.legend = legendOption(["Publish", "Consume"]);
   opt.tooltip.valueFormatter = (v) => formatBytes(v) + "/s";
   opt.yAxis.axisLabel = {
@@ -305,9 +317,9 @@ function formatBytes(bytes) {
 }
 
 /** Renders backlog chart. */
-function renderBacklogChart(timeSeries) {
+function renderBacklogChart(timeSeries, xAxisMax) {
   const chart = getChart("backlog-chart");
-  const opt = baseChartOption(true);
+  const opt = baseChartOption(true, xAxisMax);
   opt.legend = legendOption(["Backlog"]);
   opt.series = [
     areaSeries("Backlog", "#fbbf24", timeSeries.map((p) => [p.elapsedSeconds, Number(p.backlogMessages || 0)]))
@@ -316,9 +328,9 @@ function renderBacklogChart(timeSeries) {
 }
 
 /** Renders cumulative messages (published / consumed / verified) chart. */
-function renderMessagesChart(timeSeries) {
+function renderMessagesChart(timeSeries, xAxisMax) {
   const chart = getChart("messages-chart");
-  const opt = baseChartOption(true);
+  const opt = baseChartOption(true, xAxisMax);
   opt.legend = legendOption(["Published", "Consumed", "Verified"]);
   opt.series = [
     areaSeries("Published", "#60a5fa", timeSeries.map((p) => [p.elapsedSeconds, Number(p.publishedMessages || 0)])),
@@ -329,9 +341,9 @@ function renderMessagesChart(timeSeries) {
 }
 
 /** Renders cumulative error count chart. */
-function renderErrorsChart(timeSeries) {
+function renderErrorsChart(timeSeries, xAxisMax) {
   const chart = getChart("errors-chart");
-  const opt = baseChartOption(true);
+  const opt = baseChartOption(true, xAxisMax);
   opt.legend = legendOption(["Errors"]);
   opt.series = [
     areaSeries("Errors", "#f97316", timeSeries.map((p) => [p.elapsedSeconds, Number(p.errors || 0)]))
@@ -340,9 +352,9 @@ function renderErrorsChart(timeSeries) {
 }
 
 /** Renders unresolved anomalies (missed / duplicates / out-of-order) chart. */
-function renderAnomaliesChart(timeSeries) {
+function renderAnomaliesChart(timeSeries, xAxisMax) {
   const chart = getChart("anomalies-chart");
-  const opt = baseChartOption(true);
+  const opt = baseChartOption(true, xAxisMax);
   opt.legend = legendOption(["Missed", "Duplicates", "Out-of-Order"]);
   opt.series = [
     areaSeries("Missed",       "#f87171", timeSeries.map((p) => [p.elapsedSeconds, Number(p.missed || 0)])),
@@ -353,9 +365,9 @@ function renderAnomaliesChart(timeSeries) {
 }
 
 /** Renders publish latency (P95 + P99) chart. */
-function renderPublishLatencyChart(timeSeries) {
+function renderPublishLatencyChart(timeSeries, xAxisMax) {
   const chart = getChart("publish-latency-chart");
-  const opt = baseChartOption();
+  const opt = baseChartOption(false, xAxisMax);
   opt.legend = legendOption(["P95", "P99"]);
   opt.series = [
     areaSeries("P95", "#f97316", timeSeries.map((p) => [p.elapsedSeconds, Number(p.publishLatencyP95 || 0)])),
@@ -365,9 +377,9 @@ function renderPublishLatencyChart(timeSeries) {
 }
 
 /** Renders end-to-end latency (P95 + P99) chart. */
-function renderE2ELatencyChart(timeSeries) {
+function renderE2ELatencyChart(timeSeries, xAxisMax) {
   const chart = getChart("e2e-latency-chart");
-  const opt = baseChartOption();
+  const opt = baseChartOption(false, xAxisMax);
   opt.legend = legendOption(["P95", "P99"]);
   opt.series = [
     areaSeries("P95", "#f87171", timeSeries.map((p) => [p.elapsedSeconds, Number(p.endToEndLatencyP95 || 0)])),
@@ -425,7 +437,9 @@ function formatDuration(seconds) {
 function formatSecondsShort(sec) {
   const s = Math.round(sec);
   if (s >= 3600) {
-    return `${Math.floor(s / 3600)}h`;
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
   }
   if (s >= 60) {
     return `${Math.floor(s / 60)}m`;
@@ -945,14 +959,15 @@ async function loadProofDetails(proofId) {
 
   // Charts
   if (timeSeries.length >= 2) {
-    renderRateChart(timeSeries);
-    renderThroughputChart(timeSeries);
-    renderMessagesChart(timeSeries);
-    renderErrorsChart(timeSeries);
-    renderAnomaliesChart(timeSeries);
-    renderBacklogChart(timeSeries);
-    renderPublishLatencyChart(timeSeries);
-    renderE2ELatencyChart(timeSeries);
+    const xAxisMax = resolveTimeAxisMax(timeSeries, plannedDurationSeconds);
+    renderRateChart(timeSeries, xAxisMax);
+    renderThroughputChart(timeSeries, xAxisMax);
+    renderMessagesChart(timeSeries, xAxisMax);
+    renderErrorsChart(timeSeries, xAxisMax);
+    renderAnomaliesChart(timeSeries, xAxisMax);
+    renderBacklogChart(timeSeries, xAxisMax);
+    renderPublishLatencyChart(timeSeries, xAxisMax);
+    renderE2ELatencyChart(timeSeries, xAxisMax);
   } else {
     renderChartsEmpty();
   }
