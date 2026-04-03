@@ -688,12 +688,34 @@ public class ProofTask {
                         : buildPerformanceSummary(summary);
         String status = determineResultStatus(summary, performanceSummary);
         String resultReason = determineResultReason(summary, performanceSummary, status);
-        // Append a real-time point so the chart's last value matches the KPI cards
+        // Append a trailing point that extends the chart to the current elapsed time.
+        // Reuse the last windowed point's rates and latency so the chart stays flat
+        // instead of snapping to the cumulative average.  Only the absolute counters
+        // (publishedMessages, consumedMessages, etc.) are updated to the latest values.
         List<ProofTimeSeriesPoint> reportTimeSeries = new ArrayList<>(timeSeries);
         if (!reportTimeSeries.isEmpty()) {
             ProofTimeSeriesPoint last = reportTimeSeries.getLast();
             if (last.elapsedSeconds() != performanceSummary.elapsedSeconds()) {
-                reportTimeSeries.add(buildCumulativeTimeSeriesPoint(performanceSummary, summary));
+                reportTimeSeries.add(new ProofTimeSeriesPoint(
+                        performanceSummary.elapsedSeconds(),
+                        last.publishRate(),
+                        last.consumeRate(),
+                        performanceSummary.backlogMessages(),
+                        last.publishErrorRate(),
+                        last.publishLatencyP95(),
+                        last.publishLatencyP99(),
+                        last.endToEndLatencyP95(),
+                        last.endToEndLatencyP99(),
+                        last.publishBytesRate(),
+                        last.consumeBytesRate(),
+                        summary.verified(),
+                        performanceSummary.publishedMessages(),
+                        performanceSummary.consumedMessages(),
+                        summary.errors(),
+                        summary.timeouts(),
+                        summary.missed(),
+                        summary.duplicates(),
+                        summary.outOfOrders()));
             }
         }
         return new ProofReport(
@@ -1155,35 +1177,6 @@ public class ProofTask {
                 summary.verified(),
                 performanceSummary.publishedMessages(),
                 performanceSummary.consumedMessages(),
-                summary.errors(),
-                summary.timeouts(),
-                summary.missed(),
-                summary.duplicates(),
-                summary.outOfOrders());
-    }
-
-    /**
-     * Builds a time-series point using cumulative (non-windowed) metrics.
-     * Used by {@link #getReport()} to append a trailing real-time point that
-     * matches the KPI card values without disturbing the windowed latency state.
-     */
-    private static ProofTimeSeriesPoint buildCumulativeTimeSeriesPoint(
-            ProofPerformanceSummary ps, ProofSummary summary) {
-        return new ProofTimeSeriesPoint(
-                ps.elapsedSeconds(),
-                ps.publishRate(),
-                ps.consumeRate(),
-                ps.backlogMessages(),
-                ps.publishErrorRate(),
-                ps.publishLatency() == null ? 0.0d : ps.publishLatency().p95(),
-                ps.publishLatency() == null ? 0.0d : ps.publishLatency().p99(),
-                ps.endToEndLatency() == null ? 0.0d : ps.endToEndLatency().p95(),
-                ps.endToEndLatency() == null ? 0.0d : ps.endToEndLatency().p99(),
-                ps.publishBytesRate(),
-                ps.consumeBytesRate(),
-                summary.verified(),
-                ps.publishedMessages(),
-                ps.consumedMessages(),
                 summary.errors(),
                 summary.timeouts(),
                 summary.missed(),
