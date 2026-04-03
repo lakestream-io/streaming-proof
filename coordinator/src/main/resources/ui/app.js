@@ -171,6 +171,36 @@ function getChart(id) {
   return chartInstances[id];
 }
 
+function buildChartTooltipFormatter(useIntegerFormatter = false, valueFormatter = null) {
+  const labelColor   = cssVar("--chart-label");
+  const tooltipText  = cssVar("--text");
+  const mutedColor   = cssVar("--muted");
+
+  return function formatter(params) {
+    const sec = params[0]?.data?.[0] ?? 0;
+    const timeLabel = formatDuration(sec);
+    let rows = `<div style="color:${mutedColor};font-size:11px;margin-bottom:6px">${timeLabel}</div>`;
+    for (const p of params) {
+      let val;
+      if (typeof p.data?.[1] !== "number") {
+        val = "—";
+      } else if (typeof valueFormatter === "function") {
+        val = valueFormatter(p.data[1]);
+      } else if (useIntegerFormatter) {
+        val = Math.round(p.data[1]).toLocaleString();
+      } else {
+        val = p.data[1].toFixed(2);
+      }
+      rows += `<div style="display:flex;align-items:center;gap:8px;margin:2px 0">
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};flex-shrink:0"></span>
+        <span style="color:${labelColor};flex:1">${p.seriesName}</span>
+        <span style="font-weight:600;color:${tooltipText};padding-left:12px">${val}</span>
+      </div>`;
+    }
+    return rows;
+  };
+}
+
 /** Shared base option applied to every chart. */
 function baseChartOption(useIntegerFormatter = false, xAxisMax = null) {
   const gridColor    = cssVar("--chart-grid");
@@ -179,7 +209,6 @@ function baseChartOption(useIntegerFormatter = false, xAxisMax = null) {
   const tooltipBorder = cssVar("--border-strong");
   const tooltipText  = cssVar("--text");
   const pointerColor = cssVar("--chart-pointer");
-  const mutedColor   = cssVar("--muted");
 
   return {
     backgroundColor: "transparent",
@@ -200,27 +229,7 @@ function baseChartOption(useIntegerFormatter = false, xAxisMax = null) {
       axisPointer: {
         lineStyle: {color: pointerColor, width: 1}
       },
-      formatter(params) {
-        const sec = params[0]?.data?.[0] ?? 0;
-        const timeLabel = formatDuration(sec);
-        let rows = `<div style="color:${mutedColor};font-size:11px;margin-bottom:6px">${timeLabel}</div>`;
-        for (const p of params) {
-          let val;
-          if (typeof p.data?.[1] !== "number") {
-            val = "—";
-          } else if (useIntegerFormatter) {
-            val = Math.round(p.data[1]).toLocaleString();
-          } else {
-            val = p.data[1].toFixed(2);
-          }
-          rows += `<div style="display:flex;align-items:center;gap:8px;margin:2px 0">
-            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};flex-shrink:0"></span>
-            <span style="color:${labelColor};flex:1">${p.seriesName}</span>
-            <span style="font-weight:600;color:${tooltipText};padding-left:12px">${val}</span>
-          </div>`;
-        }
-        return rows;
-      }
+      formatter: buildChartTooltipFormatter(useIntegerFormatter)
     },
     xAxis: {
       type: "value",
@@ -373,6 +382,13 @@ function renderPublishLatencyChart(timeSeries, xAxisMax) {
   const chart = getChart("publish-latency-chart");
   const opt = baseChartOption(false, xAxisMax);
   opt.legend = legendOption(["P95", "P99"]);
+  opt.tooltip.formatter = buildChartTooltipFormatter(false, (value) => formatLatency(value));
+  opt.yAxis.axisLabel = {
+    color: cssVar("--chart-label"),
+    fontSize: 11,
+    fontFamily: "'JetBrains Mono', monospace",
+    formatter: (value) => formatLatency(value, true)
+  };
   opt.series = [
     areaSeries("P95", "#f97316", timeSeries.map((p) => [p.elapsedSeconds, Number(p.publishLatencyP95 || 0)])),
     areaSeries("P99", "#a78bfa", timeSeries.map((p) => [p.elapsedSeconds, Number(p.publishLatencyP99 || 0)]))
@@ -385,6 +401,13 @@ function renderE2ELatencyChart(timeSeries, xAxisMax) {
   const chart = getChart("e2e-latency-chart");
   const opt = baseChartOption(false, xAxisMax);
   opt.legend = legendOption(["P95", "P99"]);
+  opt.tooltip.formatter = buildChartTooltipFormatter(false, (value) => formatLatency(value));
+  opt.yAxis.axisLabel = {
+    color: cssVar("--chart-label"),
+    fontSize: 11,
+    fontFamily: "'JetBrains Mono', monospace",
+    formatter: (value) => formatLatency(value, true)
+  };
   opt.series = [
     areaSeries("P95", "#f87171", timeSeries.map((p) => [p.elapsedSeconds, Number(p.endToEndLatencyP95 || 0)])),
     areaSeries("P99", "#22d3ee", timeSeries.map((p) => [p.elapsedSeconds, Number(p.endToEndLatencyP99 || 0)]))
@@ -419,6 +442,43 @@ function formatDecimal(value) {
     return "—";
   }
   return new Intl.NumberFormat(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2}).format(value);
+}
+
+function formatScaledNumber(value, maximumFractionDigits) {
+  return new Intl.NumberFormat(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits
+  }).format(value);
+}
+
+function formatLatency(valueMillis, compact = false) {
+  if (typeof valueMillis !== "number" || Number.isNaN(valueMillis) || valueMillis < 0) {
+    return "—";
+  }
+  const absValue = Math.abs(valueMillis);
+  const unitGap = compact ? "" : " ";
+
+  if (absValue < 1000) {
+    const digits = absValue < 10 ? 2 : absValue < 100 ? 1 : 0;
+    return `${formatScaledNumber(valueMillis, digits)}${unitGap}ms`;
+  }
+
+  if (absValue < 60_000) {
+    const seconds = valueMillis / 1000;
+    const digits = Math.abs(seconds) < 10 ? 2 : 1;
+    return `${formatScaledNumber(seconds, digits)}${unitGap}s`;
+  }
+
+  const totalSeconds = Math.round(valueMillis / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  }
+
+  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }
 
 function formatDuration(seconds) {
@@ -953,10 +1013,10 @@ async function loadProofDetails(proofId) {
   perfEls.consumeThroughput.textContent  = formatBytes(performanceSummary.consumeBytesRate || 0);
   perfEls.publishErrorRate.textContent   = formatNumber(performanceSummary.publishErrors || 0);
   perfEls.backlog.textContent            = formatNumber(performanceSummary.backlogMessages || 0);
-  perfEls.publishLatencyP95.textContent  = formatDecimal(performanceSummary.publishLatency?.p95 || 0);
-  perfEls.publishLatencyP99.textContent  = formatDecimal(performanceSummary.publishLatency?.p99 || 0);
-  perfEls.endToEndLatencyP95.textContent = formatDecimal(performanceSummary.endToEndLatency?.p95 || 0);
-  perfEls.endToEndLatencyP99.textContent = formatDecimal(performanceSummary.endToEndLatency?.p99 || 0);
+  perfEls.publishLatencyP95.textContent  = formatLatency(performanceSummary.publishLatency?.p95 || 0);
+  perfEls.publishLatencyP99.textContent  = formatLatency(performanceSummary.publishLatency?.p99 || 0);
+  perfEls.endToEndLatencyP95.textContent = formatLatency(performanceSummary.endToEndLatency?.p95 || 0);
+  perfEls.endToEndLatencyP99.textContent = formatLatency(performanceSummary.endToEndLatency?.p99 || 0);
 
   // Charts
   if (timeSeries.length >= 2) {
