@@ -110,8 +110,11 @@ public class ProofProducerTask implements AutoCloseable {
     /** Estimated logical bytes acknowledged by the producer */
     private final AtomicLong acknowledgedBytes = new AtomicLong(0);
 
-    /** Publish latency samples */
+    /** Publish latency samples (cumulative, never reset) */
     private final LatencyRecorder publishLatency = new LatencyRecorder();
+
+    /** Publish latency samples for windowed metrics (reset on each snapshot read) */
+    private final LatencyRecorder publishLatencyWindow = new LatencyRecorder();
 
     /**
      * Creates a new producer task with the specified number of unique keys.
@@ -158,7 +161,9 @@ public class ProofProducerTask implements AutoCloseable {
             } else {
                 acknowledged.incrementAndGet();
                 acknowledgedBytes.addAndGet(estimateMessageBytes(key));
-                publishLatency.record((System.nanoTime() - startedAtNanos) / 1_000_000L);
+                long latencyMillis = (System.nanoTime() - startedAtNanos) / 1_000_000L;
+                publishLatency.record(latencyMillis);
+                publishLatencyWindow.record(latencyMillis);
                 synchronized (lastPublished) {
                     LongSeq newMsg = new LongSeq(seq, metadata);
                     LongSeq previousMsg = this.lastPublished.get(key);
@@ -199,6 +204,14 @@ public class ProofProducerTask implements AutoCloseable {
 
     public LatencyMetricSnapshot getPublishLatencySnapshot() {
         return publishLatency.snapshot();
+    }
+
+    /**
+     * Returns the windowed publish latency snapshot and resets the window recorder.
+     * Each call only reflects samples recorded since the previous call.
+     */
+    public LatencyMetricSnapshot getPublishLatencyWindowSnapshot() {
+        return publishLatencyWindow.snapshotAndReset();
     }
 
     public synchronized Map<String, LongSeq> getLastPublished() {

@@ -150,6 +150,32 @@ public class ProofConsumers {
     }
 
     /**
+     * Returns a windowed metrics snapshot using reset-on-read latency samples.
+     * Counters (receivedMessages, receivedBytes) remain cumulative; only
+     * the latency samples cover the window since the last call.
+     */
+    public ProofWorkerMetricsSnapshot windowedMetricsSnapshot() {
+        long receivedMessages = 0L;
+        long receivedBytes = 0L;
+        LatencyRecorder endToEndLatency = new LatencyRecorder();
+        for (ProofConsumerTask task : tasks) {
+            receivedMessages += task.getReceivedMessages().get();
+            receivedBytes += task.getReceivedBytes().get();
+            LatencyMetricSnapshot latencySnapshot = task.getEndToEndLatencyWindowSnapshot();
+            endToEndLatency.mergeFrom(latencySnapshot);
+        }
+        return new ProofWorkerMetricsSnapshot(
+                0L,
+                0L,
+                0L,
+                0L,
+                receivedMessages,
+                receivedBytes,
+                null,
+                endToEndLatency.snapshot());
+    }
+
+    /**
      * Applies high watermarks to all consumer tasks, allowing them to trim
      * verified sequence ranges and reduce memory usage.
      *

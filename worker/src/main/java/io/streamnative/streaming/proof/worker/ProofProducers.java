@@ -206,6 +206,34 @@ public class ProofProducers {
     }
 
     /**
+     * Returns a windowed metrics snapshot using reset-on-read latency samples.
+     * Counters (sendAttempts, acknowledged, errors) remain cumulative; only
+     * the latency samples cover the window since the last call.
+     */
+    public ProofWorkerMetricsSnapshot windowedMetricsSnapshot() {
+        long sendAttempts = 0L;
+        long acknowledgedMessages = 0L;
+        long publishErrors = 0L;
+        LatencyRecorder publishLatency = new LatencyRecorder();
+        for (ProofProducerTask task : tasks) {
+            sendAttempts += task.getSendAttempts();
+            acknowledgedMessages += task.getAcknowledged();
+            publishErrors += task.getErrors().values().stream().mapToLong(Integer::longValue).sum();
+            LatencyMetricSnapshot latencySnapshot = task.getPublishLatencyWindowSnapshot();
+            publishLatency.mergeFrom(latencySnapshot);
+        }
+        return new ProofWorkerMetricsSnapshot(
+                sendAttempts,
+                acknowledgedMessages,
+                tasks.stream().mapToLong(ProofProducerTask::getAcknowledgedBytes).sum(),
+                publishErrors,
+                0L,
+                0L,
+                publishLatency.snapshot(),
+                null);
+    }
+
+    /**
      * Stops all producer tasks and releases associated resources.
      * This method ensures graceful shutdown of the virtual thread and all producer tasks.
      *

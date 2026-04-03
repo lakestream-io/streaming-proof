@@ -158,6 +158,14 @@ public class ProofTask {
     private volatile List<ProofClusterTarget> clusterTargetsSnapshot;
     private volatile String startFailureReason;
 
+    // --- Windowed rate tracking ---
+    private long prevPublishedMessages;
+    private long prevConsumedMessages;
+    private long prevPublishErrors;
+    private long prevPublishedBytes;
+    private long prevConsumedBytes;
+    private long prevElapsedSeconds;
+
     public boolean isRunning() {
         return running.get();
     }
@@ -685,7 +693,7 @@ public class ProofTask {
         if (!reportTimeSeries.isEmpty()) {
             ProofTimeSeriesPoint last = reportTimeSeries.getLast();
             if (last.elapsedSeconds() != performanceSummary.elapsedSeconds()) {
-                reportTimeSeries.add(buildTimeSeriesPoint(performanceSummary, summary));
+                reportTimeSeries.add(buildCumulativeTimeSeriesPoint(performanceSummary, summary));
             }
         }
         return new ProofReport(
@@ -968,6 +976,45 @@ public class ProofTask {
                 endToEndLatency);
     }
 
+    /**
+     * Aggregates windowed metrics from all workers.  Latency samples only
+     * cover the interval since the last windowed read; counters are cumulative.
+     */
+    private ProofWorkerMetricsSnapshot aggregateWindowedWorkerMetrics() {
+        long sendAttempts = 0L;
+        long acknowledgedMessages = 0L;
+        long acknowledgedBytes = 0L;
+        long publishErrors = 0L;
+        long receivedMessages = 0L;
+        long receivedBytes = 0L;
+        LatencyMetricSnapshot publishLatency = null;
+        LatencyMetricSnapshot endToEndLatency = null;
+        for (WorkerHttpClient client : clients) {
+            try {
+                ProofWorkerMetricsSnapshot snapshot = client.metricsWindowed(proof.getId()).join();
+                sendAttempts += snapshot.sendAttempts();
+                acknowledgedMessages += snapshot.acknowledgedMessages();
+                acknowledgedBytes += snapshot.acknowledgedBytes();
+                publishErrors += snapshot.publishErrors();
+                receivedMessages += snapshot.receivedMessages();
+                receivedBytes += snapshot.receivedBytes();
+                publishLatency = mergeLatencySnapshots(publishLatency, snapshot.publishLatency());
+                endToEndLatency = mergeLatencySnapshots(endToEndLatency, snapshot.endToEndLatency());
+            } catch (Exception e) {
+                log.warn("Failed to collect windowed worker metrics for proof {}", proof.getId(), e);
+            }
+        }
+        return new ProofWorkerMetricsSnapshot(
+                sendAttempts,
+                acknowledgedMessages,
+                acknowledgedBytes,
+                publishErrors,
+                receivedMessages,
+                receivedBytes,
+                publishLatency,
+                endToEndLatency);
+    }
+
     private static LatencyMetricSnapshot mergeLatencySnapshots(
             LatencyMetricSnapshot left, LatencyMetricSnapshot right) {
         if (left == null) {
@@ -1050,23 +1097,61 @@ public class ProofTask {
                 return;
             }
         }
-        timeSeries.add(buildTimeSeriesPoint(performanceSummary, summary));
+
+        // Compute windowed rates from counter deltas
+        long deltaSeconds = performanceSummary.elapsedSeconds() - prevElapsedSeconds;
+        double windowDuration = Math.max(1.0d, deltaSeconds);
+
+        double windowedPublishRate =
+                (performanceSummary.publishedMessages() - prevPublishedMessages) / windowDuration;
+        double windowedConsumeRate =
+                (performanceSummary.consumedMessages() - prevConsumedMessages) / windowDuration;
+        double windowedPublishErrorRate =
+                (performanceSummary.publishErrors() - prevPublishErrors) / windowDuration;
+
+        // Fetch windowed latency from workers (reset-on-read).
+        // The windowed endpoint returns cumulative counters plus windowed latency,
+        // so we can also use its acknowledgedBytes/receivedBytes for byte-rate deltas.
+        ProofWorkerMetricsSnapshot windowedMetrics = aggregateWindowedWorkerMetrics();
+        double windowedPublishBytesRate =
+                (windowedMetrics.acknowledgedBytes() - prevPublishedBytes) / windowDuration;
+        double windowedConsumeBytesRate =
+                (windowedMetrics.receivedBytes() - prevConsumedBytes) / windowDuration;
+        LatencySummary windowedPublishLatency = buildLatencySummary(windowedMetrics.publishLatency());
+        LatencySummary windowedE2eLatency = buildLatencySummary(windowedMetrics.endToEndLatency());
+
+        timeSeries.add(buildTimeSeriesPoint(
+                performanceSummary, summary,
+                windowedPublishRate, windowedConsumeRate, windowedPublishErrorRate,
+                windowedPublishBytesRate, windowedConsumeBytesRate,
+                windowedPublishLatency, windowedE2eLatency));
+
+        // Update previous counters for next window
+        prevElapsedSeconds = performanceSummary.elapsedSeconds();
+        prevPublishedMessages = performanceSummary.publishedMessages();
+        prevConsumedMessages = performanceSummary.consumedMessages();
+        prevPublishErrors = performanceSummary.publishErrors();
+        prevPublishedBytes = windowedMetrics.acknowledgedBytes();
+        prevConsumedBytes = windowedMetrics.receivedBytes();
     }
 
     private ProofTimeSeriesPoint buildTimeSeriesPoint(
-            ProofPerformanceSummary performanceSummary, ProofSummary summary) {
+            ProofPerformanceSummary performanceSummary, ProofSummary summary,
+            double publishRate, double consumeRate, double publishErrorRate,
+            double publishBytesRate, double consumeBytesRate,
+            LatencySummary publishLatency, LatencySummary endToEndLatency) {
         return new ProofTimeSeriesPoint(
                 performanceSummary.elapsedSeconds(),
-                performanceSummary.publishRate(),
-                performanceSummary.consumeRate(),
+                publishRate,
+                consumeRate,
                 performanceSummary.backlogMessages(),
-                performanceSummary.publishErrorRate(),
-                performanceSummary.publishLatency() == null ? 0.0d : performanceSummary.publishLatency().p95(),
-                performanceSummary.publishLatency() == null ? 0.0d : performanceSummary.publishLatency().p99(),
-                performanceSummary.endToEndLatency() == null ? 0.0d : performanceSummary.endToEndLatency().p95(),
-                performanceSummary.endToEndLatency() == null ? 0.0d : performanceSummary.endToEndLatency().p99(),
-                performanceSummary.publishBytesRate(),
-                performanceSummary.consumeBytesRate(),
+                publishErrorRate,
+                publishLatency == null ? 0.0d : publishLatency.p95(),
+                publishLatency == null ? 0.0d : publishLatency.p99(),
+                endToEndLatency == null ? 0.0d : endToEndLatency.p95(),
+                endToEndLatency == null ? 0.0d : endToEndLatency.p99(),
+                publishBytesRate,
+                consumeBytesRate,
                 summary.verified(),
                 performanceSummary.publishedMessages(),
                 performanceSummary.consumedMessages(),
@@ -1077,7 +1162,34 @@ public class ProofTask {
     }
 
     /**
-     * Removes all resources associated with this proof test.
+     * Builds a time-series point using cumulative (non-windowed) metrics.
+     * Used by {@link #getReport()} to append a trailing real-time point that
+     * matches the KPI card values without disturbing the windowed latency state.
+     */
+    private static ProofTimeSeriesPoint buildCumulativeTimeSeriesPoint(
+            ProofPerformanceSummary ps, ProofSummary summary) {
+        return new ProofTimeSeriesPoint(
+                ps.elapsedSeconds(),
+                ps.publishRate(),
+                ps.consumeRate(),
+                ps.backlogMessages(),
+                ps.publishErrorRate(),
+                ps.publishLatency() == null ? 0.0d : ps.publishLatency().p95(),
+                ps.publishLatency() == null ? 0.0d : ps.publishLatency().p99(),
+                ps.endToEndLatency() == null ? 0.0d : ps.endToEndLatency().p95(),
+                ps.endToEndLatency() == null ? 0.0d : ps.endToEndLatency().p99(),
+                ps.publishBytesRate(),
+                ps.consumeBytesRate(),
+                summary.verified(),
+                ps.publishedMessages(),
+                ps.consumedMessages(),
+                summary.errors(),
+                summary.missed(),
+                summary.duplicates(),
+                summary.outOfOrders());
+    }
+
+    /**
      * Deletes the messaging system topic and performs cleanup.
      */
     public void remove() {

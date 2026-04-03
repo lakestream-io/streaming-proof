@@ -87,6 +87,9 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
 
     private final LatencyRecorder endToEndLatency = new LatencyRecorder();
 
+    /** End-to-end latency samples for windowed metrics (reset on each snapshot read) */
+    private final LatencyRecorder endToEndLatencyWindow = new LatencyRecorder();
+
     /**
      * Processes a received message and validates its sequence number against the expected order.
      * This method is synchronized to ensure thread-safe updates to the sequence tracking maps.
@@ -102,7 +105,9 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
         receivedMessages.incrementAndGet();
         receivedBytes.addAndGet(estimateMessageBytes(key));
         if (metadata != null && metadata.publishTimestampMillis() != null && metadata.publishTimestampMillis() > 0) {
-            endToEndLatency.record(System.currentTimeMillis() - metadata.publishTimestampMillis());
+            long latencyMillis = System.currentTimeMillis() - metadata.publishTimestampMillis();
+            endToEndLatency.record(latencyMillis);
+            endToEndLatencyWindow.record(latencyMillis);
         }
         LongSeq newMsg = new LongSeq(value, metadata);
         ConsumerCheckPoint.SeqRange lastConsumedRange = getLastSeq(key);
@@ -322,6 +327,14 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
 
     public LatencyMetricSnapshot getEndToEndLatencySnapshot() {
         return endToEndLatency.snapshot();
+    }
+
+    /**
+     * Returns the windowed end-to-end latency snapshot and resets the window recorder.
+     * Each call only reflects samples recorded since the previous call.
+     */
+    public LatencyMetricSnapshot getEndToEndLatencyWindowSnapshot() {
+        return endToEndLatencyWindow.snapshotAndReset();
     }
 
     /**

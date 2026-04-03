@@ -109,6 +109,8 @@ public class Util {
     public static final String CONSUMER_CHECKPOINTS = "/consumers/checkpoints/{id}";
     public static final String CONSUMER_CHECKPOINTS_DETAILS = "/consumers/checkpoints/{id}/details";
     public static final String WORKER_METRICS = "/metrics/{id}";
+    /** Endpoint to retrieve windowed worker metrics with reset-on-read latency samples */
+    public static final String WORKER_METRICS_WINDOWED = "/metrics/{id}/windowed";
     /** Endpoint to stop a running consumer */
     public static final String STOP_CONSUMER = "/consumers/stop/{id}";
 

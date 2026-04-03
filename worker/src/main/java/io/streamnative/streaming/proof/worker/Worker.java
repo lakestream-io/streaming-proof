@@ -224,4 +224,26 @@ public class Worker {
                 producerMetrics == null ? null : producerMetrics.publishLatency(),
                 consumerMetrics == null ? null : consumerMetrics.endToEndLatency());
     }
+
+    /**
+     * Returns a windowed metrics snapshot where latency samples only cover the
+     * interval since the last windowed read.  Counters remain cumulative.
+     */
+    public ProofWorkerMetricsSnapshot windowedMetricsSnapshot(String id) {
+        ProofProducers producer = producers.get(id);
+        ProofConsumers consumer = consumers.get(id);
+        ProofWorkerMetricsSnapshot producerMetrics =
+                producer == null ? null : producer.windowedMetricsSnapshot();
+        ProofWorkerMetricsSnapshot consumerMetrics =
+                consumer == null ? null : consumer.windowedMetricsSnapshot();
+        return new ProofWorkerMetricsSnapshot(
+                producerMetrics == null ? 0L : producerMetrics.sendAttempts(),
+                producerMetrics == null ? 0L : producerMetrics.acknowledgedMessages(),
+                producerMetrics == null ? 0L : producerMetrics.acknowledgedBytes(),
+                producerMetrics == null ? 0L : producerMetrics.publishErrors(),
+                consumerMetrics == null ? 0L : consumerMetrics.receivedMessages(),
+                consumerMetrics == null ? 0L : consumerMetrics.receivedBytes(),
+                producerMetrics == null ? null : producerMetrics.publishLatency(),
+                consumerMetrics == null ? null : consumerMetrics.endToEndLatency());
+    }
 }

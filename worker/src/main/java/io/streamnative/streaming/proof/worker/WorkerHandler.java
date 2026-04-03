@@ -84,6 +84,7 @@ public class WorkerHandler {
         app.post(Util.CONSUMER_CHECKPOINTS, this::handleConsumerCheckpoints);
         app.get(Util.CONSUMER_CHECKPOINTS_DETAILS, this::handleConsumerCheckpointsDetails);
         app.get(Util.WORKER_METRICS, this::handleWorkerMetrics);
+        app.get(Util.WORKER_METRICS_WINDOWED, this::handleWorkerMetricsWindowed);
         app.post(Util.STOP_PRODUCER, this::handleStopProducer);
         app.post(Util.STOP_CONSUMER, this::handleStopConsumer);
     }
@@ -159,6 +160,12 @@ public class WorkerHandler {
     private void handleWorkerMetrics(Context ctx) throws Exception {
         String proofID = ctx.pathParam("id");
         ProofWorkerMetricsSnapshot metricsSnapshot = worker.metricsSnapshot(proofID);
+        ctx.result(Util.JSON_WRITER.writeValueAsString(metricsSnapshot));
+    }
+
+    private void handleWorkerMetricsWindowed(Context ctx) throws Exception {
+        String proofID = ctx.pathParam("id");
+        ProofWorkerMetricsSnapshot metricsSnapshot = worker.windowedMetricsSnapshot(proofID);
         ctx.result(Util.JSON_WRITER.writeValueAsString(metricsSnapshot));
     }
 

@@ -55,6 +55,19 @@ final class LatencyRecorder {
         return new LatencyMetricSnapshot(count, sumMillis, maxMillis, List.copyOf(samples));
     }
 
+    /**
+     * Returns a snapshot of the current state and resets all counters and samples.
+     * Used for windowed metrics where each read should only reflect the latest interval.
+     */
+    synchronized LatencyMetricSnapshot snapshotAndReset() {
+        LatencyMetricSnapshot result = new LatencyMetricSnapshot(count, sumMillis, maxMillis, List.copyOf(samples));
+        count = 0;
+        sumMillis = 0;
+        maxMillis = 0;
+        samples.clear();
+        return result;
+    }
+
     synchronized void mergeFrom(LatencyMetricSnapshot snapshot) {
         if (snapshot == null) {
             return;

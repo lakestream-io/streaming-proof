@@ -215,4 +215,25 @@ public class WorkerHttpClient {
                     }
                 });
     }
+
+    /**
+     * Fetches windowed metrics from the worker.  Latency samples only cover the
+     * interval since the previous windowed read; counters remain cumulative.
+     */
+    public CompletableFuture<ProofWorkerMetricsSnapshot> metricsWindowed(String id) throws Exception {
+        return client.prepareGet(baseUrl + Util.WORKER_METRICS_WINDOWED.replace("{id}", id))
+                .execute()
+                .toCompletableFuture()
+                .thenApply(response -> {
+                    if (response.getStatusCode() != HTTP_OK) {
+                        throw new RuntimeException(
+                                "Failed to get windowed worker metrics: " + response.getStatusCode());
+                    }
+                    try {
+                        return Util.JSON_MAPPER.readValue(response.getResponseBody(), ProofWorkerMetricsSnapshot.class);
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+    }
 }
