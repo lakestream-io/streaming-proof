@@ -1185,6 +1185,7 @@ public class ProofTask {
                 ps.publishedMessages(),
                 ps.consumedMessages(),
                 summary.errors(),
+                summary.timeouts(),
                 summary.missed(),
                 summary.duplicates(),
                 summary.outOfOrders());
