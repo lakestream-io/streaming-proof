@@ -74,8 +74,11 @@ const clusterTargetsEl      = document.getElementById("cluster-targets");
 
 // ── State ─────────────────────────────────────────────────────────
 
+const initialUrlParams = new URLSearchParams(window.location.search);
+
 let proofs          = [];
-let selectedProofId = new URLSearchParams(window.location.search).get("proofId");
+let selectedProofId = initialUrlParams.get("proofId");
+let hasRequestedProofId = initialUrlParams.has("proofId");
 let autoRefreshTimer = null;
 let stopRequestProofId = null;
 const chartInstances = {};
@@ -719,6 +722,7 @@ function renderClusterTargets(targets) {
 
 function setSelectedProofId(proofId) {
   selectedProofId = proofId;
+  hasRequestedProofId = Boolean(proofId);
   const url = new URL(window.location.href);
   if (proofId) {
     url.searchParams.set("proofId", proofId);
@@ -833,18 +837,14 @@ async function loadProofs() {
     ...item,
     _status: item.status || "unknown"
   }));
-  // Check if selected proof still exists, if not clear it
-  if (selectedProofId && !proofs.some(p => p.id === selectedProofId)) {
-    setSelectedProofId(null);
-  }
-  if (!selectedProofId && proofs.length > 0) {
-    setSelectedProofId(proofs[0].id);
-  }
+
+  const selectedProofExists = selectedProofId && proofs.some(p => p.id === selectedProofId);
   renderProofList();
-  if (selectedProofId) {
+
+  if (selectedProofId && (selectedProofExists || hasRequestedProofId)) {
     await loadProofDetails(selectedProofId);
   } else {
-    showEmptyState("No proof selected", "The coordinator is reachable, but there are no active proofs yet.");
+    showEmptyState("No proof selected", "Select a proof from the sidebar to inspect details.");
   }
 }
 
