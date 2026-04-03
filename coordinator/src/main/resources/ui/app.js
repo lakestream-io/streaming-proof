@@ -344,9 +344,10 @@ function renderMessagesChart(timeSeries, xAxisMax) {
 function renderErrorsChart(timeSeries, xAxisMax) {
   const chart = getChart("errors-chart");
   const opt = baseChartOption(true, xAxisMax);
-  opt.legend = legendOption(["Errors"]);
+  opt.legend = legendOption(["Errors", "Timeouts"]);
   opt.series = [
-    areaSeries("Errors", "#f97316", timeSeries.map((p) => [p.elapsedSeconds, Number(p.errors || 0)]))
+    areaSeries("Errors", "#f97316", timeSeries.map((p) => [p.elapsedSeconds, Number(p.errors || 0)])),
+    areaSeries("Timeouts", "#fb7185", timeSeries.map((p) => [p.elapsedSeconds, Number(p.timeouts || 0)]))
   ];
   chart.setOption(opt, {notMerge: true});
 }

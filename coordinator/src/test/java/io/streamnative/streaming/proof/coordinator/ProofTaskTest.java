@@ -41,6 +41,7 @@ import io.streamnative.streaming.proof.common.records.Driver;
 import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
 import io.streamnative.streaming.proof.common.records.Proof;
 import io.streamnative.streaming.proof.common.records.ProofClusterTarget;
+import io.streamnative.streaming.proof.common.records.ProofReport;
 import io.streamnative.streaming.proof.common.records.ProofSummary;
 import io.streamnative.streaming.proof.common.records.PulsarProofConfig;
 import java.lang.reflect.Field;
@@ -399,6 +400,41 @@ public class ProofTaskTest {
             method.invoke(task);
 
             verify(task, times(1)).aggregateCheckpoints();
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testReportTimeSeriesIncludesCumulativeTimeouts() throws Exception {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof proof = Proof.builder()
+                .id("test-proof")
+                .topic("test-topic")
+                .features(List.of("at_least_once", "ordering"))
+                .checkPointInterval(5)
+                .timeout(30)
+                .build();
+        proof.setStartTime(DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(
+                LocalDateTime.now().minusSeconds(15)));
+
+        ProofTask task = new ProofTask(proof, new Configs(Map.of(), Map.of()), driver);
+
+        try {
+            task.getLastVerifiedProducerCheckpoint()
+                    .addPublished("key0", new LongSeq(9, MessageMetadata.empty()));
+
+            Field timeoutsField = ProofTask.class.getDeclaredField("timeouts");
+            timeoutsField.setAccessible(true);
+            timeoutsField.setInt(task, 2);
+
+            Method recordTimeSeriesPoint = ProofTask.class.getDeclaredMethod("recordTimeSeriesPoint");
+            recordTimeSeriesPoint.setAccessible(true);
+            recordTimeSeriesPoint.invoke(task);
+
+            ProofReport report = task.getReport();
+            assertFalse(report.timeSeries().isEmpty());
+            assertEquals(report.timeSeries().getLast().timeouts(), 2L);
         } finally {
             task.getExecutor().shutdownNow();
         }

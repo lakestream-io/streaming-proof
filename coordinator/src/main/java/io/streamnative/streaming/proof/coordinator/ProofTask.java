@@ -1156,6 +1156,7 @@ public class ProofTask {
                 performanceSummary.publishedMessages(),
                 performanceSummary.consumedMessages(),
                 summary.errors(),
+                summary.timeouts(),
                 summary.missed(),
                 summary.duplicates(),
                 summary.outOfOrders());

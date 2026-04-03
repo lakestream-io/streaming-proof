@@ -38,6 +38,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * @param publishedMessages Current published message count
  * @param consumedMessages Current consumed message count
  * @param errors Current error count
+ * @param timeouts Current timeout count
  * @param missed Current missed message count
  * @param duplicates Current duplicate message count
  * @param outOfOrders Current out-of-order message count
@@ -59,6 +60,7 @@ public record ProofTimeSeriesPoint(
         long publishedMessages,
         long consumedMessages,
         long errors,
+        long timeouts,
         long missed,
         long duplicates,
         long outOfOrders) {
