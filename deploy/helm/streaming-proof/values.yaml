@@ -52,21 +52,27 @@ worker:
       value: spot
 
 frontend:
-  replicas: 1
-  image:
-    repository: streamnative/streaming-proof-frontend
-    tag: latest
-    pullPolicy: Always
-  resources: {}
-  service:
-    port: 80
-  # Allow overriding nodeSelector and tolerations for different environments
-  nodeSelector: {}
-  tolerations:
-    - effect: NoSchedule
-      key: karpenter.sh/capacity-type
-      operator: Equal
-      value: spot
+  enabled: false
+
+metadataSync:
+  enabled: false
+
+# frontend:
+#   replicas: 1
+#   image:
+#     repository: streamnative/streaming-proof-frontend
+#     tag: latest
+#     pullPolicy: Always
+#   resources: {}
+#   service:
+#     port: 80
+#   # Allow overriding nodeSelector and tolerations for different environments
+#   nodeSelector: {}
+#   tolerations:
+#     - effect: NoSchedule
+#       key: karpenter.sh/capacity-type
+#       operator: Equal
+#       value: spot
 
 configs:
   demo.yaml: |
