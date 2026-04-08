@@ -569,11 +569,35 @@ function formatStartTime(value) {
 }
 
 function resolveDriverInfo(proof, clusterTargets) {
-  const driverName = proof.driver || "unknown";
-  const target = clusterTargets.find((t) => t.driverName === driverName) || {};
+  const targets = Array.isArray(clusterTargets) ? clusterTargets : [];
+  const roleDrivers = proof.drivers || {};
+  const hasRoleDrivers = ["admin", "producer", "consumer"].some((key) => !!roleDrivers[key]);
+  const driverNames = [];
+
+  if (hasRoleDrivers) {
+    for (const key of ["admin", "producer", "consumer"]) {
+      const driverName = roleDrivers[key];
+      if (driverName) {
+        driverNames.push(driverName);
+      }
+    }
+  } else if (proof.driver) {
+    driverNames.push(proof.driver);
+  }
+
+  const uniqueDriverNames = [...new Set(driverNames.filter(Boolean))];
+  const uniqueDriverTypes = [...new Set(
+    uniqueDriverNames.map((driverName) => {
+      const target = targets.find((t) => t.driverName === driverName) || {};
+      return target.driverType || null;
+    }).filter(Boolean)
+  )];
+
   return {
-    driverName,
-    driverType: target.driverType || null
+    driverNames: uniqueDriverNames,
+    driverTypes: uniqueDriverTypes,
+    driverNameText: uniqueDriverNames.length > 0 ? uniqueDriverNames.join(", ") : "unknown",
+    driverTypeText: uniqueDriverTypes.length > 0 ? uniqueDriverTypes.join(", ") : "Unknown"
   };
 }
 
@@ -582,7 +606,6 @@ function renderConfigSummary(proof, clusterTargets) {
     return;
   }
 
-  const {driverName, driverType} = resolveDriverInfo(proof, clusterTargets);
   const p = {
     partitions: proof.partitions ?? "?",
     producers:  proof.producers ?? "?",
@@ -825,7 +848,7 @@ function renderProofList() {
         <span class="status-indicator"></span>
         <div class="proof-item-content">
           <p class="proof-item-title">${proof.name || proof.id}</p>
-          <p class="proof-item-meta">${proof.id} · ${proof.driver || "unknown"}</p>
+          <p class="proof-item-meta">${proof.id} · ${resolveDriverInfo(proof, []).driverNameText}</p>
         </div>
       </button>`;
   }).join("");
@@ -944,10 +967,7 @@ async function loadProofDetails(proofId) {
   // Cap at 99.99% while still running; only show 100% once fully stopped
   const progressPercent = (resultStatus === "running" && rawProgress >= 100) ? 99.99 : rawProgress;
   const startedAt = formatStartTime(proof.startTime);
-  const {driverName, driverType} = resolveDriverInfo(proof, clusterTargets);
-  const driverLabel = driverType && driverType !== driverName
-    ? `${driverType} / ${driverName}`
-    : driverName;
+  const {driverNameText, driverTypeText} = resolveDriverInfo(proof, clusterTargets);
 
   // Hero
   heroTitleEl.textContent    = proof.name || proof.id || proofId;
@@ -959,8 +979,8 @@ async function loadProofDetails(proofId) {
 
   if (heroMetaEl) {
     heroMetaEl.innerHTML = [
-      {label: "Driver Type", value: (driverType || "Unknown").toUpperCase(), className: "hero-meta-item-type"},
-      {label: "Driver", value: driverName || "Unknown", className: "hero-meta-item-driver"}
+      {label: "Driver Type", value: driverTypeText.toUpperCase(), className: "hero-meta-item-type"},
+      {label: "Driver", value: driverNameText, className: "hero-meta-item-driver"}
     ].map((item) => `
       <div class="hero-meta-item ${item.className}">
         <span class="hero-meta-label">${escapeHtml(item.label)}</span>
