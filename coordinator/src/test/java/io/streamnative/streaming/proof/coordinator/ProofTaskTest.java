@@ -38,6 +38,7 @@ import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.records.Configs;
 import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
 import io.streamnative.streaming.proof.common.records.Driver;
+import io.streamnative.streaming.proof.common.records.Drivers;
 import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
 import io.streamnative.streaming.proof.common.records.Proof;
 import io.streamnative.streaming.proof.common.records.ProofClusterTarget;
@@ -58,6 +59,63 @@ import org.mockito.InOrder;
 import org.testng.annotations.Test;
 
 public class ProofTaskTest {
+
+    @Test
+    public void testCreateProofTopicsCreatesOutputTopicAcrossDistinctGeoDrivers() {
+        ProofDriver adminDriver = mock(ProofDriver.class);
+        ProofDriver consumerDriver = mock(ProofDriver.class);
+        Proof proof = Proof.builder()
+                .topic("geo-test.ksn.topic-a")
+                .partitions(5)
+                .features(List.of("at_least_once", "ordering"))
+                .drivers(Drivers.builder()
+                        .admin("ksn-geo-1")
+                        .producer("ksn-geo-1")
+                        .consumer("ksn-geo-2")
+                        .build())
+                .build();
+        ProofTask task = new ProofTask(
+                proof,
+                new Configs(Map.of(), Map.of()),
+                adminDriver,
+                driverName -> "ksn-geo-2".equals(driverName) ? consumerDriver : adminDriver);
+        try {
+            task.createProofTopics();
+
+            verify(adminDriver, times(1)).createTopic("geo-test.ksn.topic-a", 5);
+            verify(consumerDriver, times(1)).createTopic("geo-test.ksn.topic-a", 5);
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testRemoveDeletesGeoTopicsAcrossDistinctDrivers() {
+        ProofDriver adminDriver = mock(ProofDriver.class);
+        ProofDriver consumerDriver = mock(ProofDriver.class);
+        Proof proof = Proof.builder()
+                .topic("geo-test.ksn.topic-b")
+                .features(List.of("at_least_once", "ordering"))
+                .drivers(Drivers.builder()
+                        .admin("ksn-geo-1")
+                        .producer("ksn-geo-1")
+                        .consumer("ksn-geo-2")
+                        .build())
+                .build();
+        ProofTask task = new ProofTask(
+                proof,
+                new Configs(Map.of(), Map.of()),
+                adminDriver,
+                driverName -> "ksn-geo-2".equals(driverName) ? consumerDriver : adminDriver);
+        try {
+            task.remove();
+
+            verify(adminDriver, times(1)).deleteTopic("geo-test.ksn.topic-b");
+            verify(consumerDriver, times(1)).deleteTopic("geo-test.ksn.topic-b");
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
 
     @Test
     public void testRemoveDeletesProofTopicForAtLeastOnceProof() {

@@ -26,6 +26,7 @@ import io.streamnative.streaming.proof.common.records.Checkpoints;
 import io.streamnative.streaming.proof.common.records.Configs;
 import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
 import io.streamnative.streaming.proof.common.records.Driver;
+import io.streamnative.streaming.proof.common.records.Drivers;
 import io.streamnative.streaming.proof.common.records.LatencyMetricSnapshot;
 import io.streamnative.streaming.proof.common.records.LatencySummary;
 import io.streamnative.streaming.proof.common.records.NewConsumers;
@@ -40,19 +41,24 @@ import io.streamnative.streaming.proof.common.records.ProofReport;
 import io.streamnative.streaming.proof.common.records.ProofSummary;
 import io.streamnative.streaming.proof.common.records.ProofTimeSeriesPoint;
 import io.streamnative.streaming.proof.common.records.ProofWorkerMetricsSnapshot;
+import io.streamnative.streaming.proof.worker.DriverCache;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
@@ -107,6 +113,15 @@ public class ProofTask {
 
     /** The messaging system driver implementation */
     private final ProofDriver proofDriver;
+
+    /** Driver name used for admin operations in the primary proof task. */
+    private final String adminDriverName;
+
+    /** Lazily initialized topic admin drivers for non-primary geo roles. */
+    private final DriverCache topicDriverCache;
+
+    /** Optional resolver used by tests to inject mocked topic admin drivers. */
+    private final Function<String, ProofDriver> topicDriverResolver;
 
     /** List of HTTP clients for communicating with worker nodes */
     private final List<WorkerHttpClient> clients;
@@ -177,11 +192,22 @@ public class ProofTask {
      * @param configs System-wide configuration for workers and drivers
      */
     public ProofTask(Proof proof, Configs configs, ProofDriver driver) {
+        this(proof, configs, driver, null);
+    }
+
+    ProofTask(
+            Proof proof,
+            Configs configs,
+            ProofDriver driver,
+            Function<String, ProofDriver> topicDriverResolver) {
         this.proof = proof;
         this.executor = Executors.newSingleThreadScheduledExecutor();
         this.configs = configs;
         this.clients = new ArrayList<>(configs.workers().size());
         this.proofDriver = driver;
+        this.adminDriverName = resolveAdminDriverName(proof);
+        this.topicDriverCache = new DriverCache();
+        this.topicDriverResolver = topicDriverResolver;
         this.webhookService = new WebhookNotificationService();
         this.sharedMode = proof.getPulsar() != null
                 && proof.getPulsar().isSharedSubscription();
@@ -205,14 +231,7 @@ public class ProofTask {
         running.set(true);
         startFailureReason = null;
         try {
-            // Create output topic (consumers read from this)
-            proofDriver.createTopic(proof.getTopic(), proof.getPartitions());
-
-            // For exactly-once verification, also create input topic for transactional processing
-            if (proof.getFeatures().contains("exactly_once")) {
-                proofDriver.createTopic(proof.getTopic() + "_transactional", proof.getPartitions());
-            }
-
+            createProofTopics();
             startConsumers();
             startProducers();
             String formattedTimestamp = DateTimeFormatter.ISO_LOCAL_DATE_TIME
@@ -230,10 +249,133 @@ public class ProofTask {
         startFailureReason = rootCauseMessage(error);
         freezeClusterTargetsSnapshot();
         cleanupPartiallyStartedWorkers();
+        closeTopicDrivers();
         latestPerformanceSummary = buildPerformanceSummary(getSummary());
         running.set(false);
         stopping.set(false);
         log.warn("Proof {} failed to start: {}", proof.getId(), startFailureReason, error);
+    }
+
+    void createProofTopics() {
+        createTopicOnDrivers(proof.getTopic(), resolveOutputTopicDriverNames());
+
+        if (proof.getFeatures().contains("exactly_once")) {
+            createTopicOnDrivers(proof.getTopic() + "_transactional", resolveTransactionalTopicDriverNames());
+        }
+    }
+
+    void deleteProofTopics() {
+        if (proof.getFeatures() != null && proof.getFeatures().contains("exactly_once")) {
+            deleteTopicOnDrivers(proof.getTopic() + "_transactional", resolveTransactionalTopicDriverNames());
+        }
+        deleteTopicOnDrivers(proof.getTopic(), resolveOutputTopicDriverNames());
+    }
+
+    private void createTopicOnDrivers(String topicName, List<String> driverNames) {
+        runTopicOperation(driverNames, driver ->
+                driver.createTopic(topicName, proof.getPartitions()));
+    }
+
+    private void deleteTopicOnDrivers(String topicName, List<String> driverNames) {
+        for (String driverName : driverNames) {
+            try {
+                resolveTopicDriver(driverName).deleteTopic(topicName);
+            } catch (Exception e) {
+                log.warn("Failed to delete topic {} on driver {} for proof {}",
+                        topicName, driverName, proof.getId(), e);
+            }
+        }
+    }
+
+    private void runTopicOperation(List<String> driverNames, TopicDriverOperation operation) {
+        for (String driverName : driverNames) {
+            try {
+                operation.run(resolveTopicDriver(driverName));
+            } catch (RuntimeException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    private ProofDriver resolveTopicDriver(String driverName) {
+        if (topicDriverResolver != null) {
+            ProofDriver resolved = topicDriverResolver.apply(driverName);
+            if (resolved == null) {
+                throw new IllegalArgumentException("Driver resolver returned null for " + driverName);
+            }
+            return resolved;
+        }
+
+        if (driverName == null || driverName.equals(adminDriverName)) {
+            return proofDriver;
+        }
+
+        Driver driverConfig = configs.drivers().get(driverName);
+        if (driverConfig == null) {
+            throw new IllegalArgumentException("Driver " + driverName + " not found. "
+                    + "Available drivers: " + configs.drivers().keySet());
+        }
+        return topicDriverCache.getDriver(driverName, driverConfig);
+    }
+
+    private List<String> resolveOutputTopicDriverNames() {
+        Drivers drivers = proof.getDrivers();
+        if (drivers == null) {
+            return Collections.singletonList(adminDriverName);
+        }
+
+        LinkedHashSet<String> driverNames = new LinkedHashSet<>();
+        addDriverName(driverNames, drivers.admin());
+        addDriverName(driverNames, drivers.producer());
+        addDriverName(driverNames, drivers.consumer());
+        if (driverNames.isEmpty()) {
+            driverNames.add(adminDriverName);
+        }
+        return List.copyOf(driverNames);
+    }
+
+    private List<String> resolveTransactionalTopicDriverNames() {
+        Drivers drivers = proof.getDrivers();
+        if (drivers == null) {
+            return Collections.singletonList(adminDriverName);
+        }
+
+        LinkedHashSet<String> driverNames = new LinkedHashSet<>();
+        addDriverName(driverNames, drivers.admin());
+        addDriverName(driverNames, drivers.producer());
+        if (driverNames.isEmpty()) {
+            driverNames.add(adminDriverName);
+        }
+        return List.copyOf(driverNames);
+    }
+
+    private static void addDriverName(Set<String> driverNames, String driverName) {
+        if (driverName != null && !driverName.isBlank()) {
+            driverNames.add(driverName);
+        }
+    }
+
+    private static String resolveAdminDriverName(Proof proof) {
+        Drivers drivers = proof.getDrivers();
+        if (drivers != null && drivers.admin() != null && !drivers.admin().isBlank()) {
+            return drivers.admin();
+        }
+        return proof.getDriver();
+    }
+
+    private void closeTopicDrivers() {
+        try {
+            topicDriverCache.close();
+        } catch (RuntimeException e) {
+            log.warn("Failed to close topic admin drivers for proof {}", proof.getId(), e);
+        }
+    }
+
+    @FunctionalInterface
+    private interface TopicDriverOperation {
+        void run(ProofDriver driver) throws Exception;
     }
 
     private void cleanupPartiallyStartedWorkers() {
@@ -1188,18 +1330,10 @@ public class ProofTask {
      * Deletes the messaging system topic and performs cleanup.
      */
     public void remove() {
-        if (proof.getFeatures() != null && proof.getFeatures().contains("exactly_once")) {
-            try {
-                proofDriver.deleteTopic(proof.getTopic() + "_transactional");
-            } catch (Exception e) {
-                log.warn("Failed to delete transactional topic {} for proof {}",
-                        proof.getTopic() + "_transactional", proof.getId(), e);
-            }
-        }
         try {
-            proofDriver.deleteTopic(proof.getTopic());
-        } catch (Exception e) {
-            log.warn("Failed to delete topic {} for proof {}", proof.getTopic(), proof.getId(), e);
+            deleteProofTopics();
+        } finally {
+            closeTopicDrivers();
         }
         log.info("ProofTask {} removed", proof.getId());
     }

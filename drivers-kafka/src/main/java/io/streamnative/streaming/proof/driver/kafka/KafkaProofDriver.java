@@ -36,6 +36,7 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.TopicExistsException;
 import org.apache.kafka.common.serialization.LongDeserializer;
 import org.apache.kafka.common.serialization.LongSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -111,8 +112,23 @@ public class KafkaProofDriver implements ProofDriver {
         try {
             admin.createTopics(List.of(newTopic)).all().get();
         } catch (Exception e) {
+            if (hasCause(e, TopicExistsException.class)) {
+                log.info("Kafka topic {} already exists, reusing it", topicName);
+                return;
+            }
             throw new RuntimeException(e);
         }
+    }
+
+    private static boolean hasCause(Throwable error, Class<? extends Throwable> expectedType) {
+        Throwable current = error;
+        while (current != null) {
+            if (expectedType.isInstance(current)) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     /**
