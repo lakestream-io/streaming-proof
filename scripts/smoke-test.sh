@@ -135,6 +135,7 @@ PROOF_RESPONSE=$(curl -sf -X POST "$COORDINATOR_URL/proofs" \
     \"duration\": $PROOF_DURATION,
     \"checkPointInterval\": $PROOF_CHECKPOINT_INTERVAL,
     \"timeout\": $PROOF_TIMEOUT,
+    \"finalWaitSeconds\": $PROOF_TIMEOUT,
     \"features\": [\"exactly_once\", \"ordering\"]
   }")
 

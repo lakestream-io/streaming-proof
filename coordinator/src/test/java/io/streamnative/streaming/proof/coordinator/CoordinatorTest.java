@@ -21,7 +21,10 @@ package io.streamnative.streaming.proof.coordinator;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.expectThrows;
 
+import io.streamnative.streaming.proof.common.records.Configs;
+import io.streamnative.streaming.proof.common.records.Driver;
 import io.streamnative.streaming.proof.common.records.Proof;
 import io.streamnative.streaming.proof.common.records.ProofReport;
 import java.util.List;
@@ -57,6 +60,27 @@ public class CoordinatorTest {
                 proofs.stream().map(item -> (String) item.get("id")).toList(),
                 List.of("newest", "oldest", "without-time"));
         assertEquals(proofs.getFirst().get("status"), "running");
+    }
+
+    @Test
+    public void testCreateProofRejectsNegativeFinalWaitSeconds() {
+        Coordinator coordinator = new Coordinator();
+        coordinator.updateConfigs(new Configs(
+                Map.of(),
+                Map.of("test-driver", new Driver("kafka", Map.of(), null))));
+
+        Proof proof = Proof.builder()
+                .name("invalid-final-wait")
+                .driver("test-driver")
+                .features(List.of("at_least_once"))
+                .topic("test-topic")
+                .finalWaitSeconds(-1)
+                .build();
+
+        IllegalArgumentException error = expectThrows(IllegalArgumentException.class,
+                () -> coordinator.createProof(proof));
+
+        assertEquals(error.getMessage(), "Final wait seconds must be 0 or greater.");
     }
 
     private static void addProof(Coordinator coordinator, String id, String startTime) {

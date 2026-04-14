@@ -142,9 +142,12 @@ curl -X POST http://localhost:8080/proofs \
   "msgRate" : 1000,
   "keys" : 40,
   "checkPointInterval" : 5,
-  "timeout" : 180
+  "timeout" : 180,
+  "finalWaitSeconds" : 60
 }'
 ```
+
+`timeout` controls checkpoint verification while the proof is running. `finalWaitSeconds` controls the extra wait for consumers to catch up after producers stop.
 
 ### Pulsar Shared Subscription Verification
 
@@ -183,6 +186,7 @@ curl -X POST http://localhost:8080/proofs \
   "keys": 10,
   "checkPointInterval": 5,
   "timeout": 180,
+  "finalWaitSeconds": 60,
   "pulsar": {
     "consumerConfig": {
       "subscriptionType": "Shared"
@@ -276,7 +280,8 @@ curl -X POST http://localhost:8080/proofs \
   "msgRate" : 1000,
   "keys" : 40,
   "checkPointInterval" : 5,
-  "timeout" : 180
+  "timeout" : 180,
+  "finalWaitSeconds" : 60
 }'
 ```
 
@@ -303,6 +308,7 @@ output:
   "keys" : 40,
   "checkPointInterval" : 5,
   "timeout" : 180,
+  "finalWaitSeconds" : 60,
   "duration" : 28800,
   "startTime" : 1738794638049
 } ]
@@ -332,6 +338,7 @@ output:
     "keys" : 40,
     "checkPointInterval" : 5,
     "timeout" : 180,
+    "finalWaitSeconds" : 60,
     "duration" : 28800,
     "startTime" : 1738794638049
   },

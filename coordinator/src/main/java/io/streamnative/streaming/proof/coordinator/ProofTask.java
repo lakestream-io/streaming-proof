@@ -98,9 +98,10 @@ import org.asynchttpclient.Dsl;
 @Getter
 public class ProofTask {
 
+    private static final String REPORT_SETTING_FINAL_WAIT_SECONDS = "finalWaitSeconds";
     private static final String REPORT_SETTING_FINAL_VERIFICATION_TIMEOUT_SECONDS =
             "finalVerificationTimeoutSeconds";
-    private static final int DEFAULT_FINAL_VERIFICATION_TIMEOUT_SECONDS = 30;
+    private static final int DEFAULT_FINAL_WAIT_SECONDS = 30;
 
     /** The proof test configuration */
     private final Proof proof;
@@ -624,10 +625,27 @@ public class ProofTask {
         stop();
     }
 
+    private int resolveFinalWaitSeconds() {
+        Integer proofFinalWaitSeconds = proof.getFinalWaitSeconds();
+        if (proofFinalWaitSeconds != null) {
+            return Math.max(0, proofFinalWaitSeconds);
+        }
+
+        int configuredFinalWaitSeconds = configs.reportIntSetting(REPORT_SETTING_FINAL_WAIT_SECONDS, -1);
+        if (configuredFinalWaitSeconds >= 0) {
+            return configuredFinalWaitSeconds;
+        }
+
+        int legacyFinalWaitSeconds = configs.reportIntSetting(REPORT_SETTING_FINAL_VERIFICATION_TIMEOUT_SECONDS, -1);
+        if (legacyFinalWaitSeconds >= 0) {
+            return legacyFinalWaitSeconds;
+        }
+
+        return DEFAULT_FINAL_WAIT_SECONDS;
+    }
+
     private void runFinalVerification() {
-        int maxRetries = Math.max(0, configs.reportIntSetting(
-                REPORT_SETTING_FINAL_VERIFICATION_TIMEOUT_SECONDS,
-                DEFAULT_FINAL_VERIFICATION_TIMEOUT_SECONDS));
+        int maxRetries = resolveFinalWaitSeconds();
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             try {
                 Pair<ProducerCheckpoint, ConsumerCheckPoint> checkpoints = aggregateCheckpoints();

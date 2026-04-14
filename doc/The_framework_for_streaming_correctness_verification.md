@@ -225,10 +225,13 @@ The framework exposes REST APIs for control and monitoring.
           "keys": 100,
           "checkPointInterval": 60,
           "timeout": 180,
+          "finalWaitSeconds": 60,
           "consumeDelay": 0,
           "duration": 28800
         }
         ```
+    *   `timeout` controls checkpoint verification while the proof is running.
+    *   `finalWaitSeconds` controls the extra wait for consumers to catch up after producers stop.
 *   `GET /proofs`: List active tests.
     *   **Response Body:** (`application/json`) - A list of active proofs.
         ```json
@@ -298,6 +301,7 @@ The framework exposes REST APIs for control and monitoring.
             "keys": 100,
             "checkPointInterval": 60,
             "timeout": 180,
+            "finalWaitSeconds": 60,
             "duration": 28800,
             "startTime": 1678886400000
           },

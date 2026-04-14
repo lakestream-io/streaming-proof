@@ -614,6 +614,7 @@ function renderConfigSummary(proof, clusterTargets) {
     duration:   proof.duration != null ? `${proof.duration}s` : "?",
     checkpoint: proof.checkPointInterval != null ? `${proof.checkPointInterval}s` : "?",
     timeout:    proof.timeout != null ? `${proof.timeout}s` : "?",
+    finalWait: proof.finalWaitSeconds != null ? `${proof.finalWaitSeconds}s` : "—",
     features:   Array.isArray(proof.features) ? proof.features : [],
   };
 
@@ -653,6 +654,8 @@ function renderConfigSummary(proof, clusterTargets) {
           checkpoint <span class="cfg-compact-em">${escapeHtml(p.checkpoint)}</span>
           <span class="cfg-compact-dot"></span>
           timeout <span class="cfg-compact-em">${escapeHtml(p.timeout)}</span>
+          <span class="cfg-compact-dot"></span>
+          final wait <span class="cfg-compact-em">${escapeHtml(p.finalWait)}</span>
         </span>
       </div>
       <div class="cfg-compact-item cfg-compact-item-guarantees">

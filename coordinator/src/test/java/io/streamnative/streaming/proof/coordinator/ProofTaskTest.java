@@ -425,42 +425,105 @@ public class ProofTaskTest {
     }
 
     @Test
-    public void testFinalVerificationUsesDedicatedTimeoutSetting() throws Exception {
-        ProofDriver driver = mock(ProofDriver.class);
-        Proof proof = Proof.builder()
-                .id("test-proof")
-                .topic("test-topic")
-                .features(List.of("at_least_once", "ordering"))
-                .timeout(180)
-                .build();
-
-        ProofTask task = spy(new ProofTask(
-                proof,
-                new Configs(Map.of(), Map.of(), Map.of("finalVerificationTimeoutSeconds", 0)),
-                driver));
+    public void testFinalVerificationUsesNewReportSetting() throws Exception {
+        ProofTask task = newFinalVerificationTask(
+                Proof.builder()
+                        .id("test-proof")
+                        .topic("test-topic")
+                        .features(List.of("at_least_once", "ordering"))
+                        .timeout(180)
+                        .build(),
+                Map.of("finalWaitSeconds", 0));
 
         try {
-            ProducerCheckpoint producerCp = new ProducerCheckpoint();
-            producerCp.addPublished("key0", new LongSeq(10, MessageMetadata.empty()));
-
-            ConsumerCheckPoint consumerCp = new ConsumerCheckPoint();
-            ConsumerCheckPoint.SeqRange range = new ConsumerCheckPoint.SeqRange();
-            range.setStart(new LongSeq(0, MessageMetadata.empty()));
-            range.setEnd(new LongSeq(5, MessageMetadata.empty()));
-            TreeMap<String, ConsumerCheckPoint.SeqRange> rangeMap = new TreeMap<>();
-            rangeMap.put("t0", range);
-            consumerCp.addKey("key0", rangeMap);
-
-            doReturn(Pair.of(producerCp, consumerCp)).when(task).aggregateCheckpoints();
-
-            Method method = ProofTask.class.getDeclaredMethod("runFinalVerification");
-            method.setAccessible(true);
-            method.invoke(task);
-
+            invokeRunFinalVerification(task);
             verify(task, times(1)).aggregateCheckpoints();
         } finally {
             task.getExecutor().shutdownNow();
         }
+    }
+
+    @Test
+    public void testFinalVerificationProofSettingOverridesReportSetting() throws Exception {
+        ProofTask task = newFinalVerificationTask(
+                Proof.builder()
+                        .id("test-proof")
+                        .topic("test-topic")
+                        .features(List.of("at_least_once", "ordering"))
+                        .timeout(180)
+                        .finalWaitSeconds(0)
+                        .build(),
+                Map.of("finalWaitSeconds", 5));
+
+        try {
+            invokeRunFinalVerification(task);
+            verify(task, times(1)).aggregateCheckpoints();
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testFinalVerificationUsesNewReportSettingBeforeLegacySetting() throws Exception {
+        ProofTask task = newFinalVerificationTask(
+                Proof.builder()
+                        .id("test-proof")
+                        .topic("test-topic")
+                        .features(List.of("at_least_once", "ordering"))
+                        .timeout(180)
+                        .build(),
+                Map.of("finalWaitSeconds", 0, "finalVerificationTimeoutSeconds", 5));
+
+        try {
+            invokeRunFinalVerification(task);
+            verify(task, times(1)).aggregateCheckpoints();
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testFinalVerificationSupportsLegacyReportSetting() throws Exception {
+        ProofTask task = newFinalVerificationTask(
+                Proof.builder()
+                        .id("test-proof")
+                        .topic("test-topic")
+                        .features(List.of("at_least_once", "ordering"))
+                        .timeout(180)
+                        .build(),
+                Map.of("finalVerificationTimeoutSeconds", 0));
+
+        try {
+            invokeRunFinalVerification(task);
+            verify(task, times(1)).aggregateCheckpoints();
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    private static ProofTask newFinalVerificationTask(Proof proof, Map<String, Object> reportSettings) {
+        ProofDriver driver = mock(ProofDriver.class);
+        ProofTask task = spy(new ProofTask(proof, new Configs(Map.of(), Map.of(), reportSettings), driver));
+
+        ProducerCheckpoint producerCp = new ProducerCheckpoint();
+        producerCp.addPublished("key0", new LongSeq(10, MessageMetadata.empty()));
+
+        ConsumerCheckPoint consumerCp = new ConsumerCheckPoint();
+        ConsumerCheckPoint.SeqRange range = new ConsumerCheckPoint.SeqRange();
+        range.setStart(new LongSeq(0, MessageMetadata.empty()));
+        range.setEnd(new LongSeq(5, MessageMetadata.empty()));
+        TreeMap<String, ConsumerCheckPoint.SeqRange> rangeMap = new TreeMap<>();
+        rangeMap.put("t0", range);
+        consumerCp.addKey("key0", rangeMap);
+
+        doReturn(Pair.of(producerCp, consumerCp)).when(task).aggregateCheckpoints();
+        return task;
+    }
+
+    private static void invokeRunFinalVerification(ProofTask task) throws Exception {
+        Method method = ProofTask.class.getDeclaredMethod("runFinalVerification");
+        method.setAccessible(true);
+        method.invoke(task);
     }
 
     @Test

@@ -151,6 +151,9 @@ public class Coordinator {
         if (proof.getConsumeDelay() > 0 && proof.getConsumeDelay() >= proof.getTimeout()) {
             throw new IllegalArgumentException("Consume delay must be less than timeout.");
         }
+        if (proof.getFinalWaitSeconds() != null && proof.getFinalWaitSeconds() < 0) {
+            throw new IllegalArgumentException("Final wait seconds must be 0 or greater.");
+        }
         String proofID = RandomStringUtils.secure().nextAlphanumeric(5);
         proof.setId(proofID);
         ProofTask task = new ProofTask(proof, configs, driverCache.getDriver(driverName,

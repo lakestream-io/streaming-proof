@@ -153,6 +153,12 @@ public class Proof {
     @Builder.Default
     private int duration = 28800;
 
+    /**
+     * Additional seconds to wait during final verification after producers stop.
+     * Null uses coordinator/global defaults. A value of 0 means no retry wait.
+     */
+    private Integer finalWaitSeconds;
+
     /** Human-readable timestamp when the proof test started */
     private String startTime;
 
