@@ -27,6 +27,7 @@ import io.streamnative.streaming.proof.common.ProofConsumer;
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.ProofProducer;
 import io.streamnative.streaming.proof.common.records.Driver;
+import io.streamnative.streaming.proof.common.records.ErrorOccurrence;
 import io.streamnative.streaming.proof.common.records.NewProducers;
 import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
 import java.util.List;
@@ -111,10 +112,48 @@ public class ProofProducersTest {
         }
     }
 
+    @Test
+    public void testCheckpointIncludesProducerErrorTimingDetails() throws Exception {
+        FailingProofDriver driver = new FailingProofDriver();
+        NewProducers newProducers = new NewProducers(
+                "proof-4",
+                "topic-4",
+                1,
+                1,
+                1000,
+                "stub",
+                new Driver("stub", Map.of()),
+                false);
+
+        ProofProducers proofProducers = new ProofProducers(newProducers, driver);
+        try {
+            proofProducers.start();
+
+            ProducerCheckpoint checkpoint = waitForErrorCheckpoint(proofProducers);
+            assertTrue(checkpoint.getErrors().get("simulated failure") >= 1);
+            ErrorOccurrence occurrence = checkpoint.getErrorDetails().get("simulated failure");
+            assertEquals(occurrence.getCount(), checkpoint.getErrors().get("simulated failure").intValue());
+            assertTrue(occurrence.getFirstSeenAtMillis() > 0L);
+            assertTrue(occurrence.getLastSeenAtMillis() >= occurrence.getFirstSeenAtMillis());
+        } finally {
+            proofProducers.stop();
+        }
+    }
+
     private ProducerCheckpoint waitForCheckpoint(ProofProducers proofProducers) throws InterruptedException {
         long deadline = System.currentTimeMillis() + 1_000;
         ProducerCheckpoint checkpoint = proofProducers.checkPoint();
         while (checkpoint.getPublished().isEmpty() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10);
+            checkpoint = proofProducers.checkPoint();
+        }
+        return checkpoint;
+    }
+
+    private ProducerCheckpoint waitForErrorCheckpoint(ProofProducers proofProducers) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 1_000;
+        ProducerCheckpoint checkpoint = proofProducers.checkPoint();
+        while (checkpoint.getErrors().isEmpty() && System.currentTimeMillis() < deadline) {
             Thread.sleep(10);
             checkpoint = proofProducers.checkPoint();
         }
@@ -164,6 +203,46 @@ public class ProofProducersTest {
         @Override
         public CompletableFuture<MessageMetadata> sendAsync(String key, long value) {
             return CompletableFuture.completedFuture(new MessageMetadata(offset.getAndIncrement()));
+        }
+
+        @Override
+        public void close() {
+        }
+    }
+
+    private static final class FailingProofDriver implements ProofDriver {
+        @Override
+        public void init(Map<String, Object> configs) {
+        }
+
+        @Override
+        public void createTopic(String topicName, int partitions) {
+        }
+
+        @Override
+        public void deleteTopic(String topicName) {
+        }
+
+        @Override
+        public ProofProducer createProducer(String topicName, Map<String, Object> configs) {
+            return new FailingProofProducer();
+        }
+
+        @Override
+        public ProofConsumer createConsumer(String topicName, int partitions, long consumeDelayMs,
+                                            Map<String, Object> configs, MessageListener listener) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void close() {
+        }
+    }
+
+    private static final class FailingProofProducer implements ProofProducer {
+        @Override
+        public CompletableFuture<MessageMetadata> sendAsync(String key, long value) {
+            return CompletableFuture.failedFuture(new RuntimeException("simulated failure"));
         }
 
         @Override

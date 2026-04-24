@@ -21,6 +21,7 @@ package io.streamnative.streaming.proof.worker;
 import io.streamnative.streaming.proof.common.LongSeq;
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofProducer;
+import io.streamnative.streaming.proof.common.records.ErrorOccurrence;
 import io.streamnative.streaming.proof.common.records.LatencyMetricSnapshot;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
@@ -98,6 +99,9 @@ public class ProofProducerTask implements AutoCloseable {
     /** Counter for failed message sends */
     private final Map<String, Integer> errors = new HashMap<>();
 
+    /** Aggregated timing details for failed message sends */
+    private final Map<String, ErrorOccurrence> errorDetails = new HashMap<>();
+
     /** Counter for round-robin key selection */
     private final AtomicLong index = new AtomicLong(0);
 
@@ -155,8 +159,16 @@ public class ProofProducerTask implements AutoCloseable {
         sendAttempts.incrementAndGet();
         return producer.sendAsync(key, seq).whenComplete((metadata, e) -> {
             if (e != null) {
+                long now = System.currentTimeMillis();
                 synchronized (errors) {
                     errors.compute(e.getMessage(), (k, v) -> v == null ? 1 : v + 1);
+                    errorDetails.compute(e.getMessage(), (k, existing) -> {
+                        if (existing == null) {
+                            return ErrorOccurrence.firstSeen(now);
+                        }
+                        existing.recordOccurrence(now);
+                        return existing;
+                    });
                 }
             } else {
                 acknowledged.incrementAndGet();
@@ -220,6 +232,14 @@ public class ProofProducerTask implements AutoCloseable {
 
     public synchronized Map<String, Integer> getErrors() {
         return  Collections.unmodifiableMap(errors);
+    }
+
+    public synchronized Map<String, ErrorOccurrence> getErrorDetails() {
+        Map<String, ErrorOccurrence> copy = new HashMap<>();
+        errorDetails.forEach((key, value) -> copy.put(
+                key,
+                new ErrorOccurrence(value.getCount(), value.getFirstSeenAtMillis(), value.getLastSeenAtMillis())));
+        return Collections.unmodifiableMap(copy);
     }
 
     private static int estimateMessageBytes(String key) {

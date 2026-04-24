@@ -178,6 +178,7 @@ public class ProofProducers {
         for (ProofProducerTask task : tasks) {
             task.getLastPublished().forEach(checkpoint::addPublished);
             task.getErrors().forEach(checkpoint::addErrors);
+            task.getErrorDetails().forEach(checkpoint::addErrorDetails);
         }
         return checkpoint;
     }
