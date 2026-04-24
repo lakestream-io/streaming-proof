@@ -49,8 +49,7 @@ import org.apache.commons.lang3.RandomStringUtils;
  * <ul>
  *   <li>A fixed set of unique message keys</li>
  *   <li>Sequence counters for each key</li>
- *   <li>Error counts for failed sends</li>
- *   <li>List of sequence numbers that failed to send</li>
+ *   <li>Aggregated error occurrence details for failed sends</li>
  * </ul>
  *
  * <p>Example usage:
@@ -67,8 +66,7 @@ import org.apache.commons.lang3.RandomStringUtils;
  *     });
  *
  * // Later, check the metrics
- * System.out.println("Errors: " + task.getErrors().get());
- * System.out.println("Failed sequences: " + task.getFailedSeqs());
+ * System.out.println("Errors: " + task.getErrorDetails());
  * }</pre>
  *
  * @see ProofProducer
@@ -95,9 +93,6 @@ public class ProofProducerTask implements AutoCloseable {
      * This map is updated whenever a message is successfully sent.
      */
     private final Map<String, LongSeq> lastPublished;
-
-    /** Counter for failed message sends */
-    private final Map<String, Integer> errors = new HashMap<>();
 
     /** Aggregated timing details for failed message sends */
     private final Map<String, ErrorOccurrence> errorDetails = new HashMap<>();
@@ -160,16 +155,7 @@ public class ProofProducerTask implements AutoCloseable {
         return producer.sendAsync(key, seq).whenComplete((metadata, e) -> {
             if (e != null) {
                 long now = System.currentTimeMillis();
-                synchronized (errors) {
-                    errors.compute(e.getMessage(), (k, v) -> v == null ? 1 : v + 1);
-                    errorDetails.compute(e.getMessage(), (k, existing) -> {
-                        if (existing == null) {
-                            return ErrorOccurrence.firstSeen(now);
-                        }
-                        existing.recordOccurrence(now);
-                        return existing;
-                    });
-                }
+                recordError(e.getMessage(), now);
             } else {
                 acknowledged.incrementAndGet();
                 acknowledgedBytes.addAndGet(estimateMessageBytes(key));
@@ -183,17 +169,17 @@ public class ProofProducerTask implements AutoCloseable {
                         if (newMsg.compareTo(previousMsg) <= 0) {
                             log.error("Seq out of order writes | key: {} | new message: {} | previous message: {}",
                                     key, newMsg, previousMsg);
-                            errors.compute("Seq out of order writes", (k, v) -> v == null ? 1 : v + 1);
+                            recordError("Seq out of order writes", System.currentTimeMillis());
                         }
                         if (newMsg.seq() - previousMsg.seq() > 1) {
                             log.error("Seq writes gap | key: {} | new message: {} | previous message: {}",
                                     key, newMsg, previousMsg);
-                            errors.compute("Seq writes gap", (k, v) -> v == null ? 1 : v + 1);
+                            recordError("Seq writes gap", System.currentTimeMillis());
                         }
                         if (!metadata.isAfter(previousMsg.metadata())) {
                             log.error("Offset out of order writes | key: {} | new message: {} | previous message: {}",
                                     key, newMsg, previousMsg);
-                            errors.compute("Offset out of order writes", (k, v) -> v == null ? 1 : v + 1);
+                            recordError("Offset out of order writes", System.currentTimeMillis());
                         }
                     }
                     lastPublished.put(key, newMsg);
@@ -230,16 +216,26 @@ public class ProofProducerTask implements AutoCloseable {
         return Collections.unmodifiableMap(lastPublished);
     }
 
-    public synchronized Map<String, Integer> getErrors() {
-        return  Collections.unmodifiableMap(errors);
+    public Map<String, ErrorOccurrence> getErrorDetails() {
+        Map<String, ErrorOccurrence> copy = new HashMap<>();
+        synchronized (errorDetails) {
+            errorDetails.forEach((key, value) -> copy.put(
+                    key,
+                    new ErrorOccurrence(value.getCount(), value.getFirstSeenAtMillis(), value.getLastSeenAtMillis())));
+        }
+        return Collections.unmodifiableMap(copy);
     }
 
-    public synchronized Map<String, ErrorOccurrence> getErrorDetails() {
-        Map<String, ErrorOccurrence> copy = new HashMap<>();
-        errorDetails.forEach((key, value) -> copy.put(
-                key,
-                new ErrorOccurrence(value.getCount(), value.getFirstSeenAtMillis(), value.getLastSeenAtMillis())));
-        return Collections.unmodifiableMap(copy);
+    private void recordError(String message, long timestampMillis) {
+        synchronized (errorDetails) {
+            errorDetails.compute(message, (k, existing) -> {
+                if (existing == null) {
+                    return ErrorOccurrence.firstSeen(timestampMillis);
+                }
+                existing.recordOccurrence(timestampMillis);
+                return existing;
+            });
+        }
     }
 
     private static int estimateMessageBytes(String key) {

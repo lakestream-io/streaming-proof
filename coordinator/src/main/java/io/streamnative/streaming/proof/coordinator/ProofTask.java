@@ -27,6 +27,7 @@ import io.streamnative.streaming.proof.common.records.Configs;
 import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
 import io.streamnative.streaming.proof.common.records.Driver;
 import io.streamnative.streaming.proof.common.records.Drivers;
+import io.streamnative.streaming.proof.common.records.ErrorOccurrence;
 import io.streamnative.streaming.proof.common.records.LatencyMetricSnapshot;
 import io.streamnative.streaming.proof.common.records.LatencySummary;
 import io.streamnative.streaming.proof.common.records.NewConsumers;
@@ -744,8 +745,7 @@ public class ProofTask {
             cp.calculate();
             return new ProofSummary(
                     verified,
-                    this.getLastVerifiedProducerCheckpoint().getErrors().values().stream()
-                            .mapToInt(Integer::intValue).sum(),
+                    countProducerErrors(this.getLastVerifiedProducerCheckpoint()),
                     0, // out-of-order: not applicable for Shared
                     cp.getMissedSeqs().values().stream()
                             .flatMap(ranges -> ranges.stream()
@@ -762,8 +762,7 @@ public class ProofTask {
         lastVerifiedConsumerCheckpoint.calculate();
         return new ProofSummary(
                 verified,
-                this.getLastVerifiedProducerCheckpoint().getErrors().values().stream()
-                        .mapToInt(Integer::intValue).sum(),
+                countProducerErrors(this.getLastVerifiedProducerCheckpoint()),
                 lastVerifiedConsumerCheckpoint.getOutOfOrderSeqs().values().stream()
                         .flatMap(ranges -> ranges.stream()
                                 .map(range -> range.getRight() - range.getLeft() + 1))
@@ -1104,12 +1103,12 @@ public class ProofTask {
                 .sum();
     }
 
-    private static long countProducerErrors(ProducerCheckpoint checkpoint) {
-        if (checkpoint == null || checkpoint.getErrors() == null) {
-            return 0L;
+    private static int countProducerErrors(ProducerCheckpoint checkpoint) {
+        if (checkpoint == null || checkpoint.getErrorDetails() == null) {
+            return 0;
         }
-        return checkpoint.getErrors().values().stream()
-                .mapToLong(Integer::longValue)
+        return checkpoint.getErrorDetails().values().stream()
+                .mapToInt(ErrorOccurrence::getCount)
                 .sum();
     }
 

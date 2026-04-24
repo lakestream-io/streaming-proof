@@ -20,6 +20,7 @@ package io.streamnative.streaming.proof.worker;
 
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.ProofProducer;
+import io.streamnative.streaming.proof.common.records.ErrorOccurrence;
 import io.streamnative.streaming.proof.common.records.LatencyMetricSnapshot;
 import io.streamnative.streaming.proof.common.records.NewProducers;
 import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
@@ -177,7 +178,6 @@ public class ProofProducers {
         ProducerCheckpoint checkpoint = new ProducerCheckpoint();
         for (ProofProducerTask task : tasks) {
             task.getLastPublished().forEach(checkpoint::addPublished);
-            task.getErrors().forEach(checkpoint::addErrors);
             task.getErrorDetails().forEach(checkpoint::addErrorDetails);
         }
         return checkpoint;
@@ -191,7 +191,9 @@ public class ProofProducers {
         for (ProofProducerTask task : tasks) {
             sendAttempts += task.getSendAttempts();
             acknowledgedMessages += task.getAcknowledged();
-            publishErrors += task.getErrors().values().stream().mapToLong(Integer::longValue).sum();
+            publishErrors += task.getErrorDetails().values().stream()
+                    .mapToLong(ErrorOccurrence::getCount)
+                    .sum();
             LatencyMetricSnapshot latencySnapshot = task.getPublishLatencySnapshot();
             publishLatency.mergeFrom(latencySnapshot);
         }
@@ -219,7 +221,9 @@ public class ProofProducers {
         for (ProofProducerTask task : tasks) {
             sendAttempts += task.getSendAttempts();
             acknowledgedMessages += task.getAcknowledged();
-            publishErrors += task.getErrors().values().stream().mapToLong(Integer::longValue).sum();
+            publishErrors += task.getErrorDetails().values().stream()
+                    .mapToLong(ErrorOccurrence::getCount)
+                    .sum();
             LatencyMetricSnapshot latencySnapshot = task.getPublishLatencyWindowSnapshot();
             publishLatency.mergeFrom(latencySnapshot);
         }

@@ -34,9 +34,6 @@ public class ProducerCheckpoint {
 
     /** Map storing the latest sequence number for each published message key */
     private final Map<String, LongSeq> published = new HashMap<>();
-    
-    /** Map storing the error count for each message key */
-    private final Map<String, Integer> errors = new HashMap<>();
 
     /** Map storing aggregated error timing details */
     private final Map<String, ErrorOccurrence> errorDetails = new HashMap<>();
@@ -49,16 +46,6 @@ public class ProducerCheckpoint {
      */
     public void addPublished(String key, LongSeq seq) {
         published.put(key, seq);
-    }
-
-    /**
-     * Adds or updates the error count for a message key.
-     *
-     * @param key The message key
-     * @param error The error count
-     */
-    public void addErrors(String key, int error) {
-        errors.merge(key, error, Integer::sum);
     }
 
     /**
@@ -90,7 +77,6 @@ public class ProducerCheckpoint {
      */
     public void merge(ProducerCheckpoint checkpoint) {
         this.published.putAll(checkpoint.published);
-        checkpoint.errors.forEach(this::addErrors);
         checkpoint.errorDetails.forEach(this::addErrorDetails);
     }
 }

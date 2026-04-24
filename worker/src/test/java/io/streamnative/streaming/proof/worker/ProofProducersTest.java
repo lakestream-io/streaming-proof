@@ -130,9 +130,8 @@ public class ProofProducersTest {
             proofProducers.start();
 
             ProducerCheckpoint checkpoint = waitForErrorCheckpoint(proofProducers);
-            assertTrue(checkpoint.getErrors().get("simulated failure") >= 1);
             ErrorOccurrence occurrence = checkpoint.getErrorDetails().get("simulated failure");
-            assertEquals(occurrence.getCount(), checkpoint.getErrors().get("simulated failure").intValue());
+            assertTrue(occurrence.getCount() >= 1);
             assertTrue(occurrence.getFirstSeenAtMillis() > 0L);
             assertTrue(occurrence.getLastSeenAtMillis() >= occurrence.getFirstSeenAtMillis());
         } finally {
@@ -153,7 +152,7 @@ public class ProofProducersTest {
     private ProducerCheckpoint waitForErrorCheckpoint(ProofProducers proofProducers) throws InterruptedException {
         long deadline = System.currentTimeMillis() + 1_000;
         ProducerCheckpoint checkpoint = proofProducers.checkPoint();
-        while (checkpoint.getErrors().isEmpty() && System.currentTimeMillis() < deadline) {
+        while (checkpoint.getErrorDetails().isEmpty() && System.currentTimeMillis() < deadline) {
             Thread.sleep(10);
             checkpoint = proofProducers.checkPoint();
         }

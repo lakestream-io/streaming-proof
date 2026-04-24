@@ -42,7 +42,7 @@ public class WorkerTest {
 
         assertNotNull(checkpoint);
         assertTrue(checkpoint.getPublished().isEmpty());
-        assertTrue(checkpoint.getErrors().isEmpty());
+        assertTrue(checkpoint.getErrorDetails().isEmpty());
     }
 
     @Test

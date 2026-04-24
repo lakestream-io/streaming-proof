@@ -27,16 +27,13 @@ public class ProducerCheckpointTest {
     @Test
     public void testMergeRetainsErrorTimingDetails() {
         ProducerCheckpoint left = new ProducerCheckpoint();
-        left.addErrors("boom", 2);
         left.addErrorDetails("boom", new ErrorOccurrence(2, 100L, 200L));
 
         ProducerCheckpoint right = new ProducerCheckpoint();
-        right.addErrors("boom", 3);
         right.addErrorDetails("boom", new ErrorOccurrence(3, 150L, 400L));
 
         left.merge(right);
 
-        assertEquals(left.getErrors().get("boom").intValue(), 5);
         assertEquals(left.getErrorDetails().get("boom").getCount(), 5);
         assertEquals(left.getErrorDetails().get("boom").getFirstSeenAtMillis(), 100L);
         assertEquals(left.getErrorDetails().get("boom").getLastSeenAtMillis(), 400L);
