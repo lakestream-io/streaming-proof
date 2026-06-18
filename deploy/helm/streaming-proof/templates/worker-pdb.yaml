@@ -1,0 +1,15 @@
+{{- if .Values.worker.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: streaming-proof-worker
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "streaming-proof.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.worker.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      app: streaming-proof
+      component: streaming-proof-worker
+{{- end }}

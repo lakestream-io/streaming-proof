@@ -24,11 +24,16 @@ coordinator:
       service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: external
   # Allow overriding nodeSelector and tolerations for different environments
   nodeSelector: {}
+  podAnnotations:
+    karpenter.sh/do-not-disrupt: "true"
   tolerations:
     - effect: NoSchedule
       key: karpenter.sh/capacity-type
       operator: Equal
       value: spot
+  pdb:
+    enabled: true
+    maxUnavailable: 0
 
 worker:
   replicas: 3
@@ -45,11 +50,16 @@ worker:
       memory: "8Gi"
   # Allow overriding nodeSelector and tolerations for different environments
   nodeSelector: {}
+  podAnnotations:
+    karpenter.sh/do-not-disrupt: "true"
   tolerations:
     - effect: NoSchedule
       key: karpenter.sh/capacity-type
       operator: Equal
       value: spot
+  pdb:
+    enabled: true
+    minAvailable: 3
 
 frontend:
   enabled: false
@@ -75,16 +85,134 @@ metadataSync:
 #       value: spot
 
 configs:
-  demo.yaml: |
+  configs.yaml: |
+    report:
+      maxTimeSeriesPoints: '481'
     workers:
-      worker.1: "http://streaming-proof-worker-0.streaming-proof-worker-headless.streaming-proof.svc.cluster.local:8088"
-      worker.2: "http://streaming-proof-worker-1.streaming-proof-worker-headless.streaming-proof.svc.cluster.local:8088"
-      worker.3: "http://streaming-proof-worker-2.streaming-proof-worker-headless.streaming-proof.svc.cluster.local:8088"
-  
+      worker.1: http://streaming-proof-worker-0.streaming-proof-worker-headless.streaming-proof.svc.cluster.local:8088
+      worker.2: http://streaming-proof-worker-1.streaming-proof-worker-headless.streaming-proof.svc.cluster.local:8088
+      worker.3: http://streaming-proof-worker-2.streaming-proof-worker-headless.streaming-proof.svc.cluster.local:8088
     drivers:
-      serverless:
-        driverType: "pulsar"
+      classic:
+        driverType: pulsar
         driverConfigs:
-          pulsar.service.url: "pulsar+ssl://xxx:6651"
-          pulsar.admin.url: "https://xxx"
-          pulsar.auth.token: "xxx"
+          pulsar.service.url: pulsar+ssl://pc-647fe509.aws-use1-staging-q1z54.aws.sn3.dev:6651
+          pulsar.admin.url: https://pc-647fe509.aws-use1-staging-q1z54.aws.sn3.dev
+          pulsar.auth.token: ***REMOVED***
+      classic-ursa-offload:
+        driverType: pulsar
+        driverConfigs:
+          offload.condition.waitOffloadedForEachLedger: true
+          pulsar.service.url: pulsar+ssl://pc-e69e63cc.aws-use1-staging-q1z54.aws.sn3.dev:6651
+          pulsar.admin.url: https://pc-e69e63cc.aws-use1-staging-q1z54.aws.sn3.dev
+          pulsar.auth.token: ***REMOVED***
+      classic-tiered-storage:
+        driverType: pulsar
+        driverConfigs:
+          offload.condition.waitOffloadedForEachLedger: true
+          pulsar.service.url: pulsar+ssl://pc-3206cbc9.aws-use1-staging-q1z54.aws.sn3.dev:6651
+          pulsar.admin.url: https://pc-3206cbc9.aws-use1-staging-q1z54.aws.sn3.dev
+          pulsar.auth.token: ***REMOVED***
+      mqtt:
+        driverType: mqtt
+        driverConfigs:
+          mqtt.service.url: pc-f0bb5dda.aws-use1-staging-q1z54.aws.sn3.dev:5682
+          pulsar.admin.url: https://pc-f0bb5dda.aws-use1-staging-q1z54.aws.sn3.dev
+          pulsar.client.auth.token: ***REMOVED***
+      ursa:
+        driverType: kafka
+        driverConfigs:
+          bootstrap.servers: pc-da8c82e9.aws-use1-staging-q1z54.aws.sn3.dev:9093
+          security.protocol: SASL_SSL
+          sasl.mechanism: PLAIN
+          session.timeout.ms: '10000'
+          delivery.timeout.ms: '2147483647'
+          max.block.ms: '2147483647'
+          max.in.flight.requests.per.connection: '5'
+          acks: '1'
+          sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required
+            username='user' password='token:***REMOVED***';
+          isolation.level: read_committed
+      kafka-eos:
+        driverType: kafka
+        driverConfigs:
+          bootstrap.servers: pc-647fe509.aws-use1-staging-q1z54.aws.sn3.dev:9093
+          security.protocol: SASL_SSL
+          sasl.mechanism: PLAIN
+          session.timeout.ms: '10000'
+          delivery.timeout.ms: '2147483647'
+          max.block.ms: '2147483647'
+          max.in.flight.requests.per.connection: '5'
+          acks: '1'
+          sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required
+            username='user' password='token:***REMOVED***'
+      knative:
+        driverType: kafka
+        driverConfigs:
+          bootstrap.servers: xxx.xxx.xxx.xxx:9092
+          session.timeout.ms: '10000'
+          delivery.timeout.ms: '2147483647'
+          max.block.ms: '2147483647'
+          max.in.flight.requests.per.connection: '5'
+          acks: '1'
+          isolation.level: read_committed
+      classic-oxia:
+        driverType: pulsar
+        driverConfigs:
+          pulsar.service.url: pulsar+ssl://pc-976fd8f8.aws-use1-staging-q1z54.aws.sn3.dev:6651
+          pulsar.admin.url: https://pc-976fd8f8.aws-use1-staging-q1z54.aws.sn3.dev
+          pulsar.auth.token: ***REMOVED***
+      ufk-latency-optimized:
+        driverType: kafka
+        driverConfigs:
+          bootstrap.servers: kc-ada4h.aws-use1-staging-q1z54.aws.sn3.dev:9093
+          security.protocol: SASL_SSL
+          sasl.mechanism: PLAIN
+          session.timeout.ms: '10000'
+          delivery.timeout.ms: '2147483647'
+          max.block.ms: '2147483647'
+          max.in.flight.requests.per.connection: '5'
+          acks: '1'
+          isolation.level: read_committed
+          sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required
+            username='e2e-admin@o-2h056.auth.sncloud-stg.dev' password='***REMOVED***';
+      ufk-cost-optimized:
+          driverType: kafka
+          driverConfigs:
+            bootstrap.servers: kc-h2b99.aws-use1-staging-q1z54.aws.sn3.dev:9093
+            security.protocol: SASL_SSL
+            sasl.mechanism: PLAIN
+            session.timeout.ms: '10000'
+            delivery.timeout.ms: '2147483647'
+            max.block.ms: '2147483647'
+            max.in.flight.requests.per.connection: '5'
+            acks: '1'
+            isolation.level: read_committed
+            sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required
+              username='e2e-admin@o-2h056.auth.sncloud-stg.dev' password='***REMOVED***';  
+      ksn-geo-1:
+        driverType: kafka
+        driverConfigs:
+          bootstrap.servers: ksn-geo-1-broker.o-2h056.svc.cluster.local:9092
+          security.protocol: SASL_PLAINTEXT
+          sasl.mechanism: PLAIN
+          session.timeout.ms: '10000'
+          max.in.flight.requests.per.connection: '5'
+          enable.idempotence: true
+          acks: 'all'
+          isolation.level: read_committed
+          sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required
+            username='user' password='token:***REMOVED***';
+      ksn-geo-2:
+        driverType: kafka
+        driverConfigs:
+          bootstrap.servers: ksn-geo-2-broker.o-2h056.svc.cluster.local:9092
+          security.protocol: SASL_PLAINTEXT
+          sasl.mechanism: PLAIN
+          session.timeout.ms: '10000'
+          max.in.flight.requests.per.connection: '5'
+          enable.idempotence: true
+          acks: 'all'
+          isolation.level: read_committed
+          sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required
+            username='user' password='token:***REMOVED***';

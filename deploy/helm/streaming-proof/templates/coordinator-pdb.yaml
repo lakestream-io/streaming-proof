@@ -1,0 +1,15 @@
+{{- if .Values.coordinator.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: streaming-proof-coordinator
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "streaming-proof.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: {{ .Values.coordinator.pdb.maxUnavailable }}
+  selector:
+    matchLabels:
+      app: streaming-proof
+      component: streaming-proof-coordinator
+{{- end }}
