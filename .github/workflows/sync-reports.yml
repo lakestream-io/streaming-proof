@@ -2,7 +2,7 @@ name: Sync Proof Reports
 
 on:
   schedule:
-    - cron: '0 * * * *'  # every hour
+    - cron: '0,30 * * * *'  # every 30 minutes
   workflow_dispatch:
     inputs:
       proof_id:
