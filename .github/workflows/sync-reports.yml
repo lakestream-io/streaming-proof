@@ -22,7 +22,7 @@ jobs:
 
       - name: Sync reports from coordinator
         env:
-          COORDINATOR_URL: http://k8s-streamin-streamin-2ef1277f6a-3e5fc3d5f9e1526d.elb.us-east-1.amazonaws.com:8080
+          COORDINATOR_URL: ${{ vars.COORDINATOR_URL }}
         run: |
           set -euo pipefail
 
