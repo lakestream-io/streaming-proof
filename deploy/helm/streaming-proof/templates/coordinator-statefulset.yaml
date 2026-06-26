@@ -23,9 +23,14 @@ spec:
         prometheus.io/scrape: "true"
         # Bypass the Istio sidecar for the externally-exposed API port so the
         # internet-facing NLB can reach it in plaintext under the mesh-wide
-        # STRICT mTLS policy. Outbound calls (e.g. to the Pulsar broker) still
-        # go through the sidecar and use mTLS.
+        # STRICT mTLS policy.
         traffic.sidecar.istio.io/excludeInboundPorts: "{{ .Values.coordinator.service.targetPort }}"
+        # Bypass the sidecar for outbound calls to the worker port (8088). The
+        # worker port is excluded inbound and serves plaintext, but the worker
+        # pod is still labeled tlsMode=istio, so without this the coordinator's
+        # sidecar would attempt mTLS and the handshake would fail (HTTP 503).
+        # Broker traffic (6650/8080/9092) is unaffected and still uses mTLS.
+        traffic.sidecar.istio.io/excludeOutboundPorts: "8088"
         {{- with .Values.coordinator.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
