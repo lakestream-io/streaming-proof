@@ -17,9 +17,15 @@ spec:
         app: streaming-proof
         component: streaming-proof-coordinator
         cloud.streamnative.io/app: pulsar
+        istio.io/rev: sn-stable
       annotations:
         prometheus.io/port: "8000"
         prometheus.io/scrape: "true"
+        # Bypass the Istio sidecar for the externally-exposed API port so the
+        # internet-facing NLB can reach it in plaintext under the mesh-wide
+        # STRICT mTLS policy. Outbound calls (e.g. to the Pulsar broker) still
+        # go through the sidecar and use mTLS.
+        traffic.sidecar.istio.io/excludeInboundPorts: "{{ .Values.coordinator.service.targetPort }}"
         {{- with .Values.coordinator.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
