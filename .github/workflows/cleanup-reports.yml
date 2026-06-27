@@ -8,7 +8,7 @@ on:
       retention_days:
         description: 'Delete reports older than this many days'
         required: false
-        default: '90'
+        default: '60'
       before_date:
         description: 'Delete reports dated before this date (YYYY-MM-DD). Overrides retention_days when set.'
         required: false
@@ -22,7 +22,7 @@ on:
         description: 'Preview what would be deleted without committing'
         type: boolean
         required: false
-        default: true
+        default: false
 
 jobs:
   cleanup:
@@ -41,7 +41,7 @@ jobs:
           BEFORE_DATE="${{ github.event.inputs.before_date }}"
           RETENTION_DAYS="${{ github.event.inputs.retention_days }}"
           # On scheduled runs the dispatch inputs are empty; fall back to a default.
-          RETENTION_DAYS="${RETENTION_DAYS:-90}"
+          RETENTION_DAYS="${RETENTION_DAYS:-60}"
 
           # Determine cutoff date (reports dated strictly before this are removed)
           if [ -n "$BEFORE_DATE" ]; then
