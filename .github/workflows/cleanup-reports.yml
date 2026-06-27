@@ -1,0 +1,147 @@
+name: Cleanup Proof Reports
+
+on:
+  schedule:
+    - cron: '0 4 * * *'  # daily at 04:00 UTC
+  workflow_dispatch:
+    inputs:
+      retention_days:
+        description: 'Delete reports older than this many days'
+        required: false
+        default: '90'
+      before_date:
+        description: 'Delete reports dated before this date (YYYY-MM-DD). Overrides retention_days when set.'
+        required: false
+        default: ''
+      delete_missing_start_time:
+        description: 'Also delete reports that have no startTime (e.g. failed-to-start runs)'
+        type: boolean
+        required: false
+        default: false
+      dry_run:
+        description: 'Preview what would be deleted without committing'
+        type: boolean
+        required: false
+        default: true
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout report-site branch
+        uses: actions/checkout@v4
+        with:
+          ref: report-site
+          fetch-depth: 1
+
+      - name: Delete old reports
+        run: |
+          set -euo pipefail
+
+          BEFORE_DATE="${{ github.event.inputs.before_date }}"
+          RETENTION_DAYS="${{ github.event.inputs.retention_days }}"
+          # On scheduled runs the dispatch inputs are empty; fall back to a default.
+          RETENTION_DAYS="${RETENTION_DAYS:-90}"
+
+          # Determine cutoff date (reports dated strictly before this are removed)
+          if [ -n "$BEFORE_DATE" ]; then
+            if ! date -u -d "$BEFORE_DATE" +%Y-%m-%d >/dev/null 2>&1; then
+              echo "::error::Invalid before_date: ${BEFORE_DATE} (expected YYYY-MM-DD)"
+              exit 1
+            fi
+            cutoff=$(date -u -d "$BEFORE_DATE" +%Y-%m-%d)
+          else
+            cutoff=$(date -u -d "${RETENTION_DAYS} days ago" +%Y-%m-%d)
+          fi
+          echo "Cutoff date: ${cutoff} (date directories before this will be deleted)"
+
+          if [ ! -d reports ]; then
+            echo "No reports directory found, nothing to clean"
+            exit 0
+          fi
+
+          deleted=0
+          # Date directories are named YYYY-MM-DD; lexical compare == chronological compare
+          for dir in reports/*/; do
+            [ -d "$dir" ] || continue
+            day=$(basename "$dir")
+            # Only consider directories that look like a date
+            case "$day" in
+              [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
+              *) echo "Skipping non-date entry: ${day}"; continue ;;
+            esac
+
+            if [[ "$day" < "$cutoff" ]]; then
+              n=$(find "$dir" -name '*.json' | wc -l | tr -d ' ')
+              echo "Deleting ${dir} (${n} report(s))"
+              rm -rf "$dir"
+              deleted=$((deleted + n))
+            fi
+          done
+
+          # Optionally delete reports with no startTime (e.g. failed-to-start runs)
+          if [ "${{ github.event.inputs.delete_missing_start_time }}" = "true" ]; then
+            echo "Scanning for reports with missing startTime..."
+            while IFS= read -r file; do
+              start=$(jq -r '.proof.startTime // empty' "$file" 2>/dev/null || true)
+              if [ -z "$start" ]; then
+                echo "Deleting ${file} (no startTime)"
+                rm -f "$file"
+                deleted=$((deleted + 1))
+              fi
+            done < <(find reports -name '*.json' ! -name 'index.json' ! -name '*.tmp')
+            # Remove any date directories left empty after the deletions above
+            find reports -mindepth 1 -type d -empty -delete
+          fi
+
+          echo "Deleted ${deleted} report(s)"
+          echo "DELETED_COUNT=${deleted}" >> "$GITHUB_ENV"
+
+          # Rebuild index.json from remaining report files (same logic as sync workflow)
+          echo "Rebuilding index.json..."
+          echo '[' > reports/index.json.tmp
+          first=true
+          find reports -name '*.json' ! -name 'index.json' ! -name '*.tmp' | sort | while read -r file; do
+            entry=$(jq --arg path "$file" '{
+              id: .proof.id,
+              name: .proof.name,
+              status: .status,
+              driver: .proof.driver,
+              startTime: .proof.startTime,
+              duration: .proof.duration,
+              verified: .summary.verified,
+              missed: .summary.missed,
+              errors: .summary.errors,
+              path: $path
+            }' "$file")
+            if [ "$first" = true ]; then
+              first=false
+            else
+              echo ',' >> reports/index.json.tmp
+            fi
+            echo "$entry" >> reports/index.json.tmp
+          done
+          echo ']' >> reports/index.json.tmp
+          jq 'sort_by(.startTime) | reverse' reports/index.json.tmp > reports/index.json
+          rm -f reports/index.json.tmp
+
+          echo "Index rebuilt with $(jq length reports/index.json) entries"
+
+      - name: Commit and push if changed
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            echo "::notice::Dry run enabled — showing changes without committing"
+            git status --short reports/ || true
+            git --no-pager diff --stat reports/ || true
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add reports/
+          if git diff --cached --quiet; then
+            echo "No reports removed, nothing to commit"
+          else
+            git commit -m "cleanup: remove ${DELETED_COUNT} old proof report(s) $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git push
+          fi

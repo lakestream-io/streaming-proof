@@ -249,6 +249,11 @@ public class ProofTask {
 
     private void handleStartFailure(Exception error) {
         startFailureReason = rootCauseMessage(error);
+        // Ensure a start time is recorded even when startup fails before
+        // setStartTime() is reached, so failed runs still group/sort correctly.
+        if (proof.getStartTime() == null || proof.getStartTime().isBlank()) {
+            proof.setStartTime(DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(LocalDateTime.now()));
+        }
         freezeClusterTargetsSnapshot();
         cleanupPartiallyStartedWorkers();
         closeTopicDrivers();
