@@ -27,6 +27,7 @@ Here is the example to show the proof status:
     "keys" : 40,
     "checkPointInterval" : 5,
     "timeout" : 180,
+    "maxStallSeconds" : 300,
     "duration" : 28800,
     "startTime" : 1738794638049
   },
@@ -36,7 +37,9 @@ Here is the example to show the proof status:
     "outOfOrders" : 0,
     "missed" : 0,
     "duplicates" : 716,
-    "timeouts" : 0
+    "timeouts" : 0,
+    "verifiedStallSeconds" : 4,
+    "maxVerifiedStallSeconds" : 12
   },
   "checkpoints" : {...}
 }
@@ -48,8 +51,31 @@ Here is the example to show the proof status:
 - **missed**: Number of messages not received for verification
 - **duplicates**: Number of duplicate messages detected
 - **timeouts**: Number of verification attempts that exceeded the configured timeout period
+- **verifiedStallSeconds**: Wall-clock seconds since the verified count last increased; accumulates from test start and freezes when the run completes
+- **maxVerifiedStallSeconds**: Peak verification stall observed during the run, in seconds; retained across recoveries and frozen at completion
 
 The checkpoints section provides detailed information about the verification status of each message key, allowing you to track the progress and health of your streaming system at a granular level.
+
+**Detecting stalled verification**
+
+`verifiedStallSeconds` and `maxVerifiedStallSeconds` are always reported, so you can watch verification progress even without any extra configuration:
+
+- `verifiedStallSeconds` is the *current* stall — it climbs while `verified` sits still and resets to `0` as soon as `verified` moves again.
+- `maxVerifiedStallSeconds` is the *worst* stall seen during the whole run. Because it survives recoveries, it catches a run that froze for a long time mid-way and then caught up — something the current value alone would hide.
+
+To make a long stall actually fail the run, set `maxStallSeconds` on the proof when you create it. It is the maximum acceptable peak stall in seconds; if `maxVerifiedStallSeconds` exceeds it, the result is marked `failed` with a reason like `Verification stalled for 340s, exceeding the configured limit of 300s.`
+
+```json
+{
+  "name": "kafka-stall-guarded",
+  "driver": "kafka",
+  "features": ["at_least_once", "ordering"],
+  "topic": "orders",
+  "maxStallSeconds": 300
+}
+```
+
+The check is **opt-in**: `maxStallSeconds` defaults to `0`, which disables it entirely. With no value set (or `0`), the stall metrics are still shown but never affect the pass/fail result.
 
 **Supported Streaming Systems**:
 - Apache Kafka, or any Kafka API compatible systems

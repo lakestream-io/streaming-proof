@@ -162,6 +162,18 @@ public class ProofTask {
     /** Number of checkpoint verification timeouts */
     private int timeouts;
 
+    /** Last observed verified count, used to detect when verification progress stalls. */
+    private long lastVerifiedObserved;
+
+    /** Wall-clock time (millis) when the verified count last increased. */
+    private long lastVerifiedChangeMillis = System.currentTimeMillis();
+
+    /** Wall-clock time (millis) the run completed; freezes the stall value. 0 while running. */
+    private long completionMillis;
+
+    /** Peak verification stall observed during the run, in millis. */
+    private long maxVerifiedStallMillis;
+
     /** Timestamp of when the current checkpoint verification started */
     private long checkPointInCheckTimeStamps;
 
@@ -232,6 +244,10 @@ public class ProofTask {
     public void start() {
         running.set(true);
         startFailureReason = null;
+        lastVerifiedObserved = 0;
+        lastVerifiedChangeMillis = System.currentTimeMillis();
+        completionMillis = 0;
+        maxVerifiedStallMillis = 0;
         try {
             createProofTopics();
             startConsumers();
@@ -258,6 +274,7 @@ public class ProofTask {
         cleanupPartiallyStartedWorkers();
         closeTopicDrivers();
         latestPerformanceSummary = buildPerformanceSummary(getSummary());
+        completionMillis = System.currentTimeMillis();
         running.set(false);
         stopping.set(false);
         log.warn("Proof {} failed to start: {}", proof.getId(), startFailureReason, error);
@@ -736,16 +753,67 @@ public class ProofTask {
     }
 
     /**
+     * Computes the current verified message count using the same rule as the
+     * summary, selecting the shared-mode or default formula.
+     */
+    private long computeVerified() {
+        if (sharedMode) {
+            return highWatermarks.values().stream()
+                    .filter(w -> w >= 0)
+                    .mapToLong(w -> w + 1)
+                    .sum();
+        }
+        return this.getLastVerifiedProducerCheckpoint().getPublished().values().stream()
+                .mapToLong(s -> s.seq() + 1).sum();
+    }
+
+    /**
+     * Updates the verification-stall tracking once per checkpoint tick.
+     * The timer resets only when the verified count strictly increases; a flat
+     * or decreasing count leaves the timer running, while the observed baseline
+     * always advances to the latest value so a later rise from a low point still
+     * counts as progress.
+     */
+    private void trackVerifiedStall(long currentVerified) {
+        long now = System.currentTimeMillis();
+        long stallMillis = now - lastVerifiedChangeMillis;
+        if (stallMillis > maxVerifiedStallMillis) {
+            maxVerifiedStallMillis = stallMillis;
+        }
+        if (currentVerified > lastVerifiedObserved) {
+            lastVerifiedChangeMillis = now;
+        }
+        lastVerifiedObserved = currentVerified;
+    }
+
+    /**
+     * Wall-clock seconds since the verified count last increased. While the run
+     * is active this grows with the clock; once stopped it is frozen at the
+     * completion time so historical reports stay stable.
+     */
+    private long computeVerifiedStallSeconds() {
+        long end = running.get() ? System.currentTimeMillis() : completionMillis;
+        return Math.max(0L, (end - lastVerifiedChangeMillis) / 1000);
+    }
+
+    /**
+     * Peak verification stall in seconds. Folds the live gap into the recorded
+     * peak so the value is correct between ticks, and is frozen at completion.
+     */
+    private long computeMaxVerifiedStallSeconds() {
+        long end = running.get() ? System.currentTimeMillis() : completionMillis;
+        long liveStallMillis = end - lastVerifiedChangeMillis;
+        return Math.max(0L, Math.max(maxVerifiedStallMillis, liveStallMillis)) / 1000;
+    }
+
+    /**
      * Generates a summary of the proof test execution.
      *
      * @return A ProofSummary containing verification statistics
      */
     public ProofSummary getSummary() {
         if (sharedMode) {
-            long verified = highWatermarks.values().stream()
-                    .filter(w -> w >= 0)
-                    .mapToLong(w -> w + 1)
-                    .sum();
+            long verified = computeVerified();
             ConsumerCheckPoint cp = this.getLastVerifiedConsumerCheckpoint();
             cp.calculate();
             return new ProofSummary(
@@ -759,10 +827,11 @@ public class ProofTask {
                             .sum(),
                     cp.getDuplicatedCount().values().stream().reduce(0L, Long::sum),
                     0, // write duplicates: not tracked in shared mode
-                    this.getTimeouts());
+                    this.getTimeouts(),
+                    computeVerifiedStallSeconds(),
+                    computeMaxVerifiedStallSeconds());
         }
-        long verified = this.getLastVerifiedProducerCheckpoint().getPublished().values().stream()
-                .mapToLong(s -> s.seq() + 1).sum();
+        long verified = computeVerified();
         ConsumerCheckPoint lastVerifiedConsumerCheckpoint = this.getLastVerifiedConsumerCheckpoint();
         lastVerifiedConsumerCheckpoint.calculate();
         return new ProofSummary(
@@ -784,7 +853,9 @@ public class ProofTask {
                                 .map(range -> range.getEnd().seq() - range.getStart().seq() - 1))
                         .mapToInt(Long::intValue)
                         .sum(),
-                this.getTimeouts());
+                this.getTimeouts(),
+                computeVerifiedStallSeconds(),
+                computeMaxVerifiedStallSeconds());
     }
 
     /**
@@ -1057,6 +1128,10 @@ public class ProofTask {
         if (summary.missed() > 0 || summary.outOfOrders() > 0) {
             return "failed";
         }
+        if (proof.getMaxStallSeconds() > 0
+                && summary.maxVerifiedStallSeconds() > proof.getMaxStallSeconds()) {
+            return "failed";
+        }
         return "passed";
     }
 
@@ -1079,6 +1154,11 @@ public class ProofTask {
         }
         if (summary.missed() > 0) {
             return "Some messages were not verified by consumers.";
+        }
+        if (proof.getMaxStallSeconds() > 0
+                && summary.maxVerifiedStallSeconds() > proof.getMaxStallSeconds()) {
+            return "Verification stalled for " + summary.maxVerifiedStallSeconds()
+                    + "s, exceeding the configured limit of " + proof.getMaxStallSeconds() + "s.";
         }
         if ("passed".equals(resultStatus)) {
             return "The run completed without missed or out-of-order messages.";
@@ -1269,6 +1349,7 @@ public class ProofTask {
     }
 
     private void recordTimeSeriesPoint() {
+        trackVerifiedStall(computeVerified());
         ProofSummary summary = getSummary();
         ProofPerformanceSummary performanceSummary = buildPerformanceSummary(summary);
         latestPerformanceSummary = performanceSummary;
@@ -1434,6 +1515,7 @@ public class ProofTask {
 
         // Mark as stopped only after all cleanup is complete, so the
         // report API never returns "stopped" with stale data.
+        completionMillis = System.currentTimeMillis();
         running.set(false);
         log.info("ProofTask {} stopped", proof.getId());
     }

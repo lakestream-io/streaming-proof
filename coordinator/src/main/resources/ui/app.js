@@ -40,7 +40,8 @@ const metricEls = {
   outOfOrders: document.getElementById("metric-out-of-orders"),
   duplicates:  document.getElementById("metric-duplicates"),
   errors:      document.getElementById("metric-errors"),
-  timeouts:    document.getElementById("metric-timeouts")
+  timeouts:    document.getElementById("metric-timeouts"),
+  verifyStall: document.getElementById("metric-verify-stall")
 };
 
 const perfEls = {
@@ -615,6 +616,7 @@ function renderConfigSummary(proof, clusterTargets) {
     checkpoint: proof.checkPointInterval != null ? `${proof.checkPointInterval}s` : "?",
     timeout:    proof.timeout != null ? `${proof.timeout}s` : "?",
     finalWait: proof.finalWaitSeconds != null ? `${proof.finalWaitSeconds}s` : "—",
+    maxStall:  proof.maxStallSeconds ? `${proof.maxStallSeconds}s` : "—",
     features:   Array.isArray(proof.features) ? proof.features : [],
   };
 
@@ -656,6 +658,8 @@ function renderConfigSummary(proof, clusterTargets) {
           timeout <span class="cfg-compact-em">${escapeHtml(p.timeout)}</span>
           <span class="cfg-compact-dot"></span>
           final wait <span class="cfg-compact-em">${escapeHtml(p.finalWait)}</span>
+          <span class="cfg-compact-dot"></span>
+          max stall <span class="cfg-compact-em">${escapeHtml(p.maxStall)}</span>
         </span>
       </div>
       <div class="cfg-compact-item cfg-compact-item-guarantees">
@@ -1015,6 +1019,9 @@ async function loadProofDetails(proofId) {
   const duplicates  = Number(summary.duplicates  || 0);
   const errors      = Number(summary.errors      || 0);
   const timeouts    = Number(summary.timeouts    || 0);
+  const verifyStall = Number(summary.verifiedStallSeconds || 0);
+  const peakStall = Number(summary.maxVerifiedStallSeconds || 0);
+  const stallLimit = Number(proof.maxStallSeconds || 0);
 
   metricEls.verified.textContent    = formatNumber(summary.verified    || 0);
   metricEls.missed.textContent      = formatNumber(missed);
@@ -1022,12 +1029,22 @@ async function loadProofDetails(proofId) {
   metricEls.duplicates.textContent  = formatNumber(duplicates);
   metricEls.errors.textContent      = formatNumber(errors);
   metricEls.timeouts.textContent    = formatNumber(timeouts);
+  metricEls.verifyStall.textContent = formatDuration(verifyStall);
+  const stallHintEl = document.getElementById("metric-verify-stall-hint");
+  if (stallHintEl) {
+    stallHintEl.textContent = "peak " + formatDuration(peakStall);
+  }
 
   updateKpiCard("kpi-card-missed",  missed);
   updateKpiCard("kpi-card-ooo",     outOfOrders);
   updateKpiCardWarn("kpi-card-dups", duplicates);
   updateKpiCard("kpi-card-errors",  errors);
   updateKpiCardWarn("kpi-card-timeouts", timeouts);
+  // Highlight as danger only when a stall limit is configured and the peak stall
+  // exceeded it — this mirrors the run's stall verdict. With no limit set, the
+  // card never highlights.
+  updateKpiCard("kpi-card-verify-stall",
+    stallLimit > 0 && peakStall > stallLimit ? 1 : 0);
 
   // Performance
   perfEls.publishRate.textContent        = formatDecimal(performanceSummary.publishRate || 0);

@@ -168,7 +168,15 @@ public class Proof {
      */
     @Builder.Default
     private int timeSeriesInterval = 0;
-    
+
+    /**
+     * Maximum acceptable peak verification stall in seconds.
+     * If the run's peak stall exceeds this value the result is marked failed.
+     * Default is 0, which disables the stall limit.
+     */
+    @Builder.Default
+    private int maxStallSeconds = 0;
+
     /** Webhook configuration for notifications */
     private WebhookConfig webhookConfig;
 

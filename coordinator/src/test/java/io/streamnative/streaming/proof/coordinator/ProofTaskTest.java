@@ -42,6 +42,7 @@ import io.streamnative.streaming.proof.common.records.Drivers;
 import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
 import io.streamnative.streaming.proof.common.records.Proof;
 import io.streamnative.streaming.proof.common.records.ProofClusterTarget;
+import io.streamnative.streaming.proof.common.records.ProofPerformanceSummary;
 import io.streamnative.streaming.proof.common.records.ProofReport;
 import io.streamnative.streaming.proof.common.records.ProofSummary;
 import io.streamnative.streaming.proof.common.records.PulsarProofConfig;
@@ -666,6 +667,249 @@ public class ProofTaskTest {
         } finally {
             task.getExecutor().shutdownNow();
         }
+    }
+
+    @Test
+    public void testVerifiedStallResetsOnIncrease() throws Exception {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof proof = Proof.builder().topic("test-topic").features(List.of("at_least_once")).build();
+        ProofTask task = new ProofTask(proof, new Configs(Map.of(), Map.of()), driver);
+        try {
+            setLongField(task, "lastVerifiedChangeMillis", System.currentTimeMillis() - 10_000L);
+            setLongField(task, "lastVerifiedObserved", 100L);
+            getRunningFlag(task).set(true);
+
+            invokeTrackVerifiedStall(task, 101L); // increase by 1 -> reset
+
+            assertTrue(task.getSummary().verifiedStallSeconds() <= 1L);
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testVerifiedStallDoesNotResetWhenUnchanged() throws Exception {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof proof = Proof.builder().topic("test-topic").features(List.of("at_least_once")).build();
+        ProofTask task = new ProofTask(proof, new Configs(Map.of(), Map.of()), driver);
+        try {
+            setLongField(task, "lastVerifiedChangeMillis", System.currentTimeMillis() - 10_000L);
+            setLongField(task, "lastVerifiedObserved", 100L);
+            getRunningFlag(task).set(true);
+
+            invokeTrackVerifiedStall(task, 100L); // unchanged -> no reset
+
+            assertTrue(task.getSummary().verifiedStallSeconds() >= 9L);
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testVerifiedStallDecreaseDoesNotResetButLaterRiseDoes() throws Exception {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof proof = Proof.builder().topic("test-topic").features(List.of("at_least_once")).build();
+        ProofTask task = new ProofTask(proof, new Configs(Map.of(), Map.of()), driver);
+        try {
+            setLongField(task, "lastVerifiedChangeMillis", System.currentTimeMillis() - 10_000L);
+            setLongField(task, "lastVerifiedObserved", 100L);
+            getRunningFlag(task).set(true);
+
+            invokeTrackVerifiedStall(task, 90L); // decrease -> no reset, baseline drops to 90
+            assertTrue(task.getSummary().verifiedStallSeconds() >= 9L);
+
+            invokeTrackVerifiedStall(task, 95L); // rise above the new low point -> reset
+            assertTrue(task.getSummary().verifiedStallSeconds() <= 1L);
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testVerifiedStallFreezesAfterCompletion() throws Exception {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof proof = Proof.builder().topic("test-topic").features(List.of("at_least_once")).build();
+        ProofTask task = new ProofTask(proof, new Configs(Map.of(), Map.of()), driver);
+        try {
+            long now = System.currentTimeMillis();
+            setLongField(task, "lastVerifiedChangeMillis", now - 30_000L);
+            setLongField(task, "completionMillis", now - 20_000L); // completed 10s after last change
+            getRunningFlag(task).set(false); // not running -> frozen
+
+            long frozen = task.getSummary().verifiedStallSeconds();
+            assertEquals(frozen, 10L);
+            // Re-reading does not grow the frozen value
+            assertEquals(task.getSummary().verifiedStallSeconds(), frozen);
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testVerifiedStallAccumulatesFromStartWhenNeverVerified() throws Exception {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof proof = Proof.builder().topic("test-topic").features(List.of("at_least_once")).build();
+        ProofTask task = new ProofTask(proof, new Configs(Map.of(), Map.of()), driver);
+        try {
+            setLongField(task, "lastVerifiedChangeMillis", System.currentTimeMillis() - 15_000L);
+            setLongField(task, "lastVerifiedObserved", 0L);
+            getRunningFlag(task).set(true);
+
+            invokeTrackVerifiedStall(task, 0L); // still 0 -> no reset
+
+            assertTrue(task.getSummary().verifiedStallSeconds() >= 14L);
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testMaxStallCapturesGapBeforeResetThenSurvivesRecovery() throws Exception {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof proof = Proof.builder().topic("test-topic").features(List.of("at_least_once")).build();
+        ProofTask task = new ProofTask(proof, new Configs(Map.of(), Map.of()), driver);
+        try {
+            setLongField(task, "lastVerifiedChangeMillis", System.currentTimeMillis() - 20_000L);
+            setLongField(task, "lastVerifiedObserved", 100L);
+            getRunningFlag(task).set(true);
+
+            invokeTrackVerifiedStall(task, 101L); // increase folds the 20s gap into the peak, then resets current
+
+            ProofSummary summary = task.getSummary();
+            assertTrue(summary.maxVerifiedStallSeconds() >= 19L); // peak retained
+            assertTrue(summary.verifiedStallSeconds() <= 1L);     // current reset
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testMaxStallReflectsLiveGapWhileRunning() throws Exception {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof proof = Proof.builder().topic("test-topic").features(List.of("at_least_once")).build();
+        ProofTask task = new ProofTask(proof, new Configs(Map.of(), Map.of()), driver);
+        try {
+            setLongField(task, "maxVerifiedStallMillis", 5_000L);
+            setLongField(task, "lastVerifiedChangeMillis", System.currentTimeMillis() - 10_000L);
+            getRunningFlag(task).set(true);
+
+            // live gap (10s) exceeds the recorded peak (5s), so the read folds it in
+            assertTrue(task.getSummary().maxVerifiedStallSeconds() >= 9L);
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testMaxStallFreezesAfterCompletion() throws Exception {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof proof = Proof.builder().topic("test-topic").features(List.of("at_least_once")).build();
+        ProofTask task = new ProofTask(proof, new Configs(Map.of(), Map.of()), driver);
+        try {
+            long now = System.currentTimeMillis();
+            setLongField(task, "maxVerifiedStallMillis", 30_000L);
+            setLongField(task, "lastVerifiedChangeMillis", now - 1_000L);
+            setLongField(task, "completionMillis", now);
+            getRunningFlag(task).set(false); // frozen: live gap = now - (now-1000) = 1s, peak stays 30s
+
+            assertEquals(task.getSummary().maxVerifiedStallSeconds(), 30L);
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testResultFailsWhenPeakStallExceedsLimit() throws Exception {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof proof = Proof.builder().topic("t").features(List.of("at_least_once")).maxStallSeconds(180).build();
+        ProofTask task = new ProofTask(proof, new Configs(Map.of(), Map.of()), driver);
+        try {
+            getRunningFlag(task).set(false);
+            ProofSummary summary = new ProofSummary(1000L, 0, 0, 0, 0L, 0L, 0, 0L, 240L);
+
+            String status = invokeDetermineResultStatus(task, summary);
+            assertEquals(status, "failed");
+            String reason = invokeDetermineResultReason(task, summary, status);
+            assertTrue(reason.contains("240s"));
+            assertTrue(reason.contains("180s"));
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testResultPassesWhenStallLimitDisabled() throws Exception {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof proof = Proof.builder().topic("t").features(List.of("at_least_once")).maxStallSeconds(0).build();
+        ProofTask task = new ProofTask(proof, new Configs(Map.of(), Map.of()), driver);
+        try {
+            getRunningFlag(task).set(false);
+            ProofSummary summary = new ProofSummary(1000L, 0, 0, 0, 0L, 0L, 0, 0L, 9999L);
+
+            assertEquals(invokeDetermineResultStatus(task, summary), "passed");
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testResultPassesWhenPeakStallWithinLimit() throws Exception {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof proof = Proof.builder().topic("t").features(List.of("at_least_once")).maxStallSeconds(180).build();
+        ProofTask task = new ProofTask(proof, new Configs(Map.of(), Map.of()), driver);
+        try {
+            getRunningFlag(task).set(false);
+            ProofSummary summary = new ProofSummary(1000L, 0, 0, 0, 0L, 0L, 0, 0L, 100L);
+
+            assertEquals(invokeDetermineResultStatus(task, summary), "passed");
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testMissedReasonTakesPrecedenceOverStall() throws Exception {
+        ProofDriver driver = mock(ProofDriver.class);
+        Proof proof = Proof.builder().topic("t").features(List.of("at_least_once")).maxStallSeconds(180).build();
+        ProofTask task = new ProofTask(proof, new Configs(Map.of(), Map.of()), driver);
+        try {
+            getRunningFlag(task).set(false);
+            ProofSummary summary = new ProofSummary(1000L, 0, 0, 5, 0L, 0L, 0, 0L, 240L);
+
+            String status = invokeDetermineResultStatus(task, summary);
+            assertEquals(status, "failed");
+            String reason = invokeDetermineResultReason(task, summary, status);
+            assertTrue(reason.contains("not verified")); // missed reason wins, not the stall reason
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    private static String invokeDetermineResultStatus(ProofTask task, ProofSummary summary) throws Exception {
+        Method m = ProofTask.class.getDeclaredMethod(
+                "determineResultStatus", ProofSummary.class, ProofPerformanceSummary.class);
+        m.setAccessible(true);
+        return (String) m.invoke(task, summary, null);
+    }
+
+    private static String invokeDetermineResultReason(ProofTask task, ProofSummary summary, String status)
+            throws Exception {
+        Method m = ProofTask.class.getDeclaredMethod(
+                "determineResultReason", ProofSummary.class, ProofPerformanceSummary.class, String.class);
+        m.setAccessible(true);
+        return (String) m.invoke(task, summary, null, status);
+    }
+
+    private static void setLongField(ProofTask task, String fieldName, long value) throws Exception {
+        Field field = ProofTask.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.setLong(task, value);
+    }
+
+    private static void invokeTrackVerifiedStall(ProofTask task, long verified) throws Exception {
+        Method method = ProofTask.class.getDeclaredMethod("trackVerifiedStall", long.class);
+        method.setAccessible(true);
+        method.invoke(task, verified);
     }
 
     private static AtomicBoolean getRunningFlag(ProofTask task) throws Exception {

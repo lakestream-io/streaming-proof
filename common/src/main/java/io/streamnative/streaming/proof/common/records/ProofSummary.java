@@ -41,7 +41,10 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *     2,         // out-of-order messages
  *     0,         // missed messages
  *     1,         // duplicate messages
- *     0          // timeouts
+ *     0,         // write duplicates
+ *     0,         // timeouts
+ *     0L,        // verifiedStallSeconds
+ *     0L         // maxVerifiedStallSeconds
  * );
  * }</pre>
  *
@@ -57,6 +60,10 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *                   relevant for exactly-once delivery validation
  * @param timeouts The count of timeout events that occurred during message
  *                processing or verification
+ * @param verifiedStallSeconds Wall-clock seconds since the verified count last increased;
+ *                accumulates from test start and freezes once the run completes
+ * @param maxVerifiedStallSeconds Peak wall-clock stall observed during the run, in seconds;
+ *                retained across recoveries and frozen at completion
  *
  * @see ProofDetails
  * @see Checkpoints
@@ -68,5 +75,7 @@ public record ProofSummary(long verified,
                            int missed,
                            long duplicates,
                            long writeDuplicates,
-                           int timeouts) {
+                           int timeouts,
+                           long verifiedStallSeconds,
+                           long maxVerifiedStallSeconds) {
 }
