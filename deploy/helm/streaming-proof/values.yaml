@@ -127,6 +127,19 @@ configs:
           sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required
             username='user' password='token:***REMOVED***';
           isolation.level: read_committed
+      ksn:
+        driverType: kafka
+        driverConfigs:
+          bootstrap.servers: classic-chaos-test-broker.o-2h056.svc.cluster.local:9092
+          security.protocol: SASL_PLAINTEXT
+          sasl.mechanism: PLAIN
+          session.timeout.ms: '10000'
+          max.in.flight.requests.per.connection: '5'
+          enable.idempotence: true
+          acks: 'all'
+          isolation.level: read_committed
+          sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required
+            username='user' password='token:***REMOVED***';    
       ufk-latency-optimized:
         driverType: kafka
         driverConfigs:
