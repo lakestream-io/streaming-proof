@@ -136,6 +136,9 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
                         });
 
                         long ledgerId = messageIdImpl.getLedgerId();
+                        offloadCondition.ifPresent(condition ->
+                                condition.waitOffloadConditionMeetForCatchupRead(ledgerId));
+
                         long entryId = messageIdImpl.getEntryId();
                         int batchIndex = messageIdImpl.getBatchIndex();
 
@@ -156,9 +159,6 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
                                 log.debug("[{}] Sleeping for {} ms after consuming message",
                                         name, consumeDelayMs - timestampDiff);
                                 Thread.sleep(consumeDelayMs - timestampDiff);
-
-                                offloadCondition.ifPresent(condition ->
-                                        condition.waitOffloadConditionMeetForCatchupRead(ledgerId));
                             }
                         }
                     } catch (Exception e) {
