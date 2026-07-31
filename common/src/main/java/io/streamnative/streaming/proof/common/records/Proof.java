@@ -46,6 +46,9 @@ import lombok.Data;
  *     .topic("test-topic")
  *     .partitions(8)
  *     .msgRate(5000)
+ *     .kafka(KafkaProofConfig.builder()
+ *         .topicConfig(java.util.Map.of("ursa.storage.enable", "true"))
+ *         .build())
  *     .build();
  * }</pre>
  *
@@ -182,4 +185,7 @@ public class Proof {
 
     /** Per-proof Pulsar-specific configuration */
     private PulsarProofConfig pulsar;
+
+    /** Per-proof Kafka-specific configuration */
+    private KafkaProofConfig kafka;
 }

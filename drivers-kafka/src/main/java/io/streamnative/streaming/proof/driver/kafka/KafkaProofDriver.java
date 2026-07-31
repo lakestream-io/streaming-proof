@@ -104,11 +104,15 @@ public class KafkaProofDriver implements ProofDriver {
      *
      * @param topicName Name of the topic to create
      * @param partitions Number of partitions for the topic
+     * @param configs Kafka topic configuration
      * @throws RuntimeException if topic creation fails
      */
     @Override
-    public void createTopic(String topicName, int partitions) {
+    public void createTopic(String topicName, int partitions, Map<String, String> configs) {
         NewTopic newTopic = new NewTopic(topicName, partitions, (short) 1);
+        if (configs != null && !configs.isEmpty()) {
+            newTopic.configs(configs);
+        }
         try {
             admin.createTopics(List.of(newTopic)).all().get();
         } catch (Exception e) {

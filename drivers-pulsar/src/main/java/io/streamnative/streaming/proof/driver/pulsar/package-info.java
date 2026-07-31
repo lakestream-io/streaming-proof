@@ -45,7 +45,7 @@
  * driver.init(configs);
  *
  * // Create a topic and clients
- * driver.createTopic("test-topic", 8);
+ * driver.createTopic("test-topic", 8, null);
  * ProofProducer producer = driver.createProducer("test-topic", producerConfigs);
  * ProofConsumer consumer = driver.createConsumer("test-topic", consumerConfigs, listener);
  * }</pre>

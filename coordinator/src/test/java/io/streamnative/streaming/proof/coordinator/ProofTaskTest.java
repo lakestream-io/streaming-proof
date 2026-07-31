@@ -39,6 +39,7 @@ import io.streamnative.streaming.proof.common.records.Configs;
 import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
 import io.streamnative.streaming.proof.common.records.Driver;
 import io.streamnative.streaming.proof.common.records.Drivers;
+import io.streamnative.streaming.proof.common.records.KafkaProofConfig;
 import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
 import io.streamnative.streaming.proof.common.records.Proof;
 import io.streamnative.streaming.proof.common.records.ProofClusterTarget;
@@ -83,8 +84,31 @@ public class ProofTaskTest {
         try {
             task.createProofTopics();
 
-            verify(adminDriver, times(1)).createTopic("geo-test.ksn.topic-a", 5);
-            verify(consumerDriver, times(1)).createTopic("geo-test.ksn.topic-a", 5);
+            verify(adminDriver, times(1)).createTopic("geo-test.ksn.topic-a", 5, null);
+            verify(consumerDriver, times(1)).createTopic("geo-test.ksn.topic-a", 5, null);
+        } finally {
+            task.getExecutor().shutdownNow();
+        }
+    }
+
+    @Test
+    public void testCreateProofTopicsPassesKafkaTopicConfigToAllTopics() {
+        ProofDriver driver = mock(ProofDriver.class);
+        Map<String, String> topicConfig = Map.of("ursa.storage.enable", "true");
+        Proof proof = Proof.builder()
+                .topic("ursa-latency")
+                .partitions(5)
+                .features(List.of("exactly_once"))
+                .kafka(KafkaProofConfig.builder()
+                        .topicConfig(topicConfig)
+                        .build())
+                .build();
+        ProofTask task = new ProofTask(proof, new Configs(Map.of(), Map.of()), driver);
+        try {
+            task.createProofTopics();
+
+            verify(driver, times(1)).createTopic("ursa-latency", 5, topicConfig);
+            verify(driver, times(1)).createTopic("ursa-latency_transactional", 5, topicConfig);
         } finally {
             task.getExecutor().shutdownNow();
         }
@@ -596,7 +620,7 @@ public class ProofTaskTest {
                 .build();
 
         RuntimeException startFailure = new RuntimeException("producer startup failed");
-        doThrow(startFailure).when(driver).createTopic("test-topic", 10);
+        doThrow(startFailure).when(driver).createTopic("test-topic", 10, null);
 
         ProofTask task = new ProofTask(proof, new Configs(Map.of(), Map.of()), driver);
 

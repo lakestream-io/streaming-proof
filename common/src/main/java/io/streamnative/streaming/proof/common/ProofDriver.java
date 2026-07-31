@@ -64,8 +64,9 @@ public interface ProofDriver extends Closeable {
      * @param topicName The name of the topic to create
      * @param partitions The number of partitions for the topic, affecting parallelism
      *                  and message distribution
+     * @param configs Topic-specific configuration parameters
      */
-    void createTopic(String topicName, int partitions);
+    void createTopic(String topicName, int partitions, Map<String, String> configs);
 
     /**
      * Deletes a topic from the messaging system.

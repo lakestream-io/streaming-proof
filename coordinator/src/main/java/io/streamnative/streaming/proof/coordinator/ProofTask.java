@@ -296,8 +296,10 @@ public class ProofTask {
     }
 
     private void createTopicOnDrivers(String topicName, List<String> driverNames) {
+        Map<String, String> topicConfig = proof.getKafka() != null
+                ? proof.getKafka().getTopicConfig() : null;
         runTopicOperation(driverNames, driver ->
-                driver.createTopic(topicName, proof.getPartitions()));
+                driver.createTopic(topicName, proof.getPartitions(), topicConfig));
     }
 
     private void deleteTopicOnDrivers(String topicName, List<String> driverNames) {

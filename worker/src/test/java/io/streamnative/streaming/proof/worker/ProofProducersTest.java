@@ -167,7 +167,7 @@ public class ProofProducersTest {
         }
 
         @Override
-        public void createTopic(String topicName, int partitions) {
+        public void createTopic(String topicName, int partitions, Map<String, String> configs) {
         }
 
         @Override
@@ -215,7 +215,7 @@ public class ProofProducersTest {
         }
 
         @Override
-        public void createTopic(String topicName, int partitions) {
+        public void createTopic(String topicName, int partitions, Map<String, String> configs) {
         }
 
         @Override

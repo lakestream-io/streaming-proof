@@ -136,10 +136,14 @@ public class MqttProofDriver implements ProofDriver {
      *
      * @param topicName Name of the topic to create
      * @param partitions Number of partitions for the topic
+     * @param configs Topic configuration; unsupported by the MQTT driver
      * @throws RuntimeException if topic creation fails
      */
     @Override
-    public void createTopic(String topicName, int partitions) {
+    public void createTopic(String topicName, int partitions, Map<String, String> configs) {
+        if (configs != null && !configs.isEmpty()) {
+            throw new IllegalArgumentException("Topic configs are not supported by the MQTT driver");
+        }
         try {
             String fullTopicName = getFullTopicName(topicName);
             if (partitions > 1) {
@@ -251,4 +255,3 @@ public class MqttProofDriver implements ProofDriver {
         }
     }
 }
-

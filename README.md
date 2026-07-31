@@ -169,11 +169,21 @@ curl -X POST http://localhost:8080/proofs \
   "keys" : 40,
   "checkPointInterval" : 5,
   "timeout" : 180,
-  "finalWaitSeconds" : 60
+  "finalWaitSeconds" : 60,
+  "kafka" : {
+    "topicConfig" : {
+      "ursa.storage.enable" : "true"
+    }
+  }
 }'
 ```
 
 `timeout` controls checkpoint verification while the proof is running. `finalWaitSeconds` controls the extra wait for consumers to catch up after producers stop.
+
+Kafka topic configuration is passed through to `NewTopic.configs()` when the proof topic is created.
+For Ursa topics, set `ursa.storage.enable` to `"true"` for a latency topic or `"false"` for a
+cost topic. The same configuration is applied to the transactional topic used by exactly-once
+proofs.
 
 ### Pulsar Shared Subscription Verification
 
