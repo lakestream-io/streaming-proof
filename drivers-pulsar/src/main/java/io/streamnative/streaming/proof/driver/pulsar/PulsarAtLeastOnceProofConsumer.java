@@ -157,7 +157,8 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
                                         name, consumeDelayMs - timestampDiff);
                                 Thread.sleep(consumeDelayMs - timestampDiff);
 
-                                offloadCondition.ifPresent(OffloadCondition::waitOffloadConditionMeetForCatchupRead);
+                                offloadCondition.ifPresent(condition ->
+                                        condition.waitOffloadConditionMeetForCatchupRead(ledgerId));
                             }
                         }
                     } catch (Exception e) {

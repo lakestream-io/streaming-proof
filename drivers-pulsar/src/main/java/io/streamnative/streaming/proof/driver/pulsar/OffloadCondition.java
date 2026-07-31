@@ -45,6 +45,7 @@ public class OffloadCondition {
 
     private final PulsarAdmin admin;
     private final String topic;
+    private final boolean waitOffloadedForEachLedger;
     private final int waitOffloadedForCatchupRead;
     private final long maxWaitMs;
     private final long initialRetryBackoffMs;
@@ -73,6 +74,7 @@ public class OffloadCondition {
         return Optional.of(new OffloadCondition(
                 admin,
                 topicName,
+                waitOffloadedForEachLedger,
                 waitOffloadedForCatchupRead,
                 getLongConfig(configs, "offload.condition.maxWaitMs", DEFAULT_MAX_WAIT_MS),
                 getLongConfig(configs, "offload.condition.initialRetryBackoffMs", DEFAULT_INITIAL_RETRY_BACKOFF_MS),
@@ -80,11 +82,13 @@ public class OffloadCondition {
                 getBooleanConfig(configs, "offload.condition.allowDegradedMode", true)));
     }
 
-    public OffloadCondition(PulsarAdmin admin, String topic, int waitOffloadedForCatchupRead,
+    public OffloadCondition(PulsarAdmin admin, String topic, boolean waitOffloadedForEachLedger,
+                            int waitOffloadedForCatchupRead,
                             long maxWaitMs, long initialRetryBackoffMs,
                             long maxRetryBackoffMs, boolean allowDegradedMode) {
         this.admin = admin;
         this.topic = topic;
+        this.waitOffloadedForEachLedger = waitOffloadedForEachLedger;
         this.waitOffloadedForCatchupRead = waitOffloadedForCatchupRead;
         this.maxWaitMs = maxWaitMs;
         this.initialRetryBackoffMs = Math.max(1L, initialRetryBackoffMs);
@@ -93,6 +97,9 @@ public class OffloadCondition {
     }
 
     public void waitOffloadConditionMeetForMessage(MessageIdAdv messageIdAdv) {
+        if (!waitOffloadedForEachLedger) {
+            return;
+        }
         long ledgerId = messageIdAdv.getLedgerId();
         if (offloadedLedgersCache.contains(ledgerId) || degradedLedgersCache.contains(ledgerId)) {
             return;
@@ -111,14 +118,21 @@ public class OffloadCondition {
         }
     }
 
-    public void waitOffloadConditionMeetForCatchupRead() {
+    public void waitOffloadConditionMeetForCatchupRead(long ledgerId) {
         if (waitOffloadedForCatchupRead <= 0) {
+            return;
+        }
+        if (offloadedLedgersCache.contains(ledgerId) || degradedLedgersCache.contains(ledgerId)) {
             return;
         }
         log.info("Waiting for the offload condition for topic: {} to start the catchup read", topic);
         boolean conditionMet = waitForCondition("catchup-read", this::isCatchupReadConditionMet);
         if (conditionMet) {
+            Set<Long> offloadedLedgers = getOffloadedLedgers();
             unloadTopics();
+            offloadedLedgersCache.addAll(offloadedLedgers);
+        } else if (allowDegradedMode && degradedMode) {
+            degradedLedgersCache.add(ledgerId);
         }
     }
 
@@ -183,8 +197,12 @@ public class OffloadCondition {
             if (stats == null || stats.ledgers == null) {
                 return false;
             }
-            long offloadedLedgers = stats.ledgers.stream().filter(ledger -> ledger.offloaded).count();
-            if (offloadedLedgers < waitOffloadedForCatchupRead) {
+            long newOffloadedLedgers = stats.ledgers.stream()
+                    .filter(ledger -> ledger.offloaded)
+                    .map(ledger -> ledger.ledgerId)
+                    .filter(ledgerId -> !offloadedLedgersCache.contains(ledgerId))
+                    .count();
+            if (newOffloadedLedgers < waitOffloadedForCatchupRead) {
                 return false;
             }
         }

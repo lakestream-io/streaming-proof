@@ -23,9 +23,9 @@ import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
 
 import java.lang.reflect.Proxy;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.apache.pulsar.client.admin.PulsarAdmin;
@@ -48,6 +48,7 @@ public class OffloadConditionTest {
         OffloadCondition condition = new OffloadCondition(
                 createAdminProxy(createTopicsProxy(state)),
                 "wPG0v",
+                true,
                 0,
                 40,
                 1,
@@ -69,6 +70,7 @@ public class OffloadConditionTest {
         OffloadCondition condition = new OffloadCondition(
                 createAdminProxy(createTopicsProxy(state)),
                 "wPG0v",
+                true,
                 0,
                 40,
                 1,
@@ -95,6 +97,7 @@ public class OffloadConditionTest {
         OffloadCondition condition = new OffloadCondition(
                 createAdminProxy(createTopicsProxy(state)),
                 "wPG0v",
+                true,
                 0,
                 1000,
                 1,
@@ -106,6 +109,56 @@ public class OffloadConditionTest {
         assertFalse(condition.isDegradedMode());
         assertEquals(state.unloadCallsByTopic.getOrDefault(partition0, 0), Integer.valueOf(1));
         assertEquals(state.unloadCallsByTopic.getOrDefault(partition1, 0), Integer.valueOf(1));
+    }
+
+    @Test
+    public void shouldSkipPerLedgerWaitWhenOnlyCatchupConditionIsEnabled() {
+        TestTopicsState state = new TestTopicsState(1);
+        String partition0 = TopicName.get("wPG0v").getPartition(0).toString();
+        state.statsByTopic.put(partition0, offloadedLedgerStats(123L));
+
+        OffloadCondition condition = OffloadCondition.getOffloadCondition(
+                createAdminProxy(createTopicsProxy(state)),
+                "wPG0v",
+                Map.of("offload.condition.offloadedLedgersBeforeCatchupRead", 1)).orElseThrow();
+
+        condition.waitOffloadConditionMeetForMessage(createMessageId(123L));
+
+        assertEquals(state.getInternalStatsCalls, 0);
+        assertTrue(state.unloadCallsByTopic.isEmpty());
+    }
+
+    @Test
+    public void shouldCacheOffloadedLedgersAndRequireNewLedgersForCatchupRead() {
+        TestTopicsState state = new TestTopicsState(1);
+        String partition0 = TopicName.get("wPG0v").getPartition(0).toString();
+        state.statsByTopic.put(partition0, offloadedLedgerStats(123L, 124L));
+
+        OffloadCondition condition = new OffloadCondition(
+                createAdminProxy(createTopicsProxy(state)),
+                "wPG0v",
+                false,
+                2,
+                20,
+                1,
+                5,
+                true);
+
+        condition.waitOffloadConditionMeetForCatchupRead(123L);
+        int statsCallsAfterFirstCheck = state.getInternalStatsCalls;
+
+        state.statsByTopic.put(partition0, offloadedLedgerStats(123L, 124L, 125L));
+        condition.waitOffloadConditionMeetForCatchupRead(124L);
+        assertEquals(state.getInternalStatsCalls, statsCallsAfterFirstCheck);
+        assertEquals(state.unloadCallsByTopic.getOrDefault(partition0, 0), Integer.valueOf(1));
+
+        condition.waitOffloadConditionMeetForCatchupRead(125L);
+        assertEquals(state.unloadCallsByTopic.getOrDefault(partition0, 0), Integer.valueOf(1));
+
+        state.statsByTopic.put(partition0, offloadedLedgerStats(123L, 124L, 125L, 126L));
+        condition.waitOffloadConditionMeetForCatchupRead(126L);
+
+        assertEquals(state.unloadCallsByTopic.getOrDefault(partition0, 0), Integer.valueOf(2));
     }
 
     private PulsarAdmin createAdminProxy(Topics topics) {
@@ -190,12 +243,14 @@ public class OffloadConditionTest {
                 });
     }
 
-    private PersistentTopicInternalStats offloadedLedgerStats(long ledgerId) {
-        ManagedLedgerInternalStats.LedgerInfo ledgerInfo = new ManagedLedgerInternalStats.LedgerInfo();
-        ledgerInfo.ledgerId = ledgerId;
-        ledgerInfo.offloaded = true;
+    private PersistentTopicInternalStats offloadedLedgerStats(long... ledgerIds) {
         PersistentTopicInternalStats stats = new PersistentTopicInternalStats();
-        stats.ledgers = List.of(ledgerInfo);
+        stats.ledgers = Arrays.stream(ledgerIds).mapToObj(ledgerId -> {
+            ManagedLedgerInternalStats.LedgerInfo ledgerInfo = new ManagedLedgerInternalStats.LedgerInfo();
+            ledgerInfo.ledgerId = ledgerId;
+            ledgerInfo.offloaded = true;
+            return ledgerInfo;
+        }).toList();
         return stats;
     }
 
