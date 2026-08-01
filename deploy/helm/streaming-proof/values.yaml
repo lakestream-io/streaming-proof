@@ -97,13 +97,17 @@ configs:
         driverType: pulsar
         driverConfigs:
           offload.condition.waitOffloadedForEachLedger: true
+          offload.condition.maxWaitMs: 900000
+          offload.condition.allowDegradedMode: true
           pulsar.service.url: pulsar://lakehouse-chaos-test-broker.o-2h056.svc.cluster.local:6650
           pulsar.admin.url: http://lakehouse-chaos-test-broker.o-2h056.svc.cluster.local:8080
           pulsar.auth.token: ***REMOVED***
       classic-tiered-storage:
         driverType: pulsar
         driverConfigs:
-          offload.condition.waitOffloadedForEachLedger: true
+          offload.condition.waitOffloadedForEachLedger: false
+          offload.condition.allowDegradedMode: false
+          offload.condition.offloadedLedgersBeforeCatchupRead: 5
           pulsar.service.url: pulsar://tiered-storage-test-broker.o-2h056.svc.cluster.local:6650
           pulsar.admin.url: http://tiered-storage-test-broker.o-2h056.svc.cluster.local:8080
           pulsar.auth.token: ***REMOVED***
@@ -140,34 +144,20 @@ configs:
           isolation.level: read_committed
           sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required
             username='user' password='token:***REMOVED***';    
-      ufk-latency-optimized:
+      ufk:
         driverType: kafka
         driverConfigs:
-          bootstrap.servers: kc-ada4h.aws-use1-staging-q1z54.aws.sn3.dev:9093
-          security.protocol: SASL_SSL
+          bootstrap.servers: ufk-chaos-test-kafka-bootstrap.o-2h056.svc.cluster.local:9092
+          security.protocol: SASL_PLAINTEXT
           sasl.mechanism: PLAIN
           session.timeout.ms: '10000'
           delivery.timeout.ms: '2147483647'
           max.block.ms: '2147483647'
           max.in.flight.requests.per.connection: '5'
-          acks: '1'
+          acks: 'all'
           isolation.level: read_committed
           sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required
             username='e2e-admin@o-2h056.auth.sncloud-stg.dev' password='***REMOVED***';
-      ufk-cost-optimized:
-          driverType: kafka
-          driverConfigs:
-            bootstrap.servers: kc-h2b99.aws-use1-staging-q1z54.aws.sn3.dev:9093
-            security.protocol: SASL_SSL
-            sasl.mechanism: PLAIN
-            session.timeout.ms: '10000'
-            delivery.timeout.ms: '2147483647'
-            max.block.ms: '2147483647'
-            max.in.flight.requests.per.connection: '5'
-            acks: '1'
-            isolation.level: read_committed
-            sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required
-              username='e2e-admin@o-2h056.auth.sncloud-stg.dev' password='***REMOVED***';  
       ksn-geo-1:
         driverType: kafka
         driverConfigs:
