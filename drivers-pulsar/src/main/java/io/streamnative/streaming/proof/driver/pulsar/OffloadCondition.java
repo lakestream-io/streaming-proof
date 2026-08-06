@@ -170,13 +170,9 @@ public class OffloadCondition {
                 TimeUnit.MILLISECONDS.sleep(retryBackoffMs);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                if (allowDegradedMode) {
-                    degradedMode = true;
-                    log.warn("Interrupted while waiting for offload condition for topic: {}", topic);
-                    return false;
-                }
-                log.warn("Interrupted while waiting for offload condition for topic {}; keep waiting due to config",
-                        topic);
+                degradedMode = allowDegradedMode;
+                log.warn("Interrupted while waiting for offload condition for topic: {}", topic);
+                return false;
             }
             retryBackoffMs = Math.min(maxRetryBackoffMs, retryBackoffMs * 2);
         }

@@ -134,10 +134,16 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
                         offloadCondition.ifPresent(offloadCondition -> {
                             offloadCondition.waitOffloadConditionMeetForMessage(messageIdImpl);
                         });
+                        if (closing.get() || Thread.currentThread().isInterrupted()) {
+                            return;
+                        }
 
                         long ledgerId = messageIdImpl.getLedgerId();
                         offloadCondition.ifPresent(condition ->
                                 condition.waitOffloadConditionMeetForCatchupRead(ledgerId));
+                        if (closing.get() || Thread.currentThread().isInterrupted()) {
+                            return;
+                        }
 
                         long entryId = messageIdImpl.getEntryId();
                         int batchIndex = messageIdImpl.getBatchIndex();

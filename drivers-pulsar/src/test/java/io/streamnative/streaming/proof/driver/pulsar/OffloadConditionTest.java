@@ -28,6 +28,8 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.Topics;
 import org.apache.pulsar.client.api.MessageIdAdv;
@@ -161,6 +163,42 @@ public class OffloadConditionTest {
         assertEquals(state.unloadCallsByTopic.getOrDefault(partition0, 0), Integer.valueOf(2));
     }
 
+    @Test(timeOut = 10000)
+    public void shouldStopWaitingWhenInterruptedEvenIfDegradedModeIsDisabled() throws Exception {
+        TestTopicsState state = new TestTopicsState(1);
+        String partition0 = TopicName.get("wPG0v").getPartition(0).toString();
+        state.statsByTopic.put(partition0, offloadedLedgerStats());
+
+        OffloadCondition condition = new OffloadCondition(
+                createAdminProxy(createTopicsProxy(state)),
+                "wPG0v",
+                false,
+                1,
+                0,
+                TimeUnit.SECONDS.toMillis(30),
+                TimeUnit.SECONDS.toMillis(30),
+                false);
+
+        Thread waitThread = Thread.ofVirtual()
+                .start(() -> condition.waitOffloadConditionMeetForCatchupRead(123L));
+        try {
+            assertTrue(state.internalStatsCalled.await(3, TimeUnit.SECONDS));
+
+            state.statsByTopic.put(partition0, offloadedLedgerStats(123L));
+            waitThread.interrupt();
+            waitThread.join(TimeUnit.SECONDS.toMillis(3));
+
+            assertFalse(waitThread.isAlive());
+            assertTrue(waitThread.isInterrupted());
+            assertEquals(state.getInternalStatsCalls, 1);
+            assertTrue(state.unloadCallsByTopic.isEmpty());
+        } finally {
+            state.statsByTopic.put(partition0, offloadedLedgerStats(123L));
+            waitThread.interrupt();
+            waitThread.join(TimeUnit.SECONDS.toMillis(1));
+        }
+    }
+
     private PulsarAdmin createAdminProxy(Topics topics) {
         return (PulsarAdmin) Proxy.newProxyInstance(
                 PulsarAdmin.class.getClassLoader(),
@@ -197,11 +235,13 @@ public class OffloadConditionTest {
                     }
                     if ("getInternalStats".equals(name)) {
                         String topic = (String) args[0];
+                        PersistentTopicInternalStats stats = state.statsByTopic.get(topic);
                         state.getInternalStatsCalls++;
+                        state.internalStatsCalled.countDown();
                         if (state.failTopics.contains(topic)) {
                             throw new RuntimeException("HTTP 503 no healthy upstream");
                         }
-                        return state.statsByTopic.get(topic);
+                        return stats;
                     }
                     if ("unload".equals(name)) {
                         String topic = (String) args[0];
@@ -259,6 +299,7 @@ public class OffloadConditionTest {
         private final Map<String, PersistentTopicInternalStats> statsByTopic = new HashMap<>();
         private final Set<String> failTopics = new HashSet<>();
         private final Map<String, Integer> unloadCallsByTopic = new HashMap<>();
+        private final CountDownLatch internalStatsCalled = new CountDownLatch(1);
         private int getInternalStatsCalls;
 
         private TestTopicsState(int partitionCount) {
