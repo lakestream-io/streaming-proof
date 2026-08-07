@@ -450,34 +450,6 @@ public class ProofTaskTest {
     }
 
     @Test
-    public void testFinalVerificationUsesWatermarkWhenConsumedKeyWasTrimmed() throws Exception {
-        ProofDriver driver = mock(ProofDriver.class);
-        Proof proof = Proof.builder()
-                .id("test-proof")
-                .topic("test-topic")
-                .features(List.of("at_least_once", "ordering"))
-                .finalWaitSeconds(0)
-                .build();
-        ProofTask task = spy(new ProofTask(proof, new Configs(Map.of(), Map.of()), driver));
-
-        try {
-            ProducerCheckpoint producerCp = new ProducerCheckpoint();
-            producerCp.addPublished("stopped-key", new LongSeq(10, MessageMetadata.empty()));
-
-            // The worker removed this key after all ranges were acknowledged.
-            ConsumerCheckPoint trimmedConsumerCp = new ConsumerCheckPoint();
-            setMapField(task, "highWatermarks", Map.of("stopped-key", 10L));
-            doReturn(Pair.of(producerCp, trimmedConsumerCp)).when(task).aggregateCheckpoints();
-
-            invokeRunFinalVerification(task);
-
-            assertEquals(task.getSummary().verified(), 11L);
-        } finally {
-            task.getExecutor().shutdownNow();
-        }
-    }
-
-    @Test
     public void testFinalVerificationUsesNewReportSetting() throws Exception {
         ProofTask task = newFinalVerificationTask(
                 Proof.builder()
@@ -956,12 +928,6 @@ public class ProofTaskTest {
         Field field = ProofTask.class.getDeclaredField(fieldName);
         field.setAccessible(true);
         field.setLong(task, value);
-    }
-
-    private static void setMapField(ProofTask task, String fieldName, Map<String, Long> value) throws Exception {
-        Field field = ProofTask.class.getDeclaredField(fieldName);
-        field.setAccessible(true);
-        field.set(task, new HashMap<>(value));
     }
 
     private static void invokeTrackVerifiedStall(ProofTask task, long verified) throws Exception {

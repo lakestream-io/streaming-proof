@@ -134,7 +134,7 @@ public class ProofTask {
     /** Whether this proof uses Pulsar Shared subscription mode */
     private final boolean sharedMode;
 
-    /** High watermarks per key for compacted consumer checkpoint verification */
+    /** High watermarks per key for shared-mode verification */
     private Map<String, Long> highWatermarks = new HashMap<>();
 
     /** Current checkpoint being verified */
@@ -554,12 +554,11 @@ public class ProofTask {
                 boolean fulfilled = true;
                 for (Map.Entry<String, LongSeq> entry : ProofTask.this.inCheck.getPublished().entrySet()) {
                     LongSeq expectedSeq = entry.getValue();
-                    long consumerProgress = getConsumerProgress(
-                            ProofTask.this.latestConsumerCheckpoint, entry.getKey());
-                    if (consumerProgress < expectedSeq.seq()) {
+                    LongSeq actualSeq = ProofTask.this.latestConsumerCheckpoint.getLastSeq(entry.getKey());
+                    if (actualSeq == null || actualSeq.compareTo(expectedSeq) < 0) {
                         log.info("[{}] checkpoint verify in progress | {} | {} <= {} ",
                             proof.getId(), entry.getKey(), expectedSeq.seq(),
-                            consumerProgress);
+                            actualSeq == null ? -1L : actualSeq.seq());
                         fulfilled = false;
                         break;
                     }
@@ -702,9 +701,8 @@ public class ProofTask {
                     fulfilled = true;
                     for (Map.Entry<String, LongSeq> entry : inCheck.getPublished().entrySet()) {
                         LongSeq expectedSeq = entry.getValue();
-                        long consumerProgress = getConsumerProgress(
-                                latestConsumerCheckpoint, entry.getKey());
-                        if (consumerProgress < expectedSeq.seq()) {
+                        LongSeq actualSeq = latestConsumerCheckpoint.getLastSeq(entry.getKey());
+                        if (actualSeq == null || actualSeq.compareTo(expectedSeq) < 0) {
                             fulfilled = false;
                             break;
                         }
@@ -737,20 +735,6 @@ public class ProofTask {
         }
         log.warn("[{}] Final verification: consumers did not catch up within {} seconds",
                 proof.getId(), maxRetries);
-    }
-
-    /**
-     * Returns the highest contiguous consumer sequence known for a key.
-     *
-     * <p>Workers discard ranges at or below the acknowledged high watermark. A key
-     * that stops receiving messages can therefore be absent from later checkpoints
-     * even though its messages were already verified. Preserve that progress by
-     * combining the live checkpoint with the persisted watermark.
-     */
-    private long getConsumerProgress(ConsumerCheckPoint checkpoint, String key) {
-        LongSeq actualSeq = checkpoint.getLastSeq(key);
-        long checkpointProgress = actualSeq == null ? -1L : actualSeq.seq();
-        return Math.max(checkpointProgress, highWatermarks.getOrDefault(key, -1L));
     }
 
     Pair<ProducerCheckpoint, ConsumerCheckPoint> aggregateCheckpoints() {
