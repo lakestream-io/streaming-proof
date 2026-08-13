@@ -182,7 +182,10 @@ public class ProofProducerTask implements AutoCloseable {
                             recordError("Offset out of order writes", System.currentTimeMillis());
                         }
                     }
-                    lastPublished.put(key, newMsg);
+                    // A delayed completion must not move the published checkpoint backward.
+                    if (previousMsg == null || newMsg.compareTo(previousMsg) > 0) {
+                        lastPublished.put(key, newMsg);
+                    }
                 }
             }
         });

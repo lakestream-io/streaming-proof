@@ -33,6 +33,7 @@ import io.streamnative.streaming.proof.common.records.ProducerCheckpoint;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 import org.testng.annotations.Test;
@@ -139,6 +140,27 @@ public class ProofProducersTest {
         }
     }
 
+    @Test
+    public void testLateCompletionDoesNotRegressPublishedCheckpoint() {
+        ControllableProofProducer producer = new ControllableProofProducer();
+        ProofProducerTask task = new ProofProducerTask(producer, 1);
+
+        task.sendAsync();
+        task.sendAsync();
+        task.sendAsync();
+
+        producer.complete(1);
+        assertEquals(task.getLastPublished().values().iterator().next().seq(), 1L);
+
+        producer.complete(0);
+        assertEquals(task.getLastPublished().values().iterator().next().seq(), 1L);
+
+        producer.complete(2);
+        assertEquals(task.getLastPublished().values().iterator().next().seq(), 2L);
+        assertEquals(task.getErrorDetails().get("Seq writes gap").getCount(), 1);
+        assertEquals(task.getErrorDetails().get("Seq out of order writes").getCount(), 1);
+    }
+
     private ProducerCheckpoint waitForCheckpoint(ProofProducers proofProducers) throws InterruptedException {
         long deadline = System.currentTimeMillis() + 1_000;
         ProducerCheckpoint checkpoint = proofProducers.checkPoint();
@@ -242,6 +264,25 @@ public class ProofProducersTest {
         @Override
         public CompletableFuture<MessageMetadata> sendAsync(String key, long value) {
             return CompletableFuture.failedFuture(new RuntimeException("simulated failure"));
+        }
+
+        @Override
+        public void close() {
+        }
+    }
+
+    private static final class ControllableProofProducer implements ProofProducer {
+        private final Map<Long, CompletableFuture<MessageMetadata>> sends = new ConcurrentHashMap<>();
+
+        @Override
+        public CompletableFuture<MessageMetadata> sendAsync(String key, long value) {
+            CompletableFuture<MessageMetadata> future = new CompletableFuture<>();
+            sends.put(value, future);
+            return future;
+        }
+
+        void complete(long value) {
+            sends.get(value).complete(new MessageMetadata(value));
         }
 
         @Override
