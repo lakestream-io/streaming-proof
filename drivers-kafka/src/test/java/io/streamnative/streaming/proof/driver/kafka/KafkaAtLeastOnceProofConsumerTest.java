@@ -19,6 +19,7 @@
 package io.streamnative.streaming.proof.driver.kafka;
 
 import io.streamnative.streaming.proof.common.MessageListener;
+import io.streamnative.streaming.proof.common.ProofValue;
 import java.util.HashMap;
 import java.util.Map;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -33,7 +34,7 @@ public class KafkaAtLeastOnceProofConsumerTest {
     private MessageListener messageListener;
     
     @Mock
-    private KafkaConsumer<String, Long> mockConsumer;
+    private KafkaConsumer<String, ProofValue> mockConsumer;
     
     @BeforeMethod
     public void setUp() {

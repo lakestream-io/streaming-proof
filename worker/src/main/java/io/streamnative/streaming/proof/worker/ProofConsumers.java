@@ -88,7 +88,7 @@ public class ProofConsumers {
         boolean sharedMode = newConsumers.pulsarConsumerConfig() != null
                 && PulsarProofConfig.isSharedSubscriptionType(newConsumers.pulsarConsumerConfig());
         for (int i = 0; i < newConsumers.consumers(); i++) {
-            ProofConsumerTask task = new ProofConsumerTask(sharedMode);
+            ProofConsumerTask task = new ProofConsumerTask(sharedMode, newConsumers.messageSize());
             ProofConsumer proofConsumer = driver.createConsumer(newConsumers.topic(), newConsumers.partitions(),
                     newConsumers.consumeDelayMs(), configs, task);
             task.setConsumer(proofConsumer);

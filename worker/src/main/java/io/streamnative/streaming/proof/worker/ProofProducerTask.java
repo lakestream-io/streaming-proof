@@ -81,6 +81,9 @@ public class ProofProducerTask implements AutoCloseable {
     /** Number of unique keys managed by this task */
     private final int keys;
 
+    /** Total size in bytes of each message value, used for throughput accounting */
+    private final int messageSize;
+
     /** Array of unique keys for round-robin message distribution */
     private final String[] keyArray;
 
@@ -120,13 +123,16 @@ public class ProofProducerTask implements AutoCloseable {
      *
      * @param producer The underlying producer to use for sending messages
      * @param keys The number of unique keys to manage
+     * @param messageSize The total size in bytes of each message value, used for
+     *                    throughput accounting
      */
-    public ProofProducerTask(ProofProducer producer, int keys) {
+    public ProofProducerTask(ProofProducer producer, int keys, int messageSize) {
         if (keys <= 0) {
             throw new IllegalArgumentException("Producer tasks require at least one key");
         }
         this.producer = producer;
         this.keys = keys;
+        this.messageSize = messageSize;
         this.keyArray = new String[keys];
         Map<String, AtomicLong> map = new HashMap<>();
         Map<String, LongSeq> last = new HashMap<>();
@@ -241,8 +247,8 @@ public class ProofProducerTask implements AutoCloseable {
         }
     }
 
-    private static int estimateMessageBytes(String key) {
-        return (key == null ? 0 : key.getBytes(StandardCharsets.UTF_8).length) + Long.BYTES;
+    private int estimateMessageBytes(String key) {
+        return (key == null ? 0 : key.getBytes(StandardCharsets.UTF_8).length) + messageSize;
     }
 
     /**

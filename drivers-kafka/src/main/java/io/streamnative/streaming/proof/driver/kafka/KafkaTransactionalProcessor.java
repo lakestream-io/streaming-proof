@@ -18,6 +18,7 @@
  */
 package io.streamnative.streaming.proof.driver.kafka;
 
+import io.streamnative.streaming.proof.common.ProofValue;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Collections;
@@ -52,8 +53,6 @@ import org.apache.kafka.common.errors.OutOfOrderSequenceException;
 import org.apache.kafka.common.errors.ProducerFencedException;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
-import org.apache.kafka.common.serialization.LongDeserializer;
-import org.apache.kafka.common.serialization.LongSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 
@@ -78,8 +77,8 @@ import org.apache.kafka.common.serialization.StringSerializer;
  */
 @Slf4j
 public class KafkaTransactionalProcessor {
-    private KafkaConsumer<String, Long> consumer;
-    private volatile KafkaProducer<String, Long> producer;
+    private KafkaConsumer<String, ProofValue> consumer;
+    private volatile KafkaProducer<String, ProofValue> producer;
     private final String inputTopic;
     private final String outputTopic;
     private final String transactionalId;
@@ -137,7 +136,7 @@ public class KafkaTransactionalProcessor {
         consumerProps.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, "10000");
         consumerProps.put(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, "300000");
         consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, LongDeserializer.class.getName());
+        consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ProofValueDeserializer.class.getName());
 
         this.consumer = new KafkaConsumer<>(consumerProps);
 
@@ -151,7 +150,7 @@ public class KafkaTransactionalProcessor {
         producerProps.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 5);
         producerProps.put(ProducerConfig.TRANSACTION_TIMEOUT_CONFIG, TRANSACTION_TIMEOUT_MS);
         producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, LongSerializer.class.getName());
+        producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ProofValueSerializer.class.getName());
 
         this.producerProps = producerProps;
         this.producer = new KafkaProducer<>(producerProps);
@@ -189,7 +188,7 @@ public class KafkaTransactionalProcessor {
             }
             final int lastProducerRestartCount = this.producerRestartCount.get();
             try {
-                ConsumerRecords<String, Long> records = consumer.poll(Duration.ofMillis(100));
+                ConsumerRecords<String, ProofValue> records = consumer.poll(Duration.ofMillis(100));
                 
                 if (records.isEmpty()) {
                     continue;
@@ -264,17 +263,17 @@ public class KafkaTransactionalProcessor {
         }
     }
     
-    private ProcessingResult processRecords(ConsumerRecords<String, Long> records, int lastProducerRestartCount) {
+    private ProcessingResult processRecords(ConsumerRecords<String, ProofValue> records, int lastProducerRestartCount) {
         Map<TopicPartition, OffsetAndMetadata> offsetsToCommit = new HashMap<>();
         int messagesInTx = 0;
 
         // Capture the current producer epoch to make sure restarts are not duplicated
-        for (ConsumerRecord<String, Long> record : records) {
+        for (ConsumerRecord<String, ProofValue> record : records) {
             // Identity processing in this proof: forward the same key/value to the same partition
             String outputKey = record.key();
-            Long outputValue = record.value();
+            ProofValue outputValue = record.value();
 
-            ProducerRecord<String, Long> outputRecord =
+            ProducerRecord<String, ProofValue> outputRecord =
                     new ProducerRecord<>(outputTopic, record.partition(), outputKey, outputValue);
             outputRecord.headers().add("originalOffset", String.valueOf(record.offset()).getBytes());
             producer.send(outputRecord, (metadata, err) -> {

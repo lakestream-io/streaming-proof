@@ -20,6 +20,7 @@ package io.streamnative.streaming.proof.driver.pulsar;
 
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofProducer;
+import io.streamnative.streaming.proof.common.ProofValue;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -29,7 +30,6 @@ import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
-import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.api.TypedMessageBuilder;
 
 /**
@@ -45,18 +45,21 @@ import org.apache.pulsar.client.api.TypedMessageBuilder;
  *   <li>Sequential value tracking per key</li>
  * </ul>
  *
- * <p>The producer sends messages with string keys and long values, where the values
- * represent sequential numbers for each key. This sequence tracking enables verification
- * of message ordering and delivery guarantees.
+ * <p>The producer sends messages with string keys and {@link ProofValue} values, which
+ * carry a sequential number for each key plus optional padding. This sequence tracking
+ * enables verification of message ordering and delivery guarantees.
  */
 @Slf4j
 public class PulsarAtLeastOnceProofProducer implements ProofProducer {
 
     /** The underlying Pulsar producer instance */
-    private final Producer<Long> producer;
+    private final Producer<ProofValue> producer;
 
     /** The topic to which messages will be sent */
     private final String topic;
+
+    /** Total size in bytes of each message value, including the sequence number */
+    private final int messageSize;
 
     /**
      * Creates a new Pulsar producer with at-least-once delivery guarantees.
@@ -66,17 +69,18 @@ public class PulsarAtLeastOnceProofProducer implements ProofProducer {
      * @param configs Producer-specific configuration parameters
      * @throws PulsarClientException if producer creation fails
      */
-    public PulsarAtLeastOnceProofProducer(PulsarClient client, String topic, Map<String, Object> configs)
-            throws PulsarClientException {
+    public PulsarAtLeastOnceProofProducer(PulsarClient client, String topic, Map<String, Object> configs,
+            int messageSize) throws PulsarClientException {
         this.topic = topic;
+        this.messageSize = messageSize;
 
-        ProducerBuilder<Long> producerBuilder = client.newProducer(Schema.INT64)
+        ProducerBuilder<ProofValue> producerBuilder = client.newProducer(new ProofValueSchema())
                 .topic(topic)
                 .blockIfQueueFull(true)
                 .sendTimeout(0, TimeUnit.SECONDS);
 
         this.producer = producerBuilder.create();
-        log.info("Created Pulsar producer for topic: {}", topic);
+        log.info("Created Pulsar producer for topic: {}, message size: {} bytes", topic, messageSize);
     }
 
     /**
@@ -97,9 +101,9 @@ public class PulsarAtLeastOnceProofProducer implements ProofProducer {
      */
     @Override
     public CompletableFuture<MessageMetadata> sendAsync(String key, long value) {
-        TypedMessageBuilder<Long> messageBuilder = producer.newMessage()
+        TypedMessageBuilder<ProofValue> messageBuilder = producer.newMessage()
                 .key(key)
-                .value(value);
+                .value(new ProofValue(value, messageSize));
 
         CompletableFuture<MessageMetadata> resultFuture = new CompletableFuture<>();
 

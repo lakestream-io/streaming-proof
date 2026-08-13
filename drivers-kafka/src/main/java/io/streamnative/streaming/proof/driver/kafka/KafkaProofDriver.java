@@ -22,6 +22,7 @@ import io.streamnative.streaming.proof.common.MessageListener;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.ProofProducer;
+import io.streamnative.streaming.proof.common.ProofValue;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
@@ -37,8 +38,6 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.TopicExistsException;
-import org.apache.kafka.common.serialization.LongDeserializer;
-import org.apache.kafka.common.serialization.LongSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 
@@ -155,11 +154,12 @@ public class KafkaProofDriver implements ProofDriver {
      *
      * @param topicName Target topic for the producer
      * @param configs Producer-specific configurations
+     * @param messageSize Total size in bytes of each message value
      * @return A configured ProofProducer instance
      */
     @Override
-    public ProofProducer createProducer(String topicName, Map<String, Object> configs) {
-        return createProducer(topicName, configs, false);
+    public ProofProducer createProducer(String topicName, Map<String, Object> configs, int messageSize) {
+        return createProducer(topicName, configs, messageSize, false);
     }
 
     /**
@@ -167,35 +167,37 @@ public class KafkaProofDriver implements ProofDriver {
      *
      * @param topicName Target topic for the producer
      * @param configs Producer-specific configurations
+     * @param messageSize Total size in bytes of each message value
      * @param exactlyOnce If true, creates exactly-once producer with embedded transactional processor
      * @return A configured ProofProducer instance
      */
-    public ProofProducer createProducer(String topicName, Map<String, Object> configs, boolean exactlyOnce) {
+    public ProofProducer createProducer(
+            String topicName, Map<String, Object> configs, int messageSize, boolean exactlyOnce) {
         // Clone configs to avoid modifying original
         Map<String, Object> producerConfigs = new java.util.HashMap<>(configs);
-        
+
         producerConfigs.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        producerConfigs.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, LongSerializer.class.getName());
+        producerConfigs.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ProofValueSerializer.class.getName());
         if (producerConfigs.containsKey(KAFKA_CLIENT_ID)) {
             producerConfigs.put(
                     KAFKA_CLIENT_ID,
                     applyZoneId(
                             String.valueOf(producerConfigs.get(KAFKA_CLIENT_ID)), System.getProperty(ZONE_ID_CONFIG)));
         }
-        
+
         if (exactlyOnce) {
-            log.info("Creating exactly-once producer for topic: {}", topicName);
-            KafkaProducer<String, Long> producer = new KafkaProducer<>(producerConfigs);
-            
+            log.info("Creating exactly-once producer for topic: {}, message size: {} bytes", topicName, messageSize);
+            KafkaProducer<String, ProofValue> producer = new KafkaProducer<>(producerConfigs);
+
             // Convert to Properties for KafkaTransactionalProcessor
             java.util.Properties baseProps = new java.util.Properties();
             baseProps.putAll(configs);
-            
-            return new KafkaExactlyOnceProofProducer(producer, baseProps, topicName);
+
+            return new KafkaExactlyOnceProofProducer(producer, baseProps, topicName, messageSize);
         } else {
-            log.info("Creating at-least-once producer for topic: {}", topicName);
-            KafkaProducer<String, Long> producer = new KafkaProducer<>(producerConfigs);
-            return new KafkaAtLeastOnceProofProducer(producer, topicName);
+            log.info("Creating at-least-once producer for topic: {}, message size: {} bytes", topicName, messageSize);
+            KafkaProducer<String, ProofValue> producer = new KafkaProducer<>(producerConfigs);
+            return new KafkaAtLeastOnceProofProducer(producer, topicName, messageSize);
         }
     }
 
@@ -215,7 +217,7 @@ public class KafkaProofDriver implements ProofDriver {
     public ProofConsumer createConsumer(String topicName, int partitionCount, long consumeDelayMs,
                 Map<String, Object> configs, MessageListener listener) {
         configs.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        configs.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, LongDeserializer.class.getName());
+        configs.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ProofValueDeserializer.class.getName());
         configs.put(ConsumerConfig.GROUP_ID_CONFIG, "streaming-proof");
         configs.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         if (configs.containsKey(KAFKA_CLIENT_ID)) {
@@ -226,7 +228,7 @@ public class KafkaProofDriver implements ProofDriver {
         }
         
         log.info("Creating at-least-once consumer for topic: {}", topicName);
-        KafkaConsumer<String, Long> consumer = new KafkaConsumer<>(configs);
+        KafkaConsumer<String, ProofValue> consumer = new KafkaConsumer<>(configs);
         String consumerName = RandomStringUtils.secure().nextAlphanumeric(5);
         consumer.subscribe(List.of(topicName), new ConsumerRebalanceListener() {
             @Override

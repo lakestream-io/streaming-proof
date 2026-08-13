@@ -18,6 +18,7 @@
  */
 package io.streamnative.streaming.proof.coordinator;
 
+import io.streamnative.streaming.proof.common.ProofValue;
 import io.streamnative.streaming.proof.common.Util;
 import io.streamnative.streaming.proof.common.records.Checkpoints;
 import io.streamnative.streaming.proof.common.records.Configs;
@@ -153,6 +154,10 @@ public class Coordinator {
         }
         if (proof.getFinalWaitSeconds() != null && proof.getFinalWaitSeconds() < 0) {
             throw new IllegalArgumentException("Final wait seconds must be 0 or greater.");
+        }
+        if (proof.getMessageSize() < ProofValue.MIN_SIZE) {
+            throw new IllegalArgumentException("Message size must be at least " + ProofValue.MIN_SIZE
+                    + " bytes to hold the sequence number, got " + proof.getMessageSize() + ".");
         }
         String proofID = RandomStringUtils.secure().nextAlphanumeric(5);
         proof.setId(proofID);

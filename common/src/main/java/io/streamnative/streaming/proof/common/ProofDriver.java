@@ -80,9 +80,13 @@ public interface ProofDriver extends Closeable {
      *
      * @param topicName The name of the topic to produce messages to
      * @param configs Producer-specific configuration parameters
+     * @param messageSize The total size in bytes of each message value, including the
+     *                    8-byte sequence number. Sizes above the minimum pad the message
+     *                    so that storage-path behaviour can be exercised at a realistic
+     *                    scale. Must be at least {@link ProofValue#MIN_SIZE}.
      * @return A new {@link ProofProducer} instance configured for the specified topic
      */
-    ProofProducer createProducer(String topicName, Map<String, Object> configs);
+    ProofProducer createProducer(String topicName, Map<String, Object> configs, int messageSize);
 
     /**
      * Creates a new consumer instance for receiving messages from a specific topic.

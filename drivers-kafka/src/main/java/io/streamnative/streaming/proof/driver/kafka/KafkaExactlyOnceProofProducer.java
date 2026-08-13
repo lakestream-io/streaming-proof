@@ -20,6 +20,7 @@ package io.streamnative.streaming.proof.driver.kafka;
 
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofProducer;
+import io.streamnative.streaming.proof.common.ProofValue;
 import java.io.IOException;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
@@ -54,14 +55,17 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 public class KafkaExactlyOnceProofProducer implements ProofProducer {
 
     /** The underlying Kafka producer for writing to input topic */
-    private final KafkaProducer<String, Long> producer;
-    
+    private final KafkaProducer<String, ProofValue> producer;
+
     /** The input topic where this producer writes messages */
     private final String inputTopic;
-    
+
     /** The output topic where consumers read processed messages */
     private final String outputTopic;
-    
+
+    /** Total size in bytes of each message value, including the sequence number */
+    private final int messageSize;
+
     /** Embedded transactional processor for exactly-once processing */
     private final KafkaTransactionalProcessor transactionalProcessor;
 
@@ -71,13 +75,16 @@ public class KafkaExactlyOnceProofProducer implements ProofProducer {
      * @param producer The Kafka producer instance for writing to input topic
      * @param baseProps Base Kafka properties for configuring the transactional processor
      * @param outputTopicName The output topic name (input topic will be {outputTopicName}_transactional)
+     * @param messageSize Total size in bytes of each message value
      */
-    public KafkaExactlyOnceProofProducer(KafkaProducer<String, Long> producer, 
-                                         Properties baseProps, 
-                                         String outputTopicName) {
+    public KafkaExactlyOnceProofProducer(KafkaProducer<String, ProofValue> producer,
+                                         Properties baseProps,
+                                         String outputTopicName,
+                                         int messageSize) {
         this.producer = producer;
         this.outputTopic = outputTopicName;
         this.inputTopic = outputTopicName + "_transactional";
+        this.messageSize = messageSize;
         
         // Start embedded transactional processor
         this.transactionalProcessor = new KafkaTransactionalProcessor(baseProps, outputTopicName);
@@ -97,7 +104,8 @@ public class KafkaExactlyOnceProofProducer implements ProofProducer {
      */
     @Override
     public CompletableFuture<MessageMetadata> sendAsync(String key, long value) {
-        ProducerRecord<String, Long> record = new ProducerRecord<>(inputTopic, key, value);
+        ProducerRecord<String, ProofValue> record =
+                new ProducerRecord<>(inputTopic, key, new ProofValue(value, messageSize));
         
         CompletableFuture<MessageMetadata> future = new CompletableFuture<>();
         producer.send(record, (metadata, exception) -> {

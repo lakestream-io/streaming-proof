@@ -57,6 +57,7 @@ public record NewConsumers(String id,
                            int partitions,
                            int consumers,
                            long consumeDelayMs,
+                           int messageSize,
                            String driverName,
                            Driver driver,
                            Map<String, Object> pulsarConsumerConfig) {

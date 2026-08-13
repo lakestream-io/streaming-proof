@@ -19,6 +19,7 @@
 package io.streamnative.streaming.proof.common.records;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import io.streamnative.streaming.proof.common.ProofValue;
 import io.streamnative.streaming.proof.common.WebhookConfig;
 import java.util.List;
 import lombok.Builder;
@@ -126,6 +127,15 @@ public class Proof {
      */
     @Builder.Default
     private int keys = 100;
+
+    /**
+     * Total size in bytes of each message value, including the 8-byte sequence number.
+     * Sizes above the minimum pad each message so that storage-path behaviour
+     * (offload triggers, tiered-storage reads, bandwidth) can be exercised at a
+     * realistic scale. The padding is filler and is never verified.
+     */
+    @Builder.Default
+    private int messageSize = ProofValue.MIN_SIZE;
 
     /**
      * Interval between checkpoints in seconds.

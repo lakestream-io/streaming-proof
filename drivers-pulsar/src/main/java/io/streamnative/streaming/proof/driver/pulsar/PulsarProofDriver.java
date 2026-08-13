@@ -238,12 +238,13 @@ public class PulsarProofDriver implements ProofDriver {
      *
      * @param topicName Target topic for the producer
      * @param configs Producer-specific configurations
+     * @param messageSize Total size in bytes of each message value
      * @return A configured ProofProducer instance
      */
     @Override
-    public ProofProducer createProducer(String topicName, Map<String, Object> configs) {
+    public ProofProducer createProducer(String topicName, Map<String, Object> configs, int messageSize) {
         try {
-            return new PulsarAtLeastOnceProofProducer(client, topicName, configs);
+            return new PulsarAtLeastOnceProofProducer(client, topicName, configs, messageSize);
         } catch (PulsarClientException e) {
             throw new RuntimeException(e);
         }

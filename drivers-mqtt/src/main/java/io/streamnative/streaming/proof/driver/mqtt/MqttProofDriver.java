@@ -204,9 +204,9 @@ public class MqttProofDriver implements ProofDriver {
      * @return A configured ProofProducer instance
      */
     @Override
-    public ProofProducer createProducer(String topicName, Map<String, Object> configs) {
+    public ProofProducer createProducer(String topicName, Map<String, Object> configs, int messageSize) {
         try {
-            return new MqttAtLeastOnceProofProducer(producerClient, topicName);
+            return new MqttAtLeastOnceProofProducer(producerClient, topicName, messageSize);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

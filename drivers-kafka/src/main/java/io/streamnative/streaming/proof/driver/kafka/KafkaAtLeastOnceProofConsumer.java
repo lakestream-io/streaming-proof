@@ -21,6 +21,7 @@ package io.streamnative.streaming.proof.driver.kafka;
 import io.streamnative.streaming.proof.common.MessageListener;
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofConsumer;
+import io.streamnative.streaming.proof.common.ProofValue;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.HashMap;
@@ -60,7 +61,7 @@ import org.apache.kafka.common.header.Header;
  * config.put(ConsumerConfig.GROUP_ID_CONFIG, "proof-group");
  * config.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
  *
- * KafkaConsumer<String, Long> consumer = new KafkaConsumer<>(config);
+ * KafkaConsumer<String, ProofValue> consumer = new KafkaConsumer<>(config);
  * MessageListener listener = (key, value) -> {
  *     // Process message
  * };
@@ -77,7 +78,7 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
 
     private final String name;
     /** The underlying Kafka consumer instance */
-    private final KafkaConsumer<String, Long> consumer;
+    private final KafkaConsumer<String, ProofValue> consumer;
 
     /** Thread for running the consumer polling loop */
     private final Thread consumerThread;
@@ -99,7 +100,7 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
      */
     public KafkaAtLeastOnceProofConsumer(
             String name,
-            KafkaConsumer<String, Long> consumer,
+            KafkaConsumer<String, ProofValue> consumer,
             Map<String, Object> consumerConfig,
             long consumeDelayMs,
             MessageListener callback) {
@@ -120,11 +121,11 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
                                 if (consumeDelayMs > 0) {
                                     prioritizePartitionsBasedOnLag();
                                 }
-                                ConsumerRecords<String, Long> records =
+                                ConsumerRecords<String, ProofValue> records =
                                         consumer.poll(Duration.ofSeconds(30));
                                 Map<TopicPartition, OffsetAndMetadata> offsetMap = new HashMap<>();
                                 Map<String, List<Long>> offsetRange = new HashMap<>();
-                                for (ConsumerRecord<String, Long> record : records) {
+                                for (ConsumerRecord<String, ProofValue> record : records) {
                                     if (consumeDelayMs > 0) {
                                         long timestampDiff = System.currentTimeMillis() - record.timestamp();
                                         if (timestampDiff < consumeDelayMs) {
@@ -140,7 +141,7 @@ public class KafkaAtLeastOnceProofConsumer implements ProofConsumer {
                                     if (originalHeader != null) {
                                         originalOffset = Long.parseLong(new String(originalHeader.value()));
                                     }
-                                    callback.onMessage(record.key(), record.value(),
+                                    callback.onMessage(record.key(), record.value().seq(),
                                             MessageMetadata.kafkaMetadata(
                                                     record.offset(), record.partition(),
                                                     originalOffset, record.timestamp()));

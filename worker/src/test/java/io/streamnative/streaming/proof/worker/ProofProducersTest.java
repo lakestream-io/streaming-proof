@@ -26,6 +26,7 @@ import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofConsumer;
 import io.streamnative.streaming.proof.common.ProofDriver;
 import io.streamnative.streaming.proof.common.ProofProducer;
+import io.streamnative.streaming.proof.common.ProofValue;
 import io.streamnative.streaming.proof.common.records.Driver;
 import io.streamnative.streaming.proof.common.records.ErrorOccurrence;
 import io.streamnative.streaming.proof.common.records.NewProducers;
@@ -49,6 +50,7 @@ public class ProofProducersTest {
                 4,
                 2,
                 1000,
+                ProofValue.MIN_SIZE,
                 "stub",
                 new Driver("stub", Map.of()),
                 false);
@@ -75,6 +77,7 @@ public class ProofProducersTest {
                 1,
                 0,
                 1000,
+                ProofValue.MIN_SIZE,
                 "stub",
                 new Driver("stub", Map.of()),
                 false);
@@ -89,7 +92,7 @@ public class ProofProducersTest {
 
     @Test(expectedExceptions = IllegalArgumentException.class)
     public void testProducerTaskRequiresAtLeastOneKey() {
-        new ProofProducerTask(new StubProofProducer(), 0);
+        new ProofProducerTask(new StubProofProducer(), 0, ProofValue.MIN_SIZE);
     }
 
     @Test(expectedExceptions = IllegalArgumentException.class)
@@ -101,6 +104,7 @@ public class ProofProducersTest {
                 0,
                 1,
                 1000,
+                ProofValue.MIN_SIZE,
                 "stub",
                 new Driver("stub", Map.of()),
                 false);
@@ -122,6 +126,7 @@ public class ProofProducersTest {
                 1,
                 1,
                 1000,
+                ProofValue.MIN_SIZE,
                 "stub",
                 new Driver("stub", Map.of()),
                 false);
@@ -197,7 +202,7 @@ public class ProofProducersTest {
         }
 
         @Override
-        public ProofProducer createProducer(String topicName, Map<String, Object> configs) {
+        public ProofProducer createProducer(String topicName, Map<String, Object> configs, int messageSize) {
             StubProofProducer producer = new StubProofProducer();
             producers.add(producer);
             return producer;
@@ -245,7 +250,7 @@ public class ProofProducersTest {
         }
 
         @Override
-        public ProofProducer createProducer(String topicName, Map<String, Object> configs) {
+        public ProofProducer createProducer(String topicName, Map<String, Object> configs, int messageSize) {
             return new FailingProofProducer();
         }
 

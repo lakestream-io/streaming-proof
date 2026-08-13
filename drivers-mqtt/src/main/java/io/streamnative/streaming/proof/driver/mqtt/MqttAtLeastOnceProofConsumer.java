@@ -59,9 +59,9 @@ public class MqttAtLeastOnceProofConsumer implements ProofConsumer {
                                         continue; // No messages received, continue polling
                                     }
                                     final Mqtt5Publish mqtt5Publish = receive.get();
-                                    String payload = new String(mqtt5Publish.getPayloadAsBytes());
-                                    String key = payload.split(":")[0];
-                                    long value = Long.parseLong(payload.split(":")[1]);
+                                    byte[] payload = mqtt5Publish.getPayloadAsBytes();
+                                    String key = MqttProofPayload.decodeKey(payload);
+                                    long value = MqttProofPayload.decodeValue(payload).seq();
                                     callback.onMessage(key, value, new MessageMetadata(value));
                                     mqtt5Publish.acknowledge();
                                 } catch (Exception e) {

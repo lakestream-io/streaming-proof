@@ -22,6 +22,7 @@ import io.streamnative.streaming.proof.common.LongSeq;
 import io.streamnative.streaming.proof.common.MessageListener;
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofConsumer;
+import io.streamnative.streaming.proof.common.ProofValue;
 import io.streamnative.streaming.proof.common.records.ConsumerCheckPoint;
 import io.streamnative.streaming.proof.common.records.LatencyMetricSnapshot;
 import java.nio.charset.StandardCharsets;
@@ -59,8 +60,16 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
     }
 
     public ProofConsumerTask(boolean sharedMode) {
-        this.sharedMode = sharedMode;
+        this(sharedMode, ProofValue.MIN_SIZE);
     }
+
+    public ProofConsumerTask(boolean sharedMode, int messageSize) {
+        this.sharedMode = sharedMode;
+        this.messageSize = messageSize;
+    }
+
+    /** Total size in bytes of each message value, used for throughput accounting */
+    private final int messageSize;
 
     /**
      * Map storing consumed sequence ranges for each key.
@@ -257,8 +266,8 @@ public class ProofConsumerTask implements MessageListener, AutoCloseable {
         return writeDupsOrOutOrder.get(key).lastEntry().getValue();
     }
 
-    private static int estimateMessageBytes(String key) {
-        return (key == null ? 0 : key.getBytes(StandardCharsets.UTF_8).length) + Long.BYTES;
+    private int estimateMessageBytes(String key) {
+        return (key == null ? 0 : key.getBytes(StandardCharsets.UTF_8).length) + messageSize;
     }
 
     /**

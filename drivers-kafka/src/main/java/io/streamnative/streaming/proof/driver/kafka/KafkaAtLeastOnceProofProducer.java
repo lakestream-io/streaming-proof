@@ -20,6 +20,7 @@ package io.streamnative.streaming.proof.driver.kafka;
 
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofProducer;
+import io.streamnative.streaming.proof.common.ProofValue;
 import java.util.concurrent.CompletableFuture;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -37,9 +38,9 @@ import org.apache.kafka.clients.producer.ProducerRecord;
  *   <li>Sequential value tracking per key</li>
  * </ul>
  *
- * <p>The producer sends messages with string keys and long values, where the values
- * represent sequential numbers for each key. This sequence tracking enables verification
- * of message ordering and delivery guarantees.
+ * <p>The producer sends messages with string keys and {@link ProofValue} values, which
+ * carry a sequential number for each key plus optional padding. This sequence tracking
+ * enables verification of message ordering and delivery guarantees.
  *
  * <p>Example usage:
  * <pre>{@code
@@ -49,9 +50,9 @@ import org.apache.kafka.clients.producer.ProducerRecord;
  * props.put(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE);
  * props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
  *
- * Producer<String, Long> kafkaProducer = new KafkaProducer<>(props);
- * KafkaAtLeastOnceProofProducer producer = 
- *     new KafkaAtLeastOnceProofProducer(kafkaProducer, "test-topic");
+ * Producer<String, ProofValue> kafkaProducer = new KafkaProducer<>(props);
+ * KafkaAtLeastOnceProofProducer producer =
+ *     new KafkaAtLeastOnceProofProducer(kafkaProducer, "test-topic", ProofValue.MIN_SIZE);
  *
  * // Send messages
  * producer.sendAsync("key-1", 1L)
@@ -69,20 +70,25 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 public class KafkaAtLeastOnceProofProducer implements ProofProducer {
 
     /** The underlying Kafka producer instance */
-    private final Producer<String, Long> producer;
-    
+    private final Producer<String, ProofValue> producer;
+
     /** The topic to which messages will be sent */
     private final String topic;
+
+    /** Total size in bytes of each message value, including the sequence number */
+    private final int messageSize;
 
     /**
      * Creates a new Kafka producer with at-least-once delivery guarantees.
      *
      * @param producer The underlying Kafka producer instance
      * @param topic The topic to which messages will be sent
+     * @param messageSize Total size in bytes of each message value
      */
-    public KafkaAtLeastOnceProofProducer(Producer<String, Long> producer, String topic) {
+    public KafkaAtLeastOnceProofProducer(Producer<String, ProofValue> producer, String topic, int messageSize) {
         this.producer = producer;
         this.topic = topic;
+        this.messageSize = messageSize;
     }
 
     /**
@@ -105,7 +111,8 @@ public class KafkaAtLeastOnceProofProducer implements ProofProducer {
      */
     @Override
     public CompletableFuture<MessageMetadata> sendAsync(String key, long value) {
-        ProducerRecord<String, Long> record = new ProducerRecord<>(topic, key, value);
+        ProducerRecord<String, ProofValue> record =
+                new ProducerRecord<>(topic, key, new ProofValue(value, messageSize));
         CompletableFuture<MessageMetadata> future = new CompletableFuture<>();
 
         try {

@@ -148,17 +148,19 @@ public class ProofProducers {
                 // Cast to KafkaProofDriver to access exactly-once method
                 if (driver instanceof io.streamnative.streaming.proof.driver.kafka.KafkaProofDriver) {
                     producer = ((io.streamnative.streaming.proof.driver.kafka.KafkaProofDriver) driver)
-                            .createProducer(newProducers.topic(), newProducers.driver().driverConfigs(), true);
+                            .createProducer(newProducers.topic(), newProducers.driver().driverConfigs(),
+                                    newProducers.messageSize(), true);
                 } else {
                     throw new IllegalStateException("Exactly-once semantics require Kafka driver");
                 }
             } else {
                 // Create normal producer
-                producer = driver.createProducer(newProducers.topic(), newProducers.driver().driverConfigs());
+                producer = driver.createProducer(newProducers.topic(), newProducers.driver().driverConfigs(),
+                        newProducers.messageSize());
             }
             
             int keyCount = baseKeysPerProducer + (i == activeProducerCount - 1 ? remainder : 0);
-            tasks.add(new ProofProducerTask(producer, keyCount));
+            tasks.add(new ProofProducerTask(producer, keyCount, newProducers.messageSize()));
         }
     }
 

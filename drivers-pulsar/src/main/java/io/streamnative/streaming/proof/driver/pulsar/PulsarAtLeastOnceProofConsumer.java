@@ -21,6 +21,7 @@ package io.streamnative.streaming.proof.driver.pulsar;
 import io.streamnative.streaming.proof.common.MessageListener;
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofConsumer;
+import io.streamnative.streaming.proof.common.ProofValue;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -32,7 +33,6 @@ import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageIdAdv;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
-import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.api.SubscriptionType;
 
@@ -60,7 +60,7 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
     private final String name;
 
     /** The underlying Pulsar consumer instance */
-    private final Consumer<Long> consumer;
+    private final Consumer<ProofValue> consumer;
 
     /** Thread for running the consumer receive loop */
     private final Thread consumerThread;
@@ -99,7 +99,7 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
         this.consumeDelayMs = consumeDelayMs;
         this.offloadCondition = OffloadCondition.getOffloadCondition(admin, topic, configs);
 
-        ConsumerBuilder<Long> consumerBuilder = client.newConsumer(Schema.INT64)
+        ConsumerBuilder<ProofValue> consumerBuilder = client.newConsumer(new ProofValueSchema())
                 .topic(topic)
                 .subscriptionName("streaming-proof")
                 .subscriptionType(SubscriptionType.Failover)
@@ -123,11 +123,11 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
     private void consumeMessages() {
         while (!closing.get()) {
             try {
-                Message<Long> message = consumer.receive();
+                Message<ProofValue> message = consumer.receive();
                 if (message != null) {
                     try {
                         String key = message.getKey();
-                        Long value = message.getValue();
+                        ProofValue value = message.getValue();
 
                         MessageIdAdv messageIdImpl = (MessageIdAdv) message.getMessageId();
 
@@ -150,13 +150,13 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
 
                         MessageMetadata metadata = new MessageMetadata(
                                 null, ledgerId, entryId, null, -1L, message.getPublishTime(), batchIndex);
-                        messageListener.onMessage(key, value, metadata);
+                        messageListener.onMessage(key, value.seq(), metadata);
 
                         consumer.acknowledge(message);
 
                         if (log.isDebugEnabled()) {
                             log.debug("[{}] Processed message: key={}, value={}, msgId={}",
-                                    name, key, value, message.getMessageId());
+                                    name, key, value.seq(), message.getMessageId());
                         }
 
                         if (consumeDelayMs > 0) {
@@ -223,7 +223,7 @@ public class PulsarAtLeastOnceProofConsumer implements ProofConsumer {
     }
 
     @SuppressWarnings("unchecked")
-    private void applyPulsarConsumerConfig(ConsumerBuilder<Long> builder, Map<String, Object> configs) {
+    private void applyPulsarConsumerConfig(ConsumerBuilder<ProofValue> builder, Map<String, Object> configs) {
         Object raw = configs.get("pulsar.consumer.config");
         if (raw instanceof Map<?, ?> consumerConfig) {
             builder.loadConf((Map<String, Object>) consumerConfig);

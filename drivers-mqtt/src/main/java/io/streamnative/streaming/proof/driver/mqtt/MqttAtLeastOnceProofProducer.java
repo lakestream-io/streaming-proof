@@ -24,6 +24,7 @@ import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5Publish;
 import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5PublishResult;
 import io.streamnative.streaming.proof.common.MessageMetadata;
 import io.streamnative.streaming.proof.common.ProofProducer;
+import io.streamnative.streaming.proof.common.ProofValue;
 import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 
@@ -31,12 +32,16 @@ import lombok.extern.slf4j.Slf4j;
 public class MqttAtLeastOnceProofProducer implements ProofProducer {
 
     private final Mqtt5BlockingClient client;
-    
+
     private final String topic;
 
-    public MqttAtLeastOnceProofProducer(Mqtt5BlockingClient client, String topic) {
+    /** Total size in bytes of each message value, including the sequence number */
+    private final int messageSize;
+
+    public MqttAtLeastOnceProofProducer(Mqtt5BlockingClient client, String topic, int messageSize) {
         this.client = client;
         this.topic = topic;
+        this.messageSize = messageSize;
     }
 
     @Override
@@ -45,7 +50,7 @@ public class MqttAtLeastOnceProofProducer implements ProofProducer {
         try {
             final Mqtt5Publish message = Mqtt5Publish.builder()
                     .topic(topic)
-                    .payload((key + ":" + value).getBytes())
+                    .payload(MqttProofPayload.encode(key, new ProofValue(value, messageSize)))
                     .qos(MqttQos.AT_LEAST_ONCE)
                     .build();
             final Mqtt5PublishResult publish = client.publish(message);

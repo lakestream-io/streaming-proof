@@ -452,6 +452,7 @@ public class ProofTask {
                     proof.getPartitions(),
                     consumerCount,
                     TimeUnit.SECONDS.toMillis(proof.getConsumeDelay()),
+                    proof.getMessageSize(),
                     driverName,
                     configs.drivers().get(driverName),
                     pulsarConsumerConfig
@@ -494,6 +495,7 @@ public class ProofTask {
                     producerCount,
                     keyCount,
                     msgRate,
+                    proof.getMessageSize(),
                     driverName,
                     configs.drivers().get(driverName),
                     proof.getFeatures().contains("exactly_once")

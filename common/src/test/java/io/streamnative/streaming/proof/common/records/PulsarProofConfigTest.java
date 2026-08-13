@@ -22,6 +22,7 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertNull;
 
+import io.streamnative.streaming.proof.common.ProofValue;
 import io.streamnative.streaming.proof.common.Util;
 import java.util.Map;
 import org.testng.annotations.Test;
@@ -86,7 +87,7 @@ public class PulsarProofConfigTest {
     public void testNewConsumersSerializationWithPulsarConfig() throws Exception {
         Map<String, Object> pulsarConfig = Map.of("subscriptionType", "Key_Shared");
         NewConsumers consumers = new NewConsumers(
-                "proof-1", "topic-1", 4, 2, 0L, "pulsar",
+                "proof-1", "topic-1", 4, 2, 0L, ProofValue.MIN_SIZE, "pulsar",
                 new Driver("pulsar", Map.of("pulsar.service.url", "pulsar://localhost:6650")),
                 pulsarConfig);
 
@@ -100,7 +101,7 @@ public class PulsarProofConfigTest {
     @Test
     public void testNewConsumersSerializationWithoutPulsarConfig() throws Exception {
         NewConsumers consumers = new NewConsumers(
-                "proof-1", "topic-1", 4, 2, 0L, "pulsar",
+                "proof-1", "topic-1", 4, 2, 0L, ProofValue.MIN_SIZE, "pulsar",
                 new Driver("pulsar", Map.of("pulsar.service.url", "pulsar://localhost:6650")),
                 null);
 

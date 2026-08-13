@@ -180,6 +180,12 @@ curl -X POST http://localhost:8080/proofs \
 
 `timeout` controls checkpoint verification while the proof is running. `finalWaitSeconds` controls the extra wait for consumers to catch up after producers stop.
 
+`messageSize` sets the total byte size of each message value and defaults to 8, the size of the
+sequence number alone. Larger values pad each message so that storage-path behaviour (offload
+triggers, tiered-storage reads, bandwidth) can be exercised at a realistic scale without pushing
+`msgRate` unrealistically high. The padding is filler and is never verified; values below 8 are
+rejected. It applies to the Kafka, Pulsar, and MQTT drivers alike.
+
 Kafka topic configuration is passed through to `NewTopic.configs()` when the proof topic is created.
 For Ursa topics, set `ursa.storage.enable` to `"true"` for a latency topic or `"false"` for a
 cost topic. The same configuration is applied to the transactional topic used by exactly-once

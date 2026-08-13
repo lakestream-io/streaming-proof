@@ -62,6 +62,9 @@ import io.streamnative.streaming.proof.common.ProofProducer;
  *            affecting the distribution and partitioning of messages
  * @param msgRate The target message production rate in messages per second,
  *               distributed across all producer instances
+ * @param messageSize The total size in bytes of each message value, including the
+ *                    8-byte sequence number. Unlike the counts above, this is not
+ *                    divided across workers.
  * @param driverName The name of the messaging system driver
  * @param driver The messaging system driver configuration that specifies how to
  *              create and configure the producer instances
@@ -76,6 +79,7 @@ public record NewProducers(String id,
                            int producers,
                            int keys,
                            int msgRate,
+                           int messageSize,
                            String driverName,
                            Driver driver,
                            boolean transactional) {
