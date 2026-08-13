@@ -148,7 +148,7 @@ public class ProofProducersTest {
     @Test
     public void testLateCompletionDoesNotRegressPublishedCheckpoint() {
         ControllableProofProducer producer = new ControllableProofProducer();
-        ProofProducerTask task = new ProofProducerTask(producer, 1);
+        ProofProducerTask task = new ProofProducerTask(producer, 1, ProofValue.MIN_SIZE);
 
         task.sendAsync();
         task.sendAsync();
