@@ -751,6 +751,72 @@ function renderComponentCard(title, component) {
     </div>`;
 }
 
+function isSafeWebUrl(value) {
+  if (typeof value !== "string") {
+    return false;
+  }
+  try {
+    const url = new URL(value.trim());
+    return (url.protocol === "http:" || url.protocol === "https:") && Boolean(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function flattenMetadataEntries(value, prefix = "") {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return prefix ? [[prefix, value]] : [];
+  }
+
+  return Object.entries(value).flatMap(([key, child]) => {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (child && typeof child === "object" && !Array.isArray(child)) {
+      const nested = flattenMetadataEntries(child, path);
+      return nested.length > 0 ? nested : [[path, child]];
+    }
+    return [[path, child]];
+  });
+}
+
+function renderMetadataValue(value) {
+  if (isSafeWebUrl(value)) {
+    const url = value.trim();
+    return `<a class="custom-metadata-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>`;
+  }
+  if (Array.isArray(value)) {
+    return value.map(renderMetadataValue).join(`<span class="custom-metadata-separator">, </span>`);
+  }
+  if (value && typeof value === "object") {
+    return escapeHtml(JSON.stringify(value));
+  }
+  return escapeHtml(formatValue(value));
+}
+
+function renderCustomMetadata(metadata) {
+  const customMetadata = Object.fromEntries(
+    Object.entries(metadata).filter(([key]) => key !== "clusterResources" && key !== "pulsarConfig")
+  );
+  const entries = flattenMetadataEntries(customMetadata)
+    .sort(([a], [b]) => a.localeCompare(b));
+
+  if (entries.length === 0) {
+    return "";
+  }
+
+  return `
+    <div class="custom-metadata-section">
+      <div class="adv-config-title">Metadata</div>
+      <dl class="custom-metadata-list">
+        ${entries.map(([key, value]) => `
+          <div class="custom-metadata-row">
+            <dt>${escapeHtml(key)}</dt>
+            <dd>${renderMetadataValue(value)}</dd>
+          </div>
+        `).join("")}
+      </dl>
+    </div>`;
+}
+
 function renderClusterTargets(targets) {
   if (!Array.isArray(targets) || targets.length === 0) {
     clusterTargetCountEl.textContent = "0";
@@ -787,7 +853,11 @@ function renderClusterTargets(targets) {
          </div>`
       : "";
 
-    const hasContent = cards.length > 0 || pulsarEntries.length > 0;
+    const customMetadataBlock = renderCustomMetadata(metadata);
+    const resourceCardsBlock = cards.length > 0
+      ? `<div class="res-card-row">${cards}</div>`
+      : "";
+    const hasContent = cards.length > 0 || pulsarEntries.length > 0 || customMetadataBlock.length > 0;
 
     const emptyNotice = !hasContent
       ? `<p class="cluster-empty">No cluster resources synced yet — metadata-sync populates this from K8s CRDs.</p>`
@@ -801,7 +871,8 @@ function renderClusterTargets(targets) {
           <span class="cluster-target-type">${escapeHtml(target.driverType || "unknown")}</span>
         </div>
         ${hasContent ? `
-          <div class="res-card-row">${cards}</div>
+          ${resourceCardsBlock}
+          ${customMetadataBlock}
           ${pulsarBlock}
         ` : emptyNotice}
       </div>`;
