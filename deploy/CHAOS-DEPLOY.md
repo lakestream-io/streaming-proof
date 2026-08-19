@@ -1,6 +1,6 @@
 # Chaos Testing Deployment Guide
 
-Steps to deploy Chaos Mesh and the pod-kill experiments on a **data plane**
+Steps to deploy Chaos Mesh and recurring fault-injection experiments on a **data plane**
 cluster (the pool member where the Pulsar pods run, e.g.
 `aws-use1-staging-q3p9f`). Run every command from a terminal with a direct
 kubectl context to the data plane (the same context you use for `helm upgrade`).
@@ -71,7 +71,7 @@ kubectl port-forward -n chaos-mesh svc/chaos-dashboard 2333:2333
 
 ---
 
-## Step 3: Deploy the pod-kill experiments
+## Step 3: Deploy the experiments
 
 > Depends on the CRDs from Step 1 — install Chaos Mesh first.
 
@@ -82,17 +82,18 @@ helm upgrade --install chaos ./deploy/helm/chaos-experiments -n o-2h056
 Verify the Schedules were created:
 
 ```bash
-kubectl get schedules -n o-2h056 | grep kill-one
+kubectl get schedules -n o-2h056
 ```
 
-⚠️ **The experiments start killing pods on their cron as soon as they are
-applied.** To avoid injecting immediately, set the relevant instance to
-`enabled: false` in `deploy/helm/chaos-experiments/values.yaml` first.
+⚠️ **Pod-kill starts on its cron as soon as the chart is applied.** Set the
+relevant instance to `enabled: false` before applying when injection must not
+start immediately. Pod-failure and network faults are disabled by default and
+must be enabled explicitly.
 
-See `deploy/helm/chaos-experiments/README.md` for the experiment design: each
-`(instance, role)` pair produces one `mode: one` Schedule (kills a single pod per
-run), and the crons of different roles within the same instance are staggered so
-two components are never killed at the same time.
+See `deploy/helm/chaos-experiments/README.md` for the pod-kill, pod-failure,
+network-delay, and network-partition designs. Every checked-in fault uses
+`mode: one`, and the schedules are staggered to avoid overlapping faults within
+the same instance.
 
 ---
 

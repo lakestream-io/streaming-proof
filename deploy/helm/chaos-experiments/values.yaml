@@ -1,4 +1,4 @@
-# Chaos Mesh pod-kill experiments for one or more managed Pulsar instances.
+# Recurring Chaos Mesh experiments for one or more managed Pulsar instances.
 #
 # IMPORTANT:
 #   - Chaos Mesh must already be installed on the DATA PLANE cluster (the pool
@@ -6,9 +6,9 @@
 #       helm repo add chaos-mesh https://charts.chaos-mesh.org
 #       helm install chaos-mesh chaos-mesh/chaos-mesh -n chaos-mesh --create-namespace
 #
-# Each (instance, role) pair becomes a recurring Schedule that kills ONE pod,
-# matched by the pulsar-instance + role labels. Give every pair its own cron so
-# the kills stay staggered.
+# Every experiment is opt-in except pod-kill. Targets are matched by the
+# pulsar-instance + role labels, and each (instance, role) pair becomes its own
+# recurring Schedule.
 
 target:
   # Namespace where the Pulsar pods run in the data plane.
@@ -16,47 +16,110 @@ target:
 
 # Shared Schedule settings.
 defaults:
-  # Allow: always fire on schedule, never blocked by a previous run. Right for
-  # pod-kill (instantaneous). Forbid can stall the schedule if a prior chaos
-  # object gets stuck in the active state.
+  historyLimit: 10
+
+# Kill one pod and give it time to terminate gracefully. The Chaos object stays
+# active slightly longer than the pod grace period so its status reflects the
+# full termination window.
+podKill:
+  enabled: true
   concurrencyPolicy: Allow
-  historyLimit: 50
+  gracePeriod: 60
+  duration: 90s
+  clusters:
+    - name: tiered-storage-test
+      enabled: true
+      roles:
+        pulsar-broker: "0-59/12 * * * *"  # :00 :12 :24 :36 :48
+        bookkeeper: "6-59/12 * * * *"     # :06 :18 :30 :42 :54
 
-# One entry per Pulsar instance. `roles` maps a cloud.streamnative.io/role value
-# to its kill cron. Common role values:
-#   pulsar-broker | bookkeeper | oxia
-#
-# Schedule design: each cluster is designed independently. Every component is
-# killed every 12 minutes (5x/hour). WITHIN a cluster the components are staggered
-# with >=3 minutes between any two kills. Across clusters the slots are reused -
-# cross-cluster overlap is intentional and fine.
-#
-#   2-component cluster: offsets :00 and :06  (6 min apart)
-#   3-component cluster: offsets :00, :04, :08 (4 min apart)
-instances:
+    - name: classic-chaos-test
+      enabled: true
+      roles:
+        pulsar-broker: "0-59/12 * * * *"  # :00 :12 :24 :36 :48
+        bookkeeper: "6-59/12 * * * *"     # :06 :18 :30 :42 :54
 
-  - name: tiered-storage-test
-    enabled: true
-    roles:
-      pulsar-broker: "0-59/12 * * * *"  # :00 :12 :24 :36 :48
-      bookkeeper: "6-59/12 * * * *"     # :06 :18 :30 :42 :54
+    - name: ursa-chaos-test
+      enabled: true
+      roles:
+        pulsar-broker: "0-59/12 * * * *"  # :00 :12 :24 :36 :48
+        oxia: "6-59/12 * * * *"           # :06 :18 :30 :42 :54
 
-  - name: classic-chaos-test
-    enabled: true
-    roles:
-      pulsar-broker: "0-59/12 * * * *"  # :00 :12 :24 :36 :48
-      bookkeeper: "6-59/12 * * * *"     # :06 :18 :30 :42 :54
+    - name: lakehouse-chaos-test
+      enabled: true
+      roles:
+        pulsar-broker: "0-59/12 * * * *"  # :00 :12 :24 :36 :48
+        bookkeeper: "4-59/12 * * * *"     # :04 :16 :28 :40 :52
+        oxia: "8-59/12 * * * *"           # :08 :20 :32 :44 :56
 
-  - name: ursa-chaos-test
-    enabled: true
-    roles:
-      pulsar-broker: "0-59/12 * * * *"  # :00 :12 :24 :36 :48
-      oxia: "6-59/12 * * * *"           # :06 :18 :30 :42 :54
+    - name: ufk-chaos-test
+      enabled: true
+      roles:
+        kafka-broker: "0-59/12 * * * *"  # :00 :12 :24 :36 :48
 
-  - name: lakehouse-chaos-test
-    enabled: true
-    roles:
-      pulsar-broker: "0-59/12 * * * *"  # :00 :12 :24 :36 :48
-      bookkeeper: "4-59/12 * * * *"     # :04 :16 :28 :40 :52
-      oxia: "8-59/12 * * * *"           # :08 :20 :32 :44 :56
+# Hold one bookkeeper unavailable long enough to exercise recovery behavior.
+# Disabled by default because this is more disruptive than pod-kill.
+podFailure:
+  enabled: false
+  concurrencyPolicy: Forbid
+  duration: 60s
+  clusters:
+    - name: tiered-storage-test
+      enabled: true
+      roles:
+        bookkeeper: "22 * * * *"
+    - name: classic-chaos-test
+      enabled: true
+      roles:
+        bookkeeper: "22 * * * *"
+    - name: lakehouse-chaos-test
+      enabled: true
+      roles:
+        bookkeeper: "22 * * * *"
 
+# Add latency and jitter to one broker. Keep mode=one unless a full role outage
+# is explicitly intended.
+networkDelay:
+  enabled: false
+  concurrencyPolicy: Forbid
+  mode: one
+  duration: 90s
+  latency: 200ms
+  jitter: 50ms
+  correlation: "50"
+  clusters:
+    - name: tiered-storage-test
+      enabled: true
+      roles:
+        pulsar-broker: "34 * * * *"
+    - name: classic-chaos-test
+      enabled: true
+      roles:
+        pulsar-broker: "34 * * * *"
+    - name: ursa-chaos-test
+      enabled: true
+      roles:
+        pulsar-broker: "34 * * * *"
+    - name: lakehouse-chaos-test
+      enabled: true
+      roles:
+        pulsar-broker: "34 * * * *"
+
+# Isolate one Oxia pod. With no externalTargets the selected pod is fully
+# isolated; supply CIDRs to limit the partition to specific remote peers.
+networkPartition:
+  enabled: false
+  concurrencyPolicy: Forbid
+  mode: one
+  duration: 90s
+  direction: both
+  externalTargets: []
+  clusters:
+    - name: ursa-chaos-test
+      enabled: true
+      roles:
+        oxia: "46 * * * *"
+    - name: lakehouse-chaos-test
+      enabled: true
+      roles:
+        oxia: "46 * * * *"

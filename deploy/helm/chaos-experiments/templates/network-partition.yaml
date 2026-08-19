@@ -1,0 +1,38 @@
+{{- $namespace := .Values.target.namespace }}
+{{- $defaults := .Values.defaults }}
+{{- $release := .Release.Name }}
+{{- $config := .Values.networkPartition }}
+{{- if $config.enabled }}
+{{- range $cluster := $config.clusters }}
+{{- if $cluster.enabled }}
+{{- range $role, $cron := $cluster.roles }}
+---
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Schedule
+metadata:
+  name: {{ include "chaos.fullname" (list $release $cluster.name "netpart" $role) }}
+  namespace: {{ $namespace }}
+  labels:
+    chaos.streamnative.io/experiment: network-partition
+    chaos.streamnative.io/cluster: {{ $cluster.name | quote }}
+    chaos.streamnative.io/role: {{ $role | quote }}
+spec:
+  schedule: {{ $cron | quote }}
+  concurrencyPolicy: {{ $config.concurrencyPolicy }}
+  historyLimit: {{ $defaults.historyLimit }}
+  type: NetworkChaos
+  networkChaos:
+    action: partition
+    mode: {{ $config.mode }}
+    duration: {{ $config.duration | quote }}
+    direction: {{ $config.direction }}
+    selector:
+      {{- include "chaos.podSelector" (dict "namespace" $namespace "cluster" $cluster.name "role" $role) | nindent 6 }}
+    {{- with $config.externalTargets }}
+    externalTargets:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

@@ -1,7 +1,9 @@
 {{- $ns := .Values.target.namespace }}
 {{- $defaults := .Values.defaults }}
 {{- $release := .Release.Name }}
-{{- range $inst := .Values.instances }}
+{{- $config := .Values.podKill }}
+{{- if $config.enabled }}
+{{- range $inst := $config.clusters }}
 {{- if $inst.enabled }}
 {{- range $role, $cron := $inst.roles }}
 ---
@@ -10,20 +12,23 @@ kind: Schedule
 metadata:
   name: {{ printf "%s-%s-%s-kill-one" $release $inst.name $role | trunc 63 | trimSuffix "-" }}
   namespace: {{ $ns }}
+  labels:
+    chaos.streamnative.io/experiment: pod-kill
+    chaos.streamnative.io/cluster: {{ $inst.name | quote }}
+    chaos.streamnative.io/role: {{ $role | quote }}
 spec:
   schedule: {{ $cron | quote }}
-  concurrencyPolicy: {{ $defaults.concurrencyPolicy }}
+  concurrencyPolicy: {{ $config.concurrencyPolicy }}
   historyLimit: {{ $defaults.historyLimit }}
   type: PodChaos
   podChaos:
     action: pod-kill
     mode: one
+    gracePeriod: {{ $config.gracePeriod }}
+    duration: {{ $config.duration | quote }}
     selector:
-      namespaces:
-        - {{ $ns }}
-      labelSelectors:
-        cloud.streamnative.io/pulsar-instance: {{ $inst.name | quote }}
-        cloud.streamnative.io/role: {{ $role | quote }}
+      {{- include "chaos.podSelector" (dict "namespace" $ns "cluster" $inst.name "role" $role) | nindent 6 }}
+{{- end }}
 {{- end }}
 {{- end }}
 {{- end }}
