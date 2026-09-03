@@ -106,9 +106,8 @@ mvn clean install -DskipTests -Pdocker
 ```
 ## Release
 
-The workflow [Publish image to Docker hub](https://github.com/lakestream-io/streaming-proof/actions/workflows/publish.yaml) is triggered automatically after a PR merged to `main` branch, and the image is `lakestream/streaming-proof:latest`.
-
-If you want to publish a custom tag image, you can run the above workflow manually with your branch name and tag name.
+Automated Docker image publishing is not currently configured. Build the image locally with the
+Docker Maven profile shown above.
 
 ## Quick Start with Docker Compose
 
