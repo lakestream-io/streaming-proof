@@ -29,7 +29,7 @@ This document outlines the design for a framework dedicated to verifying the cor
 
 Verifying the correctness of distributed streaming systems, especially under failure conditions or specific configurations, is challenging. Guarantees like "at-least-once", "exactly-once", and "ordering" are critical for many applications but difficult to confirm empirically. Existing testing methods often lack the scale, automation, or detailed reporting needed for thorough validation.
 
-The concept for this framework originated from the development of StreamNative Ursa, which required a robust method to ensure the correctness of streaming systems. This framework aims to provide a standardized, scalable, and automated solution for continuously verifying these guarantees in systems like Apache Kafka, Apache Pulsar, and other compatible platforms, particularly before production deployment or during chaos engineering experiments.
+This framework originated from the need for a robust way to verify streaming-system correctness. It provides a standardized, scalable, and automated solution for continuously checking these guarantees in systems such as Apache Kafka, Apache Pulsar, and other compatible platforms, particularly before production deployment or during chaos engineering experiments.
 
 ## 5. Proposed Solution: High-Level Design
 

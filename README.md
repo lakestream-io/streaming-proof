@@ -15,8 +15,8 @@ Here is the example to show the proof status:
 {
   "proof" : {
     "id" : "137ba4d8-50ad-4c96-8c16-101b54083771",
-    "name" : "Ursa: at_least_once + ordering",
-    "driver" : "ursa",
+    "name" : "Kafka: at_least_once + ordering",
+    "driver" : "kafka",
     "features" : [ "at_least_once", "ordering" ],
     "description" : null,
     "topic" : "9e673a76-77b2-4d20-b805-c59f49062d3a",
@@ -106,7 +106,7 @@ mvn clean install -DskipTests -Pdocker
 ```
 ## Release
 
-The workflow [Publish image to Docker hub](https://github.com/streamnative/streaming-proof/actions/workflows/publish.yaml) is triggered automatically after a PR merged to `main` branch, and the image is `streamnative/streaming-proof:latest`.
+The workflow [Publish image to Docker hub](https://github.com/lakestream-io/streaming-proof/actions/workflows/publish.yaml) is triggered automatically after a PR merged to `main` branch, and the image is `lakestream/streaming-proof:latest`.
 
 If you want to publish a custom tag image, you can run the above workflow manually with your branch name and tag name.
 
@@ -142,7 +142,7 @@ curl -X PUT http://localhost:8080/configs \
     "worker.1" : "http://worker:8088"
   },
   "drivers" : {
-    "ursa" : {
+    "kafka" : {
       "driverType" : "kafka",
       "driverConfigs" : {
         "acks" : "1",
@@ -159,8 +159,8 @@ curl -X PUT http://localhost:8080/configs \
 curl -X POST http://localhost:8080/proofs \
   -H "Content-Type: application/json" \
   -d '{
-  "name" : "Ursa: at_least_once + ordering",
-  "driver" : "ursa",
+  "name" : "Kafka: at_least_once + ordering",
+  "driver" : "kafka",
   "features" : [ "at_least_once", "ordering" ],
   "partitions" : 10,
   "producers" : 4,
@@ -172,7 +172,7 @@ curl -X POST http://localhost:8080/proofs \
   "finalWaitSeconds" : 60,
   "kafka" : {
     "topicConfig" : {
-      "ursa.storage.enable" : "true"
+      "unclean.leader.election.enable" : "true"
     }
   }
 }'
@@ -186,9 +186,10 @@ triggers, tiered-storage reads, bandwidth) can be exercised at a realistic scale
 `msgRate` unrealistically high. The padding is filler and is never verified; values below 8 are
 rejected. It applies to the Kafka, Pulsar, and MQTT drivers alike.
 
-Kafka topic configuration is passed through to `NewTopic.configs()` when the proof topic is created.
-For Ursa topics, set `ursa.storage.enable` to `"true"` for a latency topic or `"false"` for a
-cost topic. The same configuration is applied to the transactional topic used by exactly-once
+Kafka topic configuration is passed through to `NewTopic.configs()` without vendor-specific handling.
+For example,
+`unclean.leader.election.enable` can be set to `"true"` when explicitly testing that Kafka
+behavior. The same configuration is applied to the transactional topic used by exactly-once
 proofs.
 
 ### Pulsar Shared Subscription Verification
@@ -251,8 +252,12 @@ docker-compose down
 
 ```bash
 cd streaming-proof/deploy/helm
-helm install streaming-proof ./streaming-proof -n streaming-proof 
+helm install streaming-proof ./streaming-proof -n streaming-proof
 ```
+
+The chart does not include worker or messaging-cluster connection details. Configure them through
+the `PUT /configs` API, or provide a private values file containing a `configs` map. Do not commit
+credentials to the chart values.
 
 ### Minimal UI Prototype
 
@@ -290,7 +295,7 @@ curl -X PUT http://localhost:8080/configs \
     "worker.3" : "http://worker.3:8088"
   },
   "drivers" : {
-    "ursa" : {
+    "kafka" : {
       "driverType" : "kafka",
       "driverConfigs" : {
         "security.protocol" : "SASL_PLAINTEXT",
@@ -312,8 +317,8 @@ curl -X PUT http://localhost:8080/configs \
 curl -X POST http://localhost:8080/proofs \
   -H "Content-Type: application/json" \
   -d '{
-  "name" : "Ursa: at_least_once + ordering",
-  "driver" : "ursa",
+  "name" : "Kafka: at_least_once + ordering",
+  "driver" : "kafka",
   "features" : [ "at_least_once", "ordering" ],
   "topic" : "9e673a76-77b2-4d20-b805-c59f49062d3a",
   "partitions" : 10,
@@ -338,8 +343,8 @@ output:
 ```json
 [ {
   "id" : "137ba4d8-50ad-4c96-8c16-101b54083771",
-  "name" : "Ursa: at_least_once + ordering",
-  "driver" : "ursa",
+  "name" : "Kafka: at_least_once + ordering",
+  "driver" : "kafka",
   "features" : [ "at_least_once", "ordering" ],
   "description" : null,
   "topic" : "9e673a76-77b2-4d20-b805-c59f49062d3a",
@@ -368,8 +373,8 @@ output:
 {
   "proof" : {
     "id" : "137ba4d8-50ad-4c96-8c16-101b54083771",
-    "name" : "Ursa: at_least_once + ordering",
-    "driver" : "ursa",
+    "name" : "Kafka: at_least_once + ordering",
+    "driver" : "kafka",
     "features" : [ "at_least_once", "ordering" ],
     "description" : null,
     "topic" : "9e673a76-77b2-4d20-b805-c59f49062d3a",
@@ -398,4 +403,4 @@ output:
 
 ## License
 
-Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
+Licensed under the [Apache License, Version 2.0](LICENSE).

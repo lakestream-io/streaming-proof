@@ -1,3 +1,4 @@
+{{- if .Values.configs }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -7,3 +8,4 @@ metadata:
     {{- include "streaming-proof.labels" . | nindent 4 }}
 data:
   {{- toYaml .Values.configs | nindent 4 }}
+{{- end }}

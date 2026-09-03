@@ -1,84 +1,29 @@
-# Recurring Chaos Mesh experiments for one or more managed Pulsar instances.
+# Recurring Chaos Mesh experiments for streaming-system clusters.
 #
-# IMPORTANT:
-#   - Chaos Mesh must already be installed on the DATA PLANE cluster (the pool
-#     member where the Pulsar pods run), NOT the control plane:
-#       helm repo add chaos-mesh https://charts.chaos-mesh.org
-#       helm install chaos-mesh chaos-mesh/chaos-mesh -n chaos-mesh --create-namespace
-#
-# Every experiment is opt-in except pod-kill. Targets are matched by the
-# pulsar-instance + role labels, and each (instance, role) pair becomes its own
-# recurring Schedule.
+# All experiments are disabled by default. Configure the namespace and the
+# labels used by your workloads before enabling any schedule.
 
 target:
-  # Namespace where the Pulsar pods run in the data plane.
-  namespace: o-2h056
+  namespace: default
+  clusterLabel: app.kubernetes.io/instance
+  roleLabel: app.kubernetes.io/component
 
-# Shared Schedule settings.
 defaults:
   historyLimit: 10
 
-# Kill one pod and give it time to terminate gracefully. The Chaos object stays
-# active slightly longer than the pod grace period so its status reflects the
-# full termination window.
 podKill:
-  enabled: true
+  enabled: false
   concurrencyPolicy: Allow
   gracePeriod: 60
   duration: 90s
-  clusters:
-    - name: tiered-storage-test
-      enabled: true
-      roles:
-        pulsar-broker: "0-59/12 * * * *"  # :00 :12 :24 :36 :48
-        bookkeeper: "6-59/12 * * * *"     # :06 :18 :30 :42 :54
+  clusters: []
 
-    - name: classic-chaos-test
-      enabled: true
-      roles:
-        pulsar-broker: "0-59/12 * * * *"  # :00 :12 :24 :36 :48
-        bookkeeper: "6-59/12 * * * *"     # :06 :18 :30 :42 :54
-
-    - name: ursa-chaos-test
-      enabled: true
-      roles:
-        pulsar-broker: "0-59/12 * * * *"  # :00 :12 :24 :36 :48
-        oxia: "6-59/12 * * * *"           # :06 :18 :30 :42 :54
-
-    - name: lakehouse-chaos-test
-      enabled: true
-      roles:
-        pulsar-broker: "0-59/12 * * * *"  # :00 :12 :24 :36 :48
-        bookkeeper: "4-59/12 * * * *"     # :04 :16 :28 :40 :52
-        oxia: "8-59/12 * * * *"           # :08 :20 :32 :44 :56
-
-    - name: ufk-chaos-test
-      enabled: true
-      roles:
-        kafka-broker: "0-59/12 * * * *"  # :00 :12 :24 :36 :48
-
-# Hold one bookkeeper unavailable long enough to exercise recovery behavior.
-# Disabled by default because this is more disruptive than pod-kill.
 podFailure:
   enabled: false
   concurrencyPolicy: Forbid
   duration: 60s
-  clusters:
-    - name: tiered-storage-test
-      enabled: true
-      roles:
-        bookkeeper: "22 * * * *"
-    - name: classic-chaos-test
-      enabled: true
-      roles:
-        bookkeeper: "22 * * * *"
-    - name: lakehouse-chaos-test
-      enabled: true
-      roles:
-        bookkeeper: "22 * * * *"
+  clusters: []
 
-# Add latency and jitter to one broker. Keep mode=one unless a full role outage
-# is explicitly intended.
 networkDelay:
   enabled: false
   concurrencyPolicy: Forbid
@@ -87,26 +32,8 @@ networkDelay:
   latency: 200ms
   jitter: 50ms
   correlation: "50"
-  clusters:
-    - name: tiered-storage-test
-      enabled: true
-      roles:
-        pulsar-broker: "34 * * * *"
-    - name: classic-chaos-test
-      enabled: true
-      roles:
-        pulsar-broker: "34 * * * *"
-    - name: ursa-chaos-test
-      enabled: true
-      roles:
-        pulsar-broker: "34 * * * *"
-    - name: lakehouse-chaos-test
-      enabled: true
-      roles:
-        pulsar-broker: "34 * * * *"
+  clusters: []
 
-# Isolate one Oxia pod. With no externalTargets the selected pod is fully
-# isolated; supply CIDRs to limit the partition to specific remote peers.
 networkPartition:
   enabled: false
   concurrencyPolicy: Forbid
@@ -114,12 +41,4 @@ networkPartition:
   duration: 90s
   direction: both
   externalTargets: []
-  clusters:
-    - name: ursa-chaos-test
-      enabled: true
-      roles:
-        oxia: "46 * * * *"
-    - name: lakehouse-chaos-test
-      enabled: true
-      roles:
-        oxia: "46 * * * *"
+  clusters: []

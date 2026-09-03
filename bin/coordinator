@@ -9,4 +9,4 @@ fi
 
 JVM_MEM="${HEAP_OPTS}"
 JVM_OPTS="$JVM_OPTS --add-opens java.base/java.util.zip=ALL-UNNAMED"
-exec java -server -cp $CLASSPATH $JVM_MEM $JVM_OPTS io.streamnative.streaming.proof.coordinator.CoordinatorStarter"$@"
+exec java -server -cp $CLASSPATH $JVM_MEM $JVM_OPTS io.lakestream.streaming.proof.coordinator.CoordinatorStarter "$@"

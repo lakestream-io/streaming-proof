@@ -3,11 +3,11 @@
 {{- printf "%s-%s-%s-%s" (index . 0) (index . 1) (index . 2) (index . 3) | lower | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{/* Select one Pulsar cluster role inside the target namespace. */}}
+{{/* Select one cluster component inside the target namespace. */}}
 {{- define "chaos.podSelector" -}}
 namespaces:
   - {{ .namespace | quote }}
 labelSelectors:
-  cloud.streamnative.io/cluster: {{ .cluster | quote }}
-  cloud.streamnative.io/role: {{ .role | quote }}
+  {{ .clusterLabel | quote }}: {{ .cluster | quote }}
+  {{ .roleLabel | quote }}: {{ .role | quote }}
 {{- end -}}

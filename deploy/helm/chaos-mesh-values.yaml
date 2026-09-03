@@ -1,32 +1,12 @@
-# Values override for installing chaos-mesh (the official chart) on the data plane.
-#
-#   helm repo add chaos-mesh https://charts.chaos-mesh.org
-#   helm install chaos-mesh chaos-mesh/chaos-mesh \
-#     -n chaos-mesh --create-namespace \
-#     -f deploy/helm/chaos-mesh-values.yaml
-#
-# This only exposes the Chaos Dashboard via an internet-facing AWS NLB, same as
-# the streaming-proof coordinator service.
+# Optional values for installing the official Chaos Mesh chart on nodes that
+# use containerd. Adapt these settings for your Kubernetes environment.
 
-# Nodes run containerd (EKS), but the chart defaults to docker. Without this the
-# chaos-daemon cannot reach containers and pod-kill / network chaos silently fail.
 chaosDaemon:
   runtime: containerd
   socketPath: /run/containerd/containerd.sock
 
 dashboard:
   create: true
-  # securityMode false = no token login. The dashboard is internet-facing, so
-  # with this off ANYONE who reaches it can launch chaos. Pair with
-  # loadBalancerSourceRanges below to restrict access by source IP.
-  securityMode: false
+  securityMode: true
   service:
-    type: LoadBalancer
-    annotations:
-      service.beta.kubernetes.io/aws-load-balancer-type: nlb
-      service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
-      service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: external
-    # Since token login is OFF, strongly recommended: restrict who can reach the
-    # dashboard to known CIDRs. Leave commented to allow the whole internet.
-    # loadBalancerSourceRanges:
-    #   - 1.2.3.4/32
+    type: ClusterIP

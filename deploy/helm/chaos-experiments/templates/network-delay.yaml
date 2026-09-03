@@ -1,4 +1,6 @@
 {{- $namespace := .Values.target.namespace }}
+{{- $clusterLabel := .Values.target.clusterLabel }}
+{{- $roleLabel := .Values.target.roleLabel }}
 {{- $defaults := .Values.defaults }}
 {{- $release := .Release.Name }}
 {{- $config := .Values.networkDelay }}
@@ -12,10 +14,6 @@ kind: Schedule
 metadata:
   name: {{ include "chaos.fullname" (list $release $cluster.name "netdelay" $role) }}
   namespace: {{ $namespace }}
-  labels:
-    chaos.streamnative.io/experiment: network-delay
-    chaos.streamnative.io/cluster: {{ $cluster.name | quote }}
-    chaos.streamnative.io/role: {{ $role | quote }}
 spec:
   schedule: {{ $cron | quote }}
   concurrencyPolicy: {{ $config.concurrencyPolicy }}
@@ -26,7 +24,7 @@ spec:
     mode: {{ $config.mode }}
     duration: {{ $config.duration | quote }}
     selector:
-      {{- include "chaos.podSelector" (dict "namespace" $namespace "cluster" $cluster.name "role" $role) | nindent 6 }}
+      {{- include "chaos.podSelector" (dict "namespace" $namespace "clusterLabel" $clusterLabel "roleLabel" $roleLabel "cluster" $cluster.name "role" $role) | nindent 6 }}
     delay:
       latency: {{ $config.latency | quote }}
       jitter: {{ $config.jitter | quote }}
